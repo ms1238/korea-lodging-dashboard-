@@ -15,6 +15,10 @@
 
 주소 형식: `https://apis.data.go.kr/1741000/<API>/info`
 
+관광 정보는 한국관광공사 TourAPI(`https://apis.data.go.kr/B551011/KorService2/areaBasedList2`)에서 관광지(12)·문화시설(14)·레포츠(28)를 받습니다. 같은 공공데이터포털 키를 씁니다.
+
+지도 지형(산 음영, 3D)은 AWS Terrain Tiles(Terrarium)를 씁니다.
+
 ## 구조
 
 - `scripts/fetch.py` — 8개 API 전체를 `raw/*.jsonl`로 받습니다. 키는 환경변수 `DATA_GO_KR_KEY`에서만 읽습니다.

@@ -41,6 +41,7 @@ select:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid 
 .chk label{cursor:pointer;display:flex;align-items:center;min-width:0}
 .chk .n{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
 .sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;flex:none}
+.sw.ring{background:#fff;border:2px solid;width:11px;height:11px}
 .sharelist,.ranklist{display:flex;flex-direction:column;gap:6px}
 .row{display:grid;grid-template-columns:minmax(120px,210px) minmax(0,1fr) 120px;gap:12px;align-items:center;font-size:13px}
 .row .nm{display:flex;align-items:center;min-width:0}

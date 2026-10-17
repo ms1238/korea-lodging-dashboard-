@@ -12,7 +12,9 @@
   const catOf = T.map(t => CATS.indexOf(t.cat));
   const col = c => css('--c' + c);
 
-  const state = { sido: -1, sgg: -1, status: 0, types: new Set(T.map((_, i) => i)) };
+  const TOUR = meta.tour || { types: [], counts: [] };
+  const TOUR_COL = ['#c4153c', '#8a4fb0', '#0e9aa7'];
+  const state = { sido: -1, sgg: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), shade: true, terrain3d: false };
   $('updated').textContent = `마지막 갱신 ${meta.updated}.`;
 
   /* ---------- filters ---------- */
@@ -68,6 +70,14 @@
   if (map) map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   if (map) map.on('load', () => {
     mapReady = true;
+    // terrain: AWS Terrain Tiles (Terrarium encoding) for hillshade and optional 3D
+    const dem = { type: 'raster-dem', tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      encoding: 'terrarium', tileSize: 256, maxzoom: 14, attribution: '지형: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank">AWS Terrain Tiles</a>' };
+    map.addSource('dem', dem);
+    map.addSource('dem3d', { ...dem, attribution: undefined });
+    const firstSymbol = (map.getStyle().layers.find(l => l.type === 'symbol') || {}).id;
+    map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem', paint: {
+      'hillshade-exaggeration': .5, 'hillshade-shadow-color': '#46525c', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#5b6b5a' } }, firstSymbol);
     map.addSource('areas', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'areas', type: 'circle', source: 'areas', paint: {
       'circle-radius': ['interpolate', ['linear'], ['sqrt', ['get', 'n']], 0, 0, 10, 6, 60, 26],
@@ -82,17 +92,41 @@
       new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(e.lngLat).setHTML(
         `<b>${esc(p.name)}</b><br>${esc(T[p.t].name)} · ${ST[p.s]}<br>${esc(p.addr)}<br><small>인허가 ${esc(p.date)}${p.closed ? ' · 폐업 ' + esc(p.closed) : ''}${p.ap ? ' · 위치는 동 단위 근사' : ''}</small>`).addTo(map);
     });
+    map.addSource('tour', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'tour', type: 'circle', source: 'tour', paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 3, 12, 5, 15, 7],
+      'circle-color': '#ffffff', 'circle-stroke-width': 2,
+      'circle-stroke-color': ['match', ['get', 't'], ...TOUR_COL.flatMap((c, i) => [i, c]), '#333'] } });
+    map.on('click', 'tour', e => {
+      const p = e.features[0].properties;
+      new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(
+        `${p.img ? `<img src="${esc(p.img)}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(p.name)}</b><br>${esc(TOUR.types[p.t])}<br>${esc(p.addr)}<br><small>출처: 한국관광공사 TourAPI</small>`).addTo(map);
+    });
     map.on('click', 'areas', e => {
       const p = e.features[0].properties;
       $('f-sido').value = p.si; state.sido = p.si; fillSgg(); state.sgg = p.gi; $('f-sgg').value = p.gi; update(true);
     });
-    for (const l of ['pts', 'areas']) {
+    for (const l of ['pts', 'areas', 'tour']) {
       map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
     }
     update(true);
   });
 
+  const tourCache = {};
+  async function loadTour(si) {
+    if (!tourCache[si]) tourCache[si] = fetch(`data/tour/${si}.json`).then(r => r.ok ? r.json() : []).catch(() => []);
+    return tourCache[si];
+  }
+  async function drawTour() {
+    if (!mapReady) return;
+    if (state.sido < 0 || !state.tour.size) { map.getSource('tour').setData({ type: 'FeatureCollection', features: [] }); return; }
+    const si = state.sido, rows = await loadTour(si);
+    if (si !== state.sido) return;
+    const feats = rows.filter(r => state.tour.has(r[2]) && (state.sgg < 0 || r[3] === state.sgg)).map(r => ({ type: 'Feature',
+      geometry: { type: 'Point', coordinates: [r[1], r[0]] }, properties: { t: r[2], name: r[4], addr: r[5], img: r[6] } }));
+    map.getSource('tour').setData({ type: 'FeatureCollection', features: feats });
+  }
   async function loadPts(si) {
     if (!ptsCache[si]) ptsCache[si] = fetch(`data/pts/${si}.json`).then(r => r.json());
     return ptsCache[si];
@@ -110,6 +144,7 @@
       }));
       map.getSource('areas').setData({ type: 'FeatureCollection', features: feats });
       map.getSource('pts').setData({ type: 'FeatureCollection', features: [] });
+      drawTour();
       if (fly) map.flyTo({ center: [127.8, 36.2], zoom: 5.6 });
       return;
     }
@@ -126,6 +161,7 @@
       minx = Math.min(minx, p[1]); maxx = Math.max(maxx, p[1]); miny = Math.min(miny, p[0]); maxy = Math.max(maxy, p[0]);
     }
     map.getSource('pts').setData({ type: 'FeatureCollection', features: feats });
+    drawTour();
     if (fly && feats.length) map.fitBounds([[minx, miny], [maxx, maxy]], { padding: 40, maxZoom: 14, duration: 800 });
   }
 
@@ -205,7 +241,15 @@
     svg.onmouseleave = () => { tip.hidden = true; };
   }
 
+  $('tourlist').innerHTML = TOUR.types.map((n, i) => `<div class="chk"><input type="checkbox" id="tour${i}" data-i="${i}"${state.tour.has(i) ? ' checked' : ''}><label for="tour${i}"><span class="sw ring" style="border-color:${TOUR_COL[i]}"></span>${esc(n)}</label><span class="n">${fmt(TOUR.counts[i] || 0)}</span></div>`).join('');
+  $('tourlist').addEventListener('change', e => { const i = +e.target.dataset.i; e.target.checked ? state.tour.add(i) : state.tour.delete(i); drawTour(); });
+  $('ck-shade').onchange = e => { if (mapReady) map.setLayoutProperty('hillshade', 'visibility', e.target.checked ? 'visible' : 'none'); };
+  $('ck-3d').onchange = e => {
+    if (!mapReady) return;
+    if (e.target.checked) { map.setTerrain({ source: 'dem3d', exaggeration: 1.5 }); map.easeTo({ pitch: 55, duration: 800 }); }
+    else { map.setTerrain(null); map.easeTo({ pitch: 0, duration: 600 }); }
+  };
   const c = meta.coords, d = meta.dedupe;
-  $('foot').textContent = `숙박업과 관광숙박업에 함께 등록된 시설 ${fmt(d.removed)}건은 관광숙박업으로만 셌습니다. 좌표가 없는 야영장 ${fmt(c.dropped_campgrounds)}곳은 제외했고, 좌표가 없는 그 밖의 시설 ${fmt(c.no_coords)}곳은 통계에는 넣고 지도에서는 뺐습니다. 출처: 행정안전부 지방행정인허가 API(공공데이터포털).`;
+  $('foot').textContent = `숙박업과 관광숙박업에 함께 등록된 시설 ${fmt(d.removed)}건은 관광숙박업으로만 셌습니다. 좌표가 없는 야영장 ${fmt(c.dropped_campgrounds)}곳은 제외했고, 좌표가 없는 그 밖의 시설 ${fmt(c.no_coords)}곳은 통계에는 넣고 지도에서는 뺐습니다. 출처: 행정안전부 지방행정인허가 API, 한국관광공사 TourAPI(공공데이터포털), 지형 AWS Terrain Tiles.`;
   update(false);
 })();

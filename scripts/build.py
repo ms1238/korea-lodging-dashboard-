@@ -8,6 +8,7 @@ Steps
 5. Drop campground records without coordinates; give other records without coordinates
    the median position of the same 시군구+동 when possible.
 6. Write meta.json, cube.json (aggregates for charts) and pts/<sido>.json (points per province).
+7. Tourist attractions (TourAPI): tour/<sido>.json, already in WGS84.
 """
 import difflib
 import glob
@@ -37,6 +38,7 @@ SOURCES = {
 }
 CATEGORIES = ["숙박업", "관광숙박업", "외국인관광 도시민박업", "농어촌민박업", "관광펜션업", "한옥체험업", "야영장업"]
 CAMP = {"general_campgrounds", "auto_campgrounds"}
+TOUR_TYPES = [("12", "관광지"), ("14", "문화시설"), ("28", "레포츠")]
 STATUS = ["영업", "휴업", "폐업"]  # 폐업 also covers 취소·말소·만료 etc.
 
 SIDO_ALIASES = {
@@ -245,6 +247,38 @@ def main():
             "c": [round(statistics.median(p[0] for p in allc), 4), round(statistics.median(p[1] for p in allc), 4)] if allc else None,
         })
 
+    # tourist attractions, grouped by the same 시도/시군구 indices
+    os.makedirs(os.path.join(OUT, "tour"), exist_ok=True)
+    for f in glob.glob(os.path.join(OUT, "tour", "*.json")):
+        os.remove(f)
+    tour_by = defaultdict(list)
+    tour_n = Counter()
+    for ti, (ct, _) in enumerate(TOUR_TYPES):
+        path = os.path.join(RAW, f"tour_{ct}.jsonl")
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                try:
+                    lon, lat = float(rec.get("mapx")), float(rec.get("mapy"))
+                except (TypeError, ValueError):
+                    continue
+                if not (32.8 < lat < 38.9 and 124.2 < lon < 132.2):
+                    continue
+                sido, sgg = region(rec.get("addr1"), merged)
+                if sido not in sidos:
+                    continue
+                si = sidos.index(sido)
+                gi = sgg_of[sido].index(sgg) if sgg in sgg_of[sido] else -1
+                img = clean(rec.get("firstimage2") or rec.get("firstimage")).replace("http://", "https://")
+                tour_by[si].append([round(lat, 5), round(lon, 5), ti, gi, clean(rec.get("title")),
+                                    re.sub(r"^\S+\s", "", clean(rec.get("addr1"))), img, clean(rec.get("contentid"))])
+                tour_n[ti] += 1
+    for si in range(len(sidos)):
+        with open(os.path.join(OUT, "tour", f"{si}.json"), "w", encoding="utf-8") as f:
+            json.dump(tour_by.get(si, []), f, ensure_ascii=False, separators=(",", ":"))
+
     with open(os.path.join(OUT, "cube.json"), "w", encoding="utf-8") as f:
         json.dump([[*k, v] for k, v in sorted(cube.items())], f, separators=(",", ":"))
     meta = {
@@ -257,6 +291,7 @@ def main():
         "dedupe": {"removed": dup_removed, "examples": dup_examples},
         "coords": {"dropped_campgrounds": dropped_camp, "filled_from_dong": filled, "no_coords": nocoord},
         "unknown_region": unknown_region,
+        "tour": {"types": [n for _, n in TOUR_TYPES], "counts": [tour_n[i] for i in range(len(TOUR_TYPES))]},
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))

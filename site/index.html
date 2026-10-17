@@ -13,7 +13,7 @@
 <div class="wrap">
   <header>
     <h1>전국 숙박시설 현황</h1>
-    <p class="sub">행정안전부 인허가 API 8종(숙박업·관광숙박업·도시민박·농어촌민박·관광펜션·한옥체험·야영장 2종)을 매일 자동으로 모읍니다. <span id="updated"></span></p>
+    <p class="sub">행정안전부 인허가 API 8종과 한국관광공사 관광지 정보를 매일 자동으로 모읍니다. <span id="updated"></span></p>
   </header>
 
   <div class="controls" role="group" aria-label="필터">
@@ -31,6 +31,12 @@
       <div class="card rail">
         <div class="railhead"><h3>업종 (소분류)</h3><span><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">해제</button></span></div>
         <div id="typelist"></div>
+        <div class="railhead" style="margin-top:16px"><h3>관광 (TourAPI)</h3></div>
+        <div id="tourlist"></div>
+        <p class="note" style="margin-top:4px">광역을 고르면 표시됩니다.</p>
+        <div class="railhead" style="margin-top:16px"><h3>지형</h3></div>
+        <div class="chk"><input type="checkbox" id="ck-shade" checked><label for="ck-shade">산 음영</label><span></span></div>
+        <div class="chk"><input type="checkbox" id="ck-3d"><label for="ck-3d">3D 지형 (기울여 보기)</label><span></span></div>
       </div>
     </div>
   </section>
