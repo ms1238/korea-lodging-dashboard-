@@ -7,7 +7,8 @@ Steps
 4. Drop 숙박업 records that duplicate a 관광숙박업 record (same address + similar name).
 5. Drop campground records without coordinates; give other records without coordinates
    the median position of the same 시군구+동 when possible.
-6. Write meta.json, cube.json (aggregates for charts) and pts/<sido>.json (points per province).
+6. Write meta.json, cube.json / close.json (national aggregates by 인허가·폐업 year) and
+   pts/<sido>.json (every record of the province with 읍면동·리 indices, for detail views).
 7. Tourist attractions (TourAPI): tour/<sido>.json, already in WGS84.
 """
 import difflib
@@ -103,6 +104,26 @@ def region(addr, merged):
     return sido, sgg  # 일반구(예: 수원시 영통구)는 시 단위로 묶음
 
 
+def emd_ri(lot, road, sgg):
+    """법정 읍·면·동 and 리 from the lot address (road address as fallback for 동/읍/면)."""
+    toks = clean(lot).split(" ")[2:]
+    if toks and re.search(r"구$", toks[0]) and sgg.endswith("시"):
+        toks = toks[1:]  # 일반구 (예: 수원시 영통구)
+    emd = ri = None
+    if toks and re.search(r"(읍|면|동|가|로)$", toks[0]) and not re.match(r"^\d", toks[0]):
+        emd = toks[0]
+        if emd.endswith(("읍", "면")) and len(toks) > 1 and toks[1].endswith("리"):
+            ri = toks[1]
+    if not emd:
+        m = re.search(r"\s(\S+[읍면])\s", " " + clean(road) + " ")
+        if m:
+            emd = m.group(1)
+        else:
+            m = re.search(r"\(([^,()]+?[동가])(?:,|\))", clean(road))
+            emd = m.group(1) if m else None
+    return emd, ri
+
+
 def addr_key(addr):
     """Road address without unit/floor detail: '부산광역시 동구 중앙대로 179번길 17'."""
     a = clean(addr)
@@ -180,6 +201,8 @@ def main():
         r["sido"], r["sgg"] = region(r["road"] or r["lot"], merged)
         if r["sido"] and not r["sgg"]:
             r["sido"], r["sgg"] = region(r["lot"] or r["road"], merged)
+    for r in rows:
+        r["emd"], r["ri"] = emd_ri(r["lot"], r["road"], r["sgg"] or "") if r["sgg"] else (None, None)
     raw_counts = Counter(r["src"] for r in rows)
 
     rows, dup_removed, dup_examples = dedupe(rows)
@@ -221,22 +244,38 @@ def main():
         os.remove(f)
 
     cube = Counter()
+    close = Counter()
     sido_meta = []
     for si, s in enumerate(sidos):
         sggs = sgg_of[s]
         gi = {g: i for i, g in enumerate(sggs)}
-        pts, cen = [], defaultdict(list)
-        for r in rows:
-            if r["sido"] != s:
-                continue
+        recs = [r for r in rows if r["sido"] == s]
+        dongs = [sorted({r["emd"] for r in recs if r["sgg"] == g and r["emd"]}) for g in sggs]
+        di = [{d: i for i, d in enumerate(ds)} for ds in dongs]
+        ris = defaultdict(set)
+        for r in recs:
+            if r["emd"] and r["ri"]:
+                ris[(gi[r["sgg"]], di[gi[r["sgg"]]][r["emd"]])].add(r["ri"])
+        ris = {k: sorted(v) for k, v in ris.items()}
+        rix = {k: {x: i for i, x in enumerate(v)} for k, v in ris.items()}
+        out, cen = [], defaultdict(list)
+        for r in recs:
+            g = gi[r["sgg"]]
+            d = di[g].get(r["emd"], -1) if r["emd"] else -1
+            q = rix.get((g, d), {}).get(r["ri"], -1) if r["ri"] else -1
             y = int(r["date"][:4]) if r["date"][:4].isdigit() else 0
-            cube[(si, gi[r["sgg"]], tidx[r["type"]], r["status"], y)] += 1
+            cy = int(r["closed"][:4]) if r["status"] == 2 and r["closed"][:4].isdigit() else 0
+            cube[(si, g, tidx[r["type"]], r["status"], y)] += 1
+            if cy:
+                close[(si, g, tidx[r["type"]], cy)] += 1
+            lat, lon = r["ll"] if r["ll"] else (None, None)
+            out.append([lat, lon, tidx[r["type"]], g, d, q, r["status"], y, cy,
+                        r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0)])
             if r["ll"]:
-                pts.append([r["ll"][0], r["ll"][1], tidx[r["type"]], gi[r["sgg"]], r["status"], y,
-                            r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0)])
                 cen[r["sgg"]].append(r["ll"])
         with open(os.path.join(OUT, "pts", f"{si}.json"), "w", encoding="utf-8") as f:
-            json.dump(pts, f, ensure_ascii=False, separators=(",", ":"))
+            json.dump({"dongs": dongs, "ris": {f"{k[0]}:{k[1]}": v for k, v in ris.items()}, "rows": out},
+                      f, ensure_ascii=False, separators=(",", ":"))
         sgg_c = []
         for g in sggs:
             c = cen.get(g)
@@ -246,6 +285,8 @@ def main():
             "name": s, "n": sido_n[s], "sgg": sggs, "sggc": sgg_c,
             "c": [round(statistics.median(p[0] for p in allc), 4), round(statistics.median(p[1] for p in allc), 4)] if allc else None,
         })
+    with open(os.path.join(OUT, "close.json"), "w", encoding="utf-8") as f:
+        json.dump([[*k, v] for k, v in sorted(close.items())], f, separators=(",", ":"))
 
     # tourist attractions, grouped by the same 시도/시군구 indices
     os.makedirs(os.path.join(OUT, "tour"), exist_ok=True)

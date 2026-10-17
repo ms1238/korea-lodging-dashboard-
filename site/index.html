@@ -19,6 +19,8 @@
   <div class="controls" role="group" aria-label="필터">
     <label for="f-sido">광역<select id="f-sido"><option value="-1">전국</option></select></label>
     <label for="f-sgg">기초<select id="f-sgg" disabled><option value="-1">전체</option></select></label>
+    <label for="f-dong">읍·면·동<select id="f-dong" disabled><option value="-1">전체</option></select></label>
+    <label for="f-ri">리<select id="f-ri" disabled><option value="-1">전체</option></select></label>
     <label for="f-status">영업 상태<select id="f-status"><option value="0">영업</option><option value="1">휴업</option><option value="2">폐업</option><option value="-1">전체</option></select></label>
   </div>
 
@@ -55,6 +57,18 @@
   <section>
     <div class="sechead"><h2 id="rank-title">지역별 시설 수</h2></div>
     <div class="card"><div class="ranklist" id="rank"></div></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>휴업·폐업 현황</h2><p class="sub" id="st-sub"></p></div>
+    <div class="kpis" id="st-kpis"></div>
+    <div class="card"><div class="legend"><span><i style="background:var(--c0)"></i>인허가</span><span><i style="background:var(--closed)"></i>폐업</span></div>
+      <div class="chartwrap"><svg id="oc" viewBox="0 0 900 280" role="img" aria-label="연도별 인허가와 폐업"></svg><div class="tip" id="oc-tip" hidden></div></div>
+      <p class="note">인허가일자와 폐업일자 기준 최근 20년입니다.</p></div>
+    <div class="card"><h3 style="margin-bottom:10px">업종별 상태 구성</h3>
+      <div class="legend"><span><i style="background:var(--ok)"></i>영업</span><span><i style="background:var(--pause)"></i>휴업</span><span><i style="background:var(--closed)"></i>폐업</span></div>
+      <div class="sharelist" id="st-type"></div></div>
+    <div class="card"><h3 id="st-area-title" style="margin-bottom:10px"></h3><div class="sharelist" id="st-area"></div></div>
   </section>
 
   <footer class="note" id="foot"></footer>

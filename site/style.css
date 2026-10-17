@@ -2,12 +2,13 @@
 :root{
   --bg:#f3f4f2; --panel:#fbfbfa; --fg:#14202b; --muted:#566370; --line:#d9ddd9; --accent:#14202b;
   --c0:#2a78d6; --c1:#eb6834; --c2:#1baf7a; --c3:#eda100; --c4:#e87ba4; --c5:#008300; --c6:#6250d6;
+  --ok:#2f8a4e; --pause:#d99a00; --closed:#b8473e;
   --f-body:'Noto Sans KR',-apple-system,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
   --f-head:'Noto Serif KR','Batang',serif;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#0f151b; --panel:#171f27; --fg:#e8ecef; --muted:#a2adb7; --line:#2b3641; --accent:#e8ecef;
-  --c0:#3987e5; --c1:#d95926; --c2:#199e70; --c3:#c98500; --c4:#d55181; --c5:#008300; --c6:#9085e9; color-scheme:dark}}
+  --c0:#3987e5; --c1:#d95926; --c2:#199e70; --c3:#c98500; --c4:#d55181; --c5:#008300; --c6:#9085e9; --ok:#4caf6e; --pause:#e0a91c; --closed:#d9675c; color-scheme:dark}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 var(--f-body);
   padding:28px max(16px,env(safe-area-inset-right,0px)) 56px max(16px,env(safe-area-inset-left,0px))}
@@ -65,3 +66,7 @@ svg .grid{stroke:var(--line)}
 .maplibregl-popup-content small{color:#566370}
 @media (max-width:900px){.mapgrid{grid-template-columns:minmax(0,1fr)}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.rail{max-height:none}}
 @media (max-width:520px){.row{grid-template-columns:minmax(0,1fr) 96px;row-gap:2px}.row .track{grid-column:1 / -1;grid-row:2}}
+
+.stackbar{display:flex;height:14px;gap:2px;border-radius:0 3px 3px 0;overflow:hidden;min-width:0}
+.stackbar span{height:100%;min-width:1px}
+.kpis + .card,.card + .card{margin-top:0}
