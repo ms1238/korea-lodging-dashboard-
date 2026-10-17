@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>전국 숙박시설 현황</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@700&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>전국 숙박시설 현황</h1>
+    <p class="sub">행정안전부 인허가 API 8종(숙박업·관광숙박업·도시민박·농어촌민박·관광펜션·한옥체험·야영장 2종)을 매일 자동으로 모읍니다. <span id="updated"></span></p>
+  </header>
+
+  <div class="controls" role="group" aria-label="필터">
+    <label for="f-sido">광역<select id="f-sido"><option value="-1">전국</option></select></label>
+    <label for="f-sgg">기초<select id="f-sgg" disabled><option value="-1">전체</option></select></label>
+    <label for="f-status">영업 상태<select id="f-status"><option value="0">영업</option><option value="1">휴업</option><option value="2">폐업</option><option value="-1">전체</option></select></label>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section>
+    <div class="sechead"><h2>지도</h2><p class="sub" id="map-sub">전국 보기에서는 시군구별 원 크기가 시설 수입니다. 광역을 고르면 시설 하나하나가 점으로 나옵니다.</p></div>
+    <div class="mapgrid">
+      <div id="map" class="map" aria-label="숙박시설 지도"></div>
+      <div class="card rail">
+        <div class="railhead"><h3>업종 (소분류)</h3><span><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">해제</button></span></div>
+        <div id="typelist"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>업종별 비중</h2><p class="sub" id="share-sub"></p></div>
+    <div class="card"><div class="sharelist" id="share"></div><p class="note">세로선은 전국 비중입니다(지역을 골랐을 때).</p></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>연도별 인허가 추이</h2><p class="sub" id="year-sub"></p></div>
+    <div class="card"><div class="legend" id="year-legend"></div><div class="chartwrap"><svg id="year" viewBox="0 0 900 300" role="img" aria-label="연도별 인허가 수"></svg><div class="tip" id="year-tip" hidden></div></div>
+    <p class="note">인허가일자 기준입니다. 영업 상태 필터가 함께 적용됩니다.</p></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2 id="rank-title">지역별 시설 수</h2></div>
+    <div class="card"><div class="ranklist" id="rank"></div></div>
+  </section>
+
+  <footer class="note" id="foot"></footer>
+</div>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
