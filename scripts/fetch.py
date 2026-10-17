@@ -9,6 +9,7 @@ import math
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -23,7 +24,8 @@ ENDPOINTS = [
     "auto_campgrounds",          # 자동차야영장업
 ]
 BASE = "https://apis.data.go.kr/1741000/{}/info"
-PAGE_SIZE = 1000
+PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
+WORKERS = 6
 RAW_DIR = os.path.join(os.path.dirname(__file__), "..", "raw")
 
 
@@ -62,14 +64,15 @@ def main():
         sys.exit("DATA_GO_KR_KEY is not set")
     os.makedirs(RAW_DIR, exist_ok=True)
     for ep in sys.argv[1:] or ENDPOINTS:
-        body = get_page(key, ep, 1)
-        total = int(body.get("totalCount") or 0)
-        pages = max(1, math.ceil(total / PAGE_SIZE))
+        first = get_page(key, ep, 1)
+        total = int(first.get("totalCount") or 0)
+        size = int(first.get("numOfRows") or PAGE_SIZE)
+        pages = max(1, math.ceil(total / size))
+        with ThreadPoolExecutor(WORKERS) as pool:
+            rest = list(pool.map(lambda p: get_page(key, ep, p), range(2, pages + 1)))
         n = 0
         with open(os.path.join(RAW_DIR, f"{ep}.jsonl"), "w", encoding="utf-8") as f:
-            for p in range(1, pages + 1):
-                if p > 1:
-                    body = get_page(key, ep, p)
+            for body in [first] + rest:
                 for item in items_of(body):
                     f.write(json.dumps(item, ensure_ascii=False) + "\n")
                     n += 1
