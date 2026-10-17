@@ -7,7 +7,7 @@ Steps
 4. Drop 숙박업 records that duplicate a 관광숙박업 record (same address + similar name).
 5. Drop campground records without coordinates; give other records without coordinates
    the median position of the same 시군구+동 when possible.
-6. Write meta.json, cube.json / close.json (national aggregates by 인허가·폐업 year) and
+6. Write meta.json, cube.json / close.json (national aggregates; close rows carry 폐업 and 인허가 year) and
    pts/<sido>.json (every record of the province with 읍면동·리 indices, for detail views).
 7. Tourist attractions (TourAPI): tour/<sido>.json, already in WGS84.
 """
@@ -267,7 +267,7 @@ def main():
             cy = int(r["closed"][:4]) if r["status"] == 2 and r["closed"][:4].isdigit() else 0
             cube[(si, g, tidx[r["type"]], r["status"], y)] += 1
             if cy:
-                close[(si, g, tidx[r["type"]], cy)] += 1
+                close[(si, g, tidx[r["type"]], cy, y)] += 1
             lat, lon = r["ll"] if r["ll"] else (None, None)
             out.append([lat, lon, tidx[r["type"]], g, d, q, r["status"], y, cy,
                         r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0)])

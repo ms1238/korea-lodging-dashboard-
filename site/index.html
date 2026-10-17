@@ -28,6 +28,16 @@
 
   <section>
     <div class="sechead"><h2>지도</h2><p class="sub" id="map-sub">전국 보기에서는 시군구별 원 크기가 시설 수입니다. 광역을 고르면 시설 하나하나가 점으로 나옵니다.</p></div>
+    <div class="card tl">
+      <div class="tlrow">
+        <div class="seg" id="tl-seg" role="group" aria-label="타임라인 보기"><button data-m="off" aria-pressed="true">끄기</button><button data-m="new" aria-pressed="false">그 해 신규 인허가</button><button data-m="open" aria-pressed="false">그 해 운영 중</button></div>
+        <button class="btn" id="tl-play" disabled>▶ 재생</button>
+        <input type="range" id="tl-year" step="1" disabled aria-label="연도">
+        <b id="tl-label" class="tl-label"></b>
+      </div>
+      <h3 id="tl-chart-title" style="margin:10px 0 4px"></h3>
+      <svg id="tl-chart" viewBox="0 0 900 120" role="img" aria-label="연도별 추이"></svg>
+    </div>
     <div class="mapgrid">
       <div id="map" class="map" aria-label="숙박시설 지도"></div>
       <div class="card rail">

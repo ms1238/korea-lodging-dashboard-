@@ -1,7 +1,7 @@
 /* Dashboard logic. Data files (built by scripts/build.py):
    data/meta.json   – lists (types, 시도/시군구, centroids), build stats
    data/cube.json   – [sidoIdx, sggIdx, typeIdx, status, permitYear, count]  (national view)
-   data/close.json  – [sidoIdx, sggIdx, typeIdx, closeYear, count]           (national view)
+   data/close.json  – [sidoIdx, sggIdx, typeIdx, closeYear, permitYear, count] (national view)
    data/pts/<si>.json – {dongs:[[읍면동…] per 시군구], ris:{"g:d":[리…]},
                          rows:[[lat, lon, type, sgg, dong, ri, status, year, closeYear, name, addr, date, closed, approx]]}
    data/tour/<si>.json – [[lat, lon, tourType, sgg, title, addr, img, contentId]] */
@@ -21,7 +21,8 @@
   const TOUR_COL = ['#c4153c', '#8a4fb0', '#0e9aa7'];
   const yNow = new Date().getFullYear();
 
-  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]) };
+  const TL0 = 1990;
+  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow } };
   let D = null; // detail file of the selected 시도
   const detailCache = {}, tourCache = {};
   const loadDetail = si => (detailCache[si] ||= getJSON(`data/pts/${si}.json`, { dongs: [], ris: {}, rows: [] }));
@@ -94,7 +95,7 @@
     for (const r of D.rows) if (inDetail(r)) fn(r[2], r[6], r[7], childOfRow(r), 1);
   }
   function scanClose(fn) {
-    if (!D) { for (const r of close) fn(r[2], r[3], r[0], r[4]); return; }
+    if (!D) { for (const r of close) fn(r[2], r[3], r[0], r[5]); return; }
     for (const r of D.rows) if (r[8] && inDetail(r)) fn(r[2], r[8], childOfRow(r), 1);
   }
   function agg() {
@@ -165,6 +166,79 @@
       update(false);
     });
   }
+  /* ---------- timeline ---------- */
+  function tlRowOK(r) {
+    const { mode, year: Y } = state.tl;
+    if (mode === 'new') return r[7] === Y;
+    if (mode === 'open') return r[7] > 0 && r[7] <= Y && !(r[6] === 2 && (!r[8] || r[8] <= Y));
+    return state.status < 0 || r[6] === state.status;
+  }
+  function tlSeries() {
+    // newY[y]: 인허가 수, openY[y]: 그 해 말 운영 중(인허가 ≤ y, 폐업 안 했거나 폐업연도 > y). 폐업일 없는 폐업은 제외.
+    const n = yNow - TL0 + 1, newY = new Array(n).fill(0), diff = new Array(n + 1).fill(0);
+    const ix = y => Math.max(0, Math.min(n, y - TL0));
+    const span = (y, cy, w) => { if (!y || y > yNow) return; diff[ix(y)] += w; if (cy) diff[ix(cy)] -= w; };
+    if (!D) {
+      for (const r of cube) if (state.types.has(r[2]) && r[4] > 0) { if (r[4] >= TL0 && r[4] <= yNow) newY[r[4] - TL0] += r[5]; if (r[3] < 2) span(r[4], 0, r[5]); }
+      for (const r of close) if (state.types.has(r[2]) && r[4] > 0) span(r[4], r[3], r[5]);
+    } else {
+      for (const r of D.rows) {
+        if (!inDetail(r) || !state.types.has(r[2]) || !r[7]) continue;
+        if (r[7] >= TL0 && r[7] <= yNow) newY[r[7] - TL0]++;
+        if (r[6] === 2) { if (r[8]) span(r[7], r[8], 1); } else span(r[7], 0, 1);
+      }
+    }
+    const openY = []; let acc = 0;
+    for (let i = 0; i < n; i++) { acc += diff[i]; openY.push(acc); }
+    return { newY, openY };
+  }
+  let tlCache = null;
+  function drawTimeline() {
+    const { newY, openY } = tlCache = tlSeries(), { mode, year } = state.tl, i0 = year - TL0;
+    const vals = mode === 'new' ? newY : openY, n = vals.length;
+    const W = 900, H = 120, L = 52, R = 8, Tp = 10, B = 20, iw = W - L - R, ih = H - Tp - B, bw = iw / n;
+    const mx = Math.max(1, ...vals), step = niceStep(mx), top = Math.ceil(mx / step) * step;
+    let s = '';
+    for (let v = 0; v <= top; v += top) { const y = Tp + ih - v / top * ih; s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text x="${L - 8}" y="${y + 4}" text-anchor="end">${fmt(v)}</text>`; }
+    if (mode === 'new') vals.forEach((v, i) => { if (v) s += `<rect x="${L + i * bw + bw * .15}" y="${Tp + ih - v / top * ih}" width="${bw * .7}" height="${v / top * ih}" fill="var(--c0)" opacity="${i === i0 ? 1 : .55}"/>`; });
+    else {
+      const pts = vals.map((v, i) => `${L + i * bw + bw / 2},${Tp + ih - v / top * ih}`).join(' ');
+      s += `<polygon points="${L + bw / 2},${Tp + ih} ${pts} ${L + (n - .5) * bw},${Tp + ih}" fill="var(--c0)" opacity=".15"/><polyline points="${pts}" fill="none" stroke="var(--c0)" stroke-width="2"/>`;
+    }
+    for (let y = TL0; y <= yNow; y += 5) s += `<text x="${L + (y - TL0) * bw + bw / 2}" y="${H - 4}" text-anchor="middle">${y}</text>`;
+    if (mode !== 'off') { const x = L + i0 * bw + bw / 2; s += `<line x1="${x}" x2="${x}" y1="${Tp}" y2="${Tp + ih}" stroke="var(--fg)" stroke-width="1.5"/><circle cx="${x}" cy="${Tp + ih - vals[i0] / top * ih}" r="4" fill="var(--fg)"/>`; }
+    s += `<rect id="tl-hit" x="${L}" y="${Tp}" width="${iw}" height="${ih}" fill="transparent" style="cursor:pointer"/>`;
+    $('tl-chart').innerHTML = s;
+    $('tl-chart-title').textContent = mode === 'new' ? `${regionName()} 연도별 신규 인허가` : `${regionName()} 연도별 운영 중 시설 수 (그 해 말 기준)`;
+    $('tl-label').textContent = mode === 'off' ? '타임라인 꺼짐' : `${year}년 ${mode === 'new' ? '신규 인허가' : '운영 중'} ${fmt(vals[i0] || 0)}곳`;
+  }
+  function setTL(patch) {
+    Object.assign(state.tl, patch);
+    const on = state.tl.mode !== 'off';
+    document.querySelectorAll('#tl-seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === state.tl.mode)));
+    $('tl-year').disabled = $('tl-play').disabled = !on; $('tl-year').value = state.tl.year;
+    $('f-status').disabled = on;
+    $('map-sub').textContent = on ? '타임라인을 쓰는 동안 지도는 영업 상태 필터 대신 고른 연도 기준으로 보여줍니다.' : '전국 보기에서는 시군구별 원 크기가 시설 수입니다. 광역을 고르면 시설 하나하나가 점으로 나옵니다.';
+    if (!on) stopPlay();
+    drawTimeline(); drawMap(false);
+  }
+  let timer = null;
+  const stopPlay = () => { clearInterval(timer); timer = null; $('tl-play').textContent = '▶ 재생'; };
+  $('tl-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setTL({ mode: b.dataset.m }); });
+  $('tl-year').min = TL0; $('tl-year').max = yNow; $('tl-year').value = yNow;
+  $('tl-year').oninput = e => setTL({ year: +e.target.value });
+  $('tl-play').onclick = () => {
+    if (timer) { stopPlay(); return; }
+    if (state.tl.year >= yNow) setTL({ year: 2000 });
+    $('tl-play').textContent = '❚❚ 정지';
+    timer = setInterval(() => { if (state.tl.year >= yNow) { stopPlay(); return; } setTL({ year: state.tl.year + 1 }); }, 800);
+  };
+  $('tl-chart').addEventListener('click', e => {
+    if (state.tl.mode === 'off' || e.target.id !== 'tl-hit') return;
+    const r = e.target.getBoundingClientRect(), f = (e.clientX - r.left) / r.width;
+    setTL({ year: Math.max(TL0, Math.min(yNow, TL0 + Math.floor(f * (yNow - TL0 + 1)))) });
+  });
+
   async function drawTour() {
     if (!mapReady) return;
     if (state.sido < 0 || !state.tour.size) { map.getSource('tour').setData(empty); return; }
@@ -177,7 +251,13 @@
     if (!mapReady) return;
     if (!D) {
       const cnt = {};
-      for (const r of cube) if ((state.status < 0 || r[3] === state.status) && state.types.has(r[2])) cnt[r[0] + ':' + r[1]] = (cnt[r[0] + ':' + r[1]] || 0) + r[5];
+      const add = (r, n) => { cnt[r[0] + ':' + r[1]] = (cnt[r[0] + ':' + r[1]] || 0) + n; };
+      const { mode, year: Y } = state.tl;
+      for (const r of cube) {
+        if (!state.types.has(r[2])) continue;
+        if (mode === 'off' ? (state.status < 0 || r[3] === state.status) : mode === 'new' ? r[4] === Y : (r[3] < 2 && r[4] > 0 && r[4] <= Y)) add(r, r[5]);
+      }
+      if (mode === 'open') for (const r of close) if (state.types.has(r[2]) && r[4] > 0 && r[4] <= Y && r[3] > Y) add(r, r[5]);
       const feats = [];
       S.forEach((s, si) => s.sgg.forEach((g, gi) => { const c = s.sggc[gi], n = cnt[si + ':' + gi] || 0;
         if (c && n) feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [c[1], c[0]] }, properties: { n, si, gi } }); }));
@@ -191,7 +271,7 @@
     const feats = [];
     let minx = 180, miny = 90, maxx = -180, maxy = -90;
     for (const r of D.rows) {
-      if (r[0] == null || !inDetail(r) || !state.types.has(r[2]) || (state.status >= 0 && r[6] !== state.status)) continue;
+      if (r[0] == null || !inDetail(r) || !state.types.has(r[2]) || !tlRowOK(r)) continue;
       feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [r[1], r[0]] },
         properties: { t: r[2], c: catOf[r[2]], s: r[6], name: r[9], addr: r[10], date: r[11], closed: r[12], ap: r[13] } });
       minx = Math.min(minx, r[1]); maxx = Math.max(maxx, r[1]); miny = Math.min(miny, r[0]); maxy = Math.max(maxy, r[0]);
@@ -239,6 +319,7 @@
       || '<p class="note">더 작은 지역 단위가 없습니다.</p>';
 
     renderStatus(a, names);
+    drawTimeline();
     drawMap(fly);
   }
   $('rank').addEventListener('click', e => {
