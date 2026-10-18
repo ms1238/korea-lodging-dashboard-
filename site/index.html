@@ -82,7 +82,7 @@
 
   <section data-tab="trend">
     <div class="sechead"><h2>숙박업 동향 · 연도별 인허가</h2><p class="sub" id="year-sub"></p></div>
-    <div class="card"><div class="legend" id="year-legend"></div><div class="chartwrap"><svg id="year" viewBox="0 0 900 300" role="img" aria-label="연도별 인허가 수"></svg><div class="tip" id="year-tip" hidden></div></div>
+    <div class="card"><div class="tlrow" style="margin-bottom:8px"><div class="seg per-seg" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div><div class="legend" id="year-legend" style="margin:0"></div></div><div class="chartwrap"><svg id="year" viewBox="0 0 900 300" role="img" aria-label="연도별 인허가 수"></svg><div class="tip" id="year-tip" hidden></div></div>
     <p class="note">인허가일자 기준입니다. 영업 상태 필터가 함께 적용됩니다.</p></div>
   </section>
 
@@ -94,9 +94,9 @@
   <section data-tab="trend">
     <div class="sechead"><h2>휴업·폐업 현황</h2><p class="sub" id="st-sub"></p></div>
     <div class="kpis" id="st-kpis"></div>
-    <div class="card"><div class="legend"><span><i style="background:var(--c0)"></i>인허가</span><span><i style="background:var(--closed)"></i>폐업</span></div>
+    <div class="card"><div class="tlrow" style="margin-bottom:8px"><div class="seg per-seg" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div><div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>인허가</span><span><i style="background:var(--closed)"></i>폐업</span></div></div>
       <div class="chartwrap"><svg id="oc" viewBox="0 0 900 280" role="img" aria-label="연도별 인허가와 폐업"></svg><div class="tip" id="oc-tip" hidden></div></div>
-      <p class="note">인허가일자와 폐업일자 기준 최근 20년입니다.</p></div>
+      <p class="note">인허가일자와 폐업일자 기준입니다. 분기별은 최근 5년만 보여줍니다.</p></div>
     <div class="card"><h3 style="margin-bottom:10px">업종별 상태 구성</h3>
       <div class="legend"><span><i style="background:var(--ok)"></i>영업</span><span><i style="background:var(--pause)"></i>휴업</span><span><i style="background:var(--closed)"></i>폐업</span></div>
       <div class="sharelist" id="st-type"></div></div>
@@ -115,7 +115,7 @@
       <p class="note" id="vt-note"></p>
     </div>
     <div class="card"><button class="btn csv" data-csv="cmp-table" data-name="지역별_지표">CSV</button><h3 style="margin-bottom:10px">지역별 지표</h3><div class="tablewrap"><table id="cmp-table"></table></div></div>
-    <div class="card"><h3 style="margin-bottom:10px">연도별 신규 인허가 (선택 업종)</h3><div class="legend" id="cp-legend"></div>
+    <div class="card"><div class="tlrow" style="margin-bottom:8px"><div class="seg per-seg" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div><h3>신규 인허가 (선택 업종)</h3></div><div class="legend" id="cp-legend"></div>
       <div class="chartwrap"><svg id="cp" viewBox="0 0 900 240" role="img" aria-label="지역별 연도별 인허가"></svg><div class="tip" id="cp-tip" hidden></div></div></div>
   </section>
 

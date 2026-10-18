@@ -15,7 +15,8 @@ Steps
 9. Visitors (KTO DataLab): 외지인 and 외국인 visitors per 시도 and 시군구 over the latest 12 months (meta.json)
    and per quarter since 2018 (visits.json).
 10. Foreign arrivals (한국문화관광연구원 출입국관광통계): national monthly totals and the top nationalities (arrivals.json).
-11. National parks: TourAPI attractions named "…국립공원" (plus 한라산, listed without the word) for the map (parks.json).
+11. National parks: TourAPI attractions named "…국립공원" (plus 한라산·금정산, listed without the word) for the map (parks.json).
+12. cubeq.json / closeq.json: the last six years by quarter (year*10 + quarter) for the quarterly charts.
 """
 import difflib
 import glob
@@ -314,20 +315,21 @@ def add_visitors(sidos, sgg_of, sido_meta):
 
 def write_parks():
     """TourAPI has no national-park category of its own, so take attractions whose title names a 국립공원
-    (skipping parking lots, campsites, centres and viewpoints). 한라산국립공원 appears only as "한라산"."""
+    (skipping parking lots, campsites, centres and viewpoints). Some parks appear only under the mountain's name."""
+    aliases = {"한라산": "한라산국립공원", "금정산": "금정산국립공원"}  # 금정산: 24th national park, in force from 2026-03-03
     seen, out = set(), []
     for path in sorted(glob.glob(os.path.join(RAW, "tour_*.jsonl"))):
         for line in open(path, encoding="utf-8"):
             rec = json.loads(line)
             title = clean(rec.get("title"))
             t = title.replace(" ", "")
-            if not ("국립공원" in t or t == "한라산") or re.search(r"(사무소|탐방안내소|주차장|야영장|센터|전망대|캠핑|박물관)", t):
+            if not ("국립공원" in t or t in aliases) or re.search(r"(사무소|탐방안내소|주차장|야영장|센터|전망대|캠핑|박물관)", t):
                 continue
             if rec.get("contentid") in seen or not rec.get("mapx"):
                 continue
             seen.add(rec.get("contentid"))
             m = re.match(r"국립공원공단(.+?)생태탐방원", t)  # e.g. 국립공원공단 한려해상생태탐방원
-            park = "한라산국립공원" if t == "한라산" else m.group(1) + "국립공원" if m else re.sub(r"국립공원.*", "국립공원", t)
+            park = aliases.get(t) or (m.group(1) + "국립공원" if m else re.sub(r"국립공원.*", "국립공원", t))
             out.append([round(float(rec["mapy"]), 5), round(float(rec["mapx"]), 5), park, title])
     with open(os.path.join(OUT, "parks.json"), "w", encoding="utf-8") as f:
         json.dump(sorted(out, key=lambda r: r[2]), f, ensure_ascii=False, separators=(",", ":"))
@@ -402,6 +404,11 @@ def main():
 
     cube = Counter()
     close = Counter()
+    cubeq, closeq = Counter(), Counter()
+    Q_FROM = datetime.now(KST).year - 5
+
+    def quarter(d):
+        return (int(d[5:7]) - 1) // 3 + 1 if d[5:7].isdigit() and 1 <= int(d[5:7]) <= 12 else 1
     minbak = Counter()
     sido_meta = []
     for si, s in enumerate(sidos):
@@ -424,6 +431,10 @@ def main():
             y = int(r["date"][:4]) if r["date"][:4].isdigit() else 0
             cy = int(r["closed"][:4]) if r["status"] == 2 and r["closed"][:4].isdigit() else 0
             cube[(si, g, tidx[r["type"]], r["status"], y)] += 1
+            if y >= Q_FROM:
+                cubeq[(si, g, tidx[r["type"]], r["status"], y * 10 + quarter(r["date"]))] += 1
+            if cy >= Q_FROM:
+                closeq[(si, g, tidx[r["type"]], cy * 10 + quarter(r["closed"]))] += 1
             if cy:
                 close[(si, g, tidx[r["type"]], cy, y)] += 1
             if r["zone"] >= 0:
@@ -450,6 +461,9 @@ def main():
             sido_meta[-1]["groups"] = [{"name": "광주시", "gis": [sggs.index(g) for g in GWANGJU_GU if g in sggs]}]
     with open(os.path.join(OUT, "close.json"), "w", encoding="utf-8") as f:
         json.dump([[*k, v] for k, v in sorted(close.items())], f, separators=(",", ":"))
+    for name, data in (("cubeq.json", cubeq), ("closeq.json", closeq)):
+        with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
+            json.dump([[*k, v] for k, v in sorted(data.items())], f, separators=(",", ":"))
     with open(os.path.join(OUT, "minbak.json"), "w", encoding="utf-8") as f:
         json.dump([[*k, v] for k, v in sorted(minbak.items())], f, separators=(",", ":"))
 

@@ -15,8 +15,8 @@
   const esc = s => String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const getJSON = (u, fb) => fetch(u).then(r => r.ok ? r.json() : fb).catch(() => fb);
-  const [meta, cube, close, minbak, visits, arrivals] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []),
-    getJSON('data/minbak.json', []), getJSON('data/visits.json', null), getJSON('data/arrivals.json', null)]);
+  const [meta, cube, close, minbak, visits, arrivals, cubeq, closeq] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []),
+    getJSON('data/minbak.json', []), getJSON('data/visits.json', null), getJSON('data/arrivals.json', null), getJSON('data/cubeq.json', []), getJSON('data/closeq.json', [])]);
   const T = meta.types, CATS = meta.categories, S = meta.sido, ST = meta.status;
   const catOf = T.map(t => CATS.indexOf(t.cat));
   const col = c => css('--c' + c);
@@ -26,7 +26,7 @@
   const yNow = new Date().getFullYear();
 
   const TL0 = 1990;
-  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'out' : 'tour', cmp: [], vt: { per: 'y', kind: '0' }, grp: -1 };
+  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'out' : 'tour', cmp: [], vt: { per: 'y', kind: '0' }, grp: -1, per: 'y' };
   let D = null; // detail file of the selected 시도, or the merged rows of the 합쳐 보기 regions
   let Dbase = null; // detail file of the selected 시도 (kept while D holds merged rows)
   const csvStore = {}; // CSV 내려받기용: id -> [머리글, 행들]
@@ -140,6 +140,21 @@
     if (!D) { for (const r of close) fn(r[2], r[3], r[0], r[5]); return; }
     for (const r of D.rows) if (r[8] && inDetail(r)) fn(r[2], r[8], childOfRow(r), 1);
   }
+  /* 기간: 연도별(최근 20년) 또는 분기별(최근 5년). 분기 키 = 연도*10 + 분기 (예: 20243) */
+  const curQ = Math.ceil((new Date().getMonth() + 1) / 3);
+  function periods() {
+    const keys = [];
+    if (state.per === 'q') { for (let y = yNow - 4; y <= yNow; y++) for (let q = 1; q <= 4; q++) if (y < yNow || q <= curQ) keys.push(y * 10 + q); }
+    else for (let y = yNow - 19; y <= yNow; y++) keys.push(y);
+    const q = state.per === 'q', last = keys[keys.length - 1];
+    return { keys, q, label: k => q ? `${String(k).slice(2, 4)}Q${k % 10}` : String(k), title: k => q ? `${Math.floor(k / 10)}년 ${k % 10}분기` : `${k}년`,
+      partial: k => k === last, span: q ? '최근 5년 · 분기별' : '최근 20년' };
+  }
+  const qk = d => d && d.length >= 7 ? +d.slice(0, 4) * 10 + Math.ceil(+d.slice(5, 7) / 3) : 0;
+  function scanQ(open, closed) { // 분기별 인허가·폐업 (전국 보기는 cubeq/closeq, 지역을 고르면 상세 행의 날짜)
+    if (!D) { for (const r of cubeq) open(r[2], r[3], r[4], r[5]); for (const r of closeq) closed(r[2], r[3], r[4]); return; }
+    for (const r of D.rows) if (inDetail(r)) { open(r[2], r[6], qk(r[11]), 1); if (r[6] === 2 && r[12]) closed(r[2], qk(r[12]), 1); }
+  }
   function agg() {
     const a = { total: 0, byType: T.map(() => 0), allType: T.map(() => 0), byYear: {}, byArea: {}, st: [0, 0, 0],
       stType: T.map(() => [0, 0, 0]), stArea: {}, openY: {}, closeY: {} };
@@ -156,6 +171,14 @@
       if (y) (a.byYear[y] ||= CATS.map(() => 0))[catOf[t]] += w;
     });
     scanClose((t, cy, ch, w) => { if (state.types.has(t)) a.closeY[cy] = (a.closeY[cy] || 0) + w; });
+    // 차트용 기간별 값: 연도별이면 위 값을 그대로, 분기별이면 따로 셈
+    a.byP = a.byYear; a.openP = a.openY; a.closeP = a.closeY;
+    if (state.per === 'q') {
+      a.byP = {}; a.openP = {}; a.closeP = {};
+      scanQ((t, s, k, w) => { if (!state.types.has(t) || !k) return; a.openP[k] = (a.openP[k] || 0) + w;
+        if (state.status < 0 || s === state.status) (a.byP[k] ||= CATS.map(() => 0))[catOf[t]] += w; },
+      (t, k, w) => { if (state.types.has(t) && k) a.closeP[k] = (a.closeP[k] || 0) + w; });
+    }
     return a;
   }
   const natType = () => { const b = T.map(() => 0); let n = 0; for (const r of cube) if (state.status < 0 || r[3] === state.status) { b[r[2]] += r[5]; n += r[5]; } return [b, n]; };
@@ -381,7 +404,7 @@
     csvSet('share', ['업종', '시설 수', '비중(%)'], order.map(i => [T[i].name, a.byType[i], a.total ? (a.byType[i] / a.total * 100).toFixed(2) : '']));
     $('share-sub').textContent = topT && a.total ? `${regionName()}(${stLabel}) ${fmt(a.total)}곳 중 ${T[topT[1]].name} 비중이 ${pct(topT[0], a.total)}로 가장 큽니다.` : '';
 
-    drawYears(a.byYear);
+    drawYears(a.byP);
 
     // ranking of child areas
     const ranks = Object.entries(a.byArea).sort((x, y) => y[1] - x[1]);
@@ -413,7 +436,7 @@
     $('st-kpis').innerHTML = ST.map((s, i) => `<div class="kpi"><b style="color:${STC[i]}">${fmt(a.st[i])}</b><span>${s} (${pct(a.st[i], tot)})</span></div>`).join('')
       + `<div class="kpi"><b>${pct(a.st[2], a.st[0] + a.st[2])}</b><span>누적 폐업률 (폐업 ÷ 영업+폐업)</span></div>`;
     $('st-sub').textContent = `${regionName()} · 선택한 업종 기준. 이 칸은 상단의 영업 상태 필터와 관계없이 세 상태를 모두 보여줍니다.`;
-    drawOpenClose(a.openY, a.closeY);
+    drawOpenClose(a.openP, a.closeP);
     const order = T.map((_, i) => i).filter(i => state.types.has(i) && a.stType[i].some(Boolean))
       .sort((x, y) => (a.stType[y][2] + a.stType[y][1]) - (a.stType[x][2] + a.stType[x][1]));
     $('st-type').innerHTML = order.map(i => stackRow(T[i].name, a.stType[i], `var(--c${catOf[i]})`)).join('') || '<p class="note">자료가 없습니다.</p>';
@@ -520,7 +543,7 @@
     attachTip(svg, tip, i => `<b>${esc(labels[i])}${opt.partial?.[i] ? ' (진행 중)' : ''}</b><br>` + series.map(se => `<span class="sw" style="background:${se.color}"></span>${esc(se.name)} ${se.vals[i] == null ? '자료 없음' : opt.tip(se.vals[i])}`).join('<br>'));
   }
   function regStats(r) {
-    const Y3 = yNow - 3, inW = y => y > Y3 && y <= yNow, st = [0, 0, 0], tr = { nw: 0, cl: 0, base: 0 }, py = {};
+    const Y3 = yNow - 3, inW = y => y > Y3 && y <= yNow, st = [0, 0, 0], tr = { nw: 0, cl: 0, base: 0 }, py = {}, pq = {};
     for (const c of cube) {
       if (!state.types.has(c[2]) || !inReg(r, c[0], c[1])) continue;
       st[c[3]] += c[5];
@@ -528,6 +551,7 @@
       if (inW(c[4])) tr.nw += c[5];
       if (c[3] < 2 && c[4] && c[4] <= Y3) tr.base += c[5];
     }
+    if (state.per === 'q') for (const c of cubeq) if (state.types.has(c[2]) && inReg(r, c[0], c[1])) pq[c[4]] = (pq[c[4]] || 0) + c[5];
     for (const c of close) {
       if (!state.types.has(c[2]) || !inReg(r, c[0], c[1])) continue;
       if (inW(c[3])) tr.cl += c[5];
@@ -537,7 +561,7 @@
     for (const m of minbak) if (m[2] === 0 && inReg(r, m[0], m[1])) mb += m[5];
     const sumV = vs => vs.reduce((a, v) => v ? [a[0] + v[0], a[1] + v[1]] : a, [0, 0]);
     const v = r.si < 0 ? sumV(S.map(s => s.vis)) : r.grp != null ? sumV(gisOf(r).map(gi => (S[r.si].visg || [])[gi])) : (r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]);
-    return { st, tr, py, mb, v };
+    return { st, tr, py: state.per === 'q' ? pq : py, mb, v };
   }
   function renderCompare() {
     const R = regions(), cols = R.map((_, i) => state.cmp.length ? `var(--c${i})` : 'var(--c0)');
@@ -567,10 +591,10 @@
         return [regLabel(r), x.st[0], x.v ? x.v[0] : '', x.v ? x.v[1] : '', ...[0, 1].map(j => x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(2) : ''),
           x.tr.base ? ((x.tr.nw - x.tr.cl) / x.tr.base * 100).toFixed(2) : '', x.st[0] + x.st[2] ? (x.st[2] / (x.st[0] + x.st[2]) * 100).toFixed(2) : '', x.mb]; }));
     // 연도별 신규 인허가
-    const years = []; for (let y = yNow - 19; y <= yNow; y++) years.push(y);
+    const P = periods(), years = P.keys;
     $('cp-legend').innerHTML = legend;
-    lineChart($('cp'), $('cp-tip'), years.map(String), R.map((r, i) => ({ name: regLabel(r), color: cols[i], vals: years.map(y => stats[i].py[y] || 0) })),
-      { partial: years.map(y => y === yNow), div: 1, unit: fmt, tip: v => fmt(v) + '곳' });
+    lineChart($('cp'), $('cp-tip'), years.map(P.label), R.map((r, i) => ({ name: regLabel(r), color: cols[i], vals: years.map(y => stats[i].py[y] || 0) })),
+      { partial: years.map(P.partial), div: 1, unit: fmt, tip: v => fmt(v) + '곳' });
   }
   $('vt-per').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.vt.per = b.dataset.v; renderCompare(); } });
   $('vt-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.vt.kind = b.dataset.v; renderCompare(); } });
@@ -848,8 +872,7 @@
     svg.onmouseleave = () => { tip.hidden = true; };
   }
   function drawYears(byYear) {
-    const Y0 = yNow - 19, years = [];
-    for (let y = Y0; y <= yNow; y++) years.push(y);
+    const P = periods(), years = P.keys;
     const m = years.map(y => byYear[y] || CATS.map(() => 0)), tot = m.map(r => r.reduce((p, q) => p + q, 0));
     const step = niceStep(Math.max(1, ...tot)), top = Math.ceil(Math.max(1, ...tot) / step) * step;
     const L = 52, R = 8, Tp = 18, B = 26, W = 900, H = 300, iw = W - L - R, ih = H - Tp - B, bw = iw / years.length;
@@ -859,17 +882,16 @@
       m[i].forEach((c, ci) => { if (!c) return; const y = Tp + ih - (acc + c) / top * ih; acc += c;
         s += `<rect x="${x}" y="${y}" width="${w}" height="${Math.max(c / top * ih, .5)}" fill="var(--c${ci})" stroke="var(--panel)" stroke-width="1.5"/>`; });
       if (tot[i]) s += `<text class="tot" x="${x + w / 2}" y="${Tp + ih - tot[i] / top * ih - 4}" text-anchor="middle">${fmt(tot[i])}</text>`;
-      if (i % 2 === 0 || i === years.length - 1) s += `<text x="${x + w / 2}" y="${H - 8}" text-anchor="middle">${yv === yNow ? yv + '*' : yv}</text>`;
+      if ((years.length - 1 - i) % 2 === 0) s += `<text x="${x + w / 2}" y="${H - 8}" text-anchor="middle">${P.label(yv)}${P.partial(yv) ? '*' : ''}</text>`;
       s += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
     });
     $('year').innerHTML = s;
     $('year-legend').innerHTML = CATS.map((c, i) => `<span><i style="background:var(--c${i})"></i>${esc(c)}</span>`).join('');
-    $('year-sub').textContent = `${regionName()} · 최근 20년 · ${yNow}년은 진행 중`;
-    attachTip($('year'), $('year-tip'), i => `<b>${years[i]}년 ${fmt(tot[i])}곳</b><br>` + m[i].map((c, ci) => c ? `<span class="sw" style="background:var(--c${ci})"></span>${esc(CATS[ci])} ${fmt(c)}<br>` : '').join(''));
+    $('year-sub').textContent = `${regionName()} · ${P.span} · ${P.q ? '이번 분기' : yNow + '년'}는 진행 중`;
+    attachTip($('year'), $('year-tip'), i => `<b>${P.title(years[i])} ${fmt(tot[i])}곳</b><br>` + m[i].map((c, ci) => c ? `<span class="sw" style="background:var(--c${ci})"></span>${esc(CATS[ci])} ${fmt(c)}<br>` : '').join(''));
   }
   function drawOpenClose(openY, closeY) {
-    const Y0 = yNow - 19, years = [];
-    for (let y = Y0; y <= yNow; y++) years.push(y);
+    const P = periods(), years = P.keys;
     const o = years.map(y => openY[y] || 0), c = years.map(y => closeY[y] || 0);
     const mx = Math.max(1, ...o, ...c), step = niceStep(mx), top = Math.ceil(mx / step) * step;
     const L = 52, R = 8, Tp = 18, B = 26, W = 900, H = 280, iw = W - L - R, ih = H - Tp - B, bw = iw / years.length;
@@ -878,12 +900,20 @@
       const w = bw * .34, x1 = L + i * bw + bw * .14, x2 = x1 + w + 1;
       if (o[i]) s += `<rect x="${x1}" y="${Tp + ih - o[i] / top * ih}" width="${w}" height="${o[i] / top * ih}" fill="var(--c0)" rx="1.5"/>`;
       if (c[i]) s += `<rect x="${x2}" y="${Tp + ih - c[i] / top * ih}" width="${w}" height="${c[i] / top * ih}" fill="var(--closed)" rx="1.5"/>`;
-      if (i % 2 === 0 || i === years.length - 1) s += `<text x="${L + i * bw + bw / 2}" y="${H - 8}" text-anchor="middle">${yv === yNow ? yv + '*' : yv}</text>`;
+      if ((years.length - 1 - i) % 2 === 0) s += `<text x="${L + i * bw + bw / 2}" y="${H - 8}" text-anchor="middle">${P.label(yv)}${P.partial(yv) ? '*' : ''}</text>`;
       s += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
     });
     $('oc').innerHTML = s;
-    attachTip($('oc'), $('oc-tip'), i => `<b>${years[i]}년</b><br><span class="sw" style="background:var(--c0)"></span>인허가 ${fmt(o[i])}<br><span class="sw" style="background:var(--closed)"></span>폐업 ${fmt(c[i])}<br>순증 ${o[i] - c[i] >= 0 ? '+' : ''}${fmt(o[i] - c[i])}`);
+    attachTip($('oc'), $('oc-tip'), i => `<b>${P.title(years[i])}</b><br><span class="sw" style="background:var(--c0)"></span>인허가 ${fmt(o[i])}<br><span class="sw" style="background:var(--closed)"></span>폐업 ${fmt(c[i])}<br>순증 ${o[i] - c[i] >= 0 ? '+' : ''}${fmt(o[i] - c[i])}`);
   }
+
+  /* ---------- 연도별 / 분기별 (인허가 차트들이 함께 바뀜) ---------- */
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.per-seg button'); if (!b || b.dataset.v === state.per) return;
+    state.per = b.dataset.v;
+    document.querySelectorAll('.per-seg button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === state.per)));
+    update(false);
+  });
 
   /* ---------- 탭 ---------- */
   const TABS = ['now', 'demand', 'trend', 'minbak', 'compare'];
