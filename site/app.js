@@ -177,6 +177,23 @@
       const firstSymbol = (map.getStyle().layers.find(l => l.type === 'symbol') || {}).id;
       map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem', paint: {
         'hillshade-exaggeration': .5, 'hillshade-shadow-color': '#46525c', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#5b6b5a' } }, firstSymbol);
+      // 교통·자연: 배경지도 벡터 타일(OpenMapTiles 스키마)의 공항·철도, TourAPI의 국립공원
+      const vec = Object.entries(map.getStyle().sources).find(([, v]) => v.type === 'vector')?.[0];
+      if (vec) {
+        map.addLayer({ id: 'rail-line', type: 'line', source: vec, 'source-layer': 'transportation',
+          filter: ['all', ['match', ['get', 'class'], ['rail', 'transit'], true, false], ['!', ['has', 'service']]],
+          paint: { 'line-color': '#8e44ad', 'line-opacity': .55, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, 2] } }, firstSymbol);
+        map.addLayer({ id: 'rail-st', type: 'circle', source: vec, 'source-layer': 'poi', minzoom: 9, filter: ['==', ['get', 'class'], 'railway'],
+          paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.5, 14, 5], 'circle-color': '#8e44ad', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } });
+        map.addLayer({ id: 'airports', type: 'circle', source: vec, 'source-layer': 'aerodrome_label', filter: ['has', 'iata'],
+          paint: { 'circle-radius': 6, 'circle-color': '#1f3a93', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+      }
+      map.addSource('parks', { type: 'geojson', data: empty });
+      getJSON('data/parks.json', []).then(rows => { map.getSource('parks').setData({ type: 'FeatureCollection', features: rows.map(r => ({
+        type: 'Feature', geometry: { type: 'Point', coordinates: [r[1], r[0]] }, properties: { park: r[2], title: r[3] } })) });
+        $('n-park').textContent = new Set(rows.map(r => r[2])).size + '곳'; });
+      map.addLayer({ id: 'parks', type: 'circle', source: 'parks', paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 4, 12, 7], 'circle-color': '#2e7d32', 'circle-opacity': .85, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
       map.addSource('areas', { type: 'geojson', data: empty });
       map.addLayer({ id: 'areas', type: 'circle', source: 'areas', paint: {
         'circle-radius': ['interpolate', ['linear'], ['sqrt', ['get', 'n']], 0, 0, 10, 6, 60, 26],
@@ -201,7 +218,15 @@
           `${p.img ? `<img src="${esc(p.img)}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(p.name)}</b><br>${esc(TOUR.types[p.t])}<br>${esc(p.addr)}<br>${p.n3 != null ? `영업 숙소 반경 1km ${fmt(p.n1)}곳 · 3km ${fmt(p.n3)}곳<br>` : ''}<small>출처: 한국관광공사 TourAPI</small>`).addTo(map);
       });
       map.on('click', 'areas', async e => { const p = e.features[0].properties; await setSido(p.si); setSgg(p.gi); });
-      for (const l of ['pts', 'areas', 'tour']) {
+      const pop = (ll, html) => new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(ll).setHTML(html).addTo(map);
+      map.on('click', 'parks', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.park)}</b><br>${esc(p.title)}<br><small>출처: 한국관광공사 TourAPI</small>`); });
+      map.on('click', 'airports', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name)}</b>${p.iata ? ` (${esc(p.iata)})` : ''}<br><small>출처: OpenStreetMap</small>`); });
+      map.on('click', 'rail-st', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
+      for (const [ck, ls] of [['ck-park', ['parks']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st']]]) {
+        const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
+        $(ck).onchange = sync; sync();
+      }
+      for (const l of ['pts', 'areas', 'tour', 'parks', 'airports', 'rail-st']) {
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
@@ -367,6 +392,7 @@
 
     renderStatus(a, names);
     renderCompare();
+    renderDemandVis();
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
@@ -455,12 +481,12 @@
     for (const v of visits.sido) if (v) for (let j = 0; j < 2; j++) v[j].forEach((x, i) => { if (x != null) out[j][i] = (out[j][i] || 0) + x; });
     return out;
   };
-  function visPeriods() {
+  function visPeriods(per = state.vt.per) {
     // 분기 또는 연도 단위로 묶고, 자료가 95% 미만인 기간(진행 중)을 표시
     const q = visits.q, daysIn = k => { const y = +k.slice(0, 4), leap = (y % 4 === 0) ? 1 : 0;
       return k.length === 4 ? 365 + leap : [90 + leap, 91, 92, 92][+k[5] - 1]; };
     const keys = [], idx = [];
-    q.forEach((k, i) => { const key = state.vt.per === 'y' ? k.slice(0, 4) : k; let j = keys.indexOf(key); if (j < 0) { keys.push(key); idx.push([]); j = keys.length - 1; } idx[j].push(i); });
+    q.forEach((k, i) => { const key = per === 'y' ? k.slice(0, 4) : k; let j = keys.indexOf(key); if (j < 0) { keys.push(key); idx.push([]); j = keys.length - 1; } idx[j].push(i); });
     const partial = keys.map((k, j) => idx[j].reduce((a, i) => a + visits.qdays[i], 0) < daysIn(k) * .95);
     return { keys, idx, partial };
   }
@@ -612,6 +638,39 @@
     csvSet('arr-top', ['국적', '최근 12개월', '직전 12개월', '증감률(%)', '비중(%)'], rows.map(r => [r.name, r.v, r.p, r.p ? ((r.v / r.p - 1) * 100).toFixed(2) : '', (r.v / l12 * 100).toFixed(2)]));
   }
   const pc1 = x => (x * 100).toFixed(1) + '%';
+
+  /* ---------- 외지인·외국인 방문객 추이 (지금 고른 지역, 누적 막대 + 외국인 비중) ---------- */
+  let dvPer = 'y';
+  function renderDemandVis() {
+    if (!visits) { $('dv-sec').hidden = true; return; }
+    const regs = U ? U.regs : [curReg()];
+    const sum = [visits.q.map(() => null), visits.q.map(() => null)];
+    for (const r of regs) { const v = visOf(r); if (v) for (let j = 0; j < 2; j++) v[j].forEach((x, i) => { if (x != null) sum[j][i] = (sum[j][i] || 0) + x; }); }
+    const P = visPeriods(dvPer), agg = j => P.idx.map(ii => ii.some(i => sum[j][i] == null) ? null : ii.reduce((a, i) => a + sum[j][i], 0));
+    const b = agg(0), c = agg(1), labels = P.keys.map(k => dvPer === 'y' ? k : `${k.slice(2, 4)}.${k.slice(5)}Q`);
+    document.querySelectorAll('#dv-per button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === dvPer)));
+    const W = 900, H = 300, L = 64, R = 12, Tp = 22, B = 26, iw = W - L - R, ih = H - Tp - B, n = labels.length, bw = iw / n;
+    const mx = Math.max(1, ...b.map((x, i) => (x || 0) + (c[i] || 0))), step = niceStep(mx / 1e4) * 1e4, top = Math.ceil(mx / step) * step;
+    const Y = v => Tp + ih - v / top * ih, unit = v => !v ? '0' : v >= 1e8 ? (v / 1e8).toFixed(v % 1e8 ? 1 : 0) + '억' : fmt(Math.round(v / 1e4)) + '만';
+    let svg = '';
+    for (let v = 0; v <= top; v += step) svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${unit(v)}</text>`;
+    const every = Math.ceil(n / 12);
+    labels.forEach((l, i) => {
+      const x = L + i * bw + bw * .15, w = bw * .7, op = P.partial[i] ? .45 : 1;
+      if (b[i]) svg += `<rect x="${x}" y="${Y(b[i])}" width="${w}" height="${Tp + ih - Y(b[i])}" fill="var(--c0)" opacity="${op}"/>`;
+      if (b[i] && c[i]) svg += `<rect x="${x}" y="${Y(b[i] + c[i])}" width="${w}" height="${Y(b[i]) - Y(b[i] + c[i])}" fill="var(--c1)" opacity="${op}"/>`;
+      if (b[i] && c[i] && n <= 20) svg += `<text class="tot" x="${x + w / 2}" y="${Y(b[i] + c[i]) - 5}" text-anchor="middle">${(c[i] / (b[i] + c[i]) * 100).toFixed(1)}%</text>`;
+      if ((n - 1 - i) % every === 0) svg += `<text x="${x + w / 2}" y="${H - 8}" text-anchor="middle">${esc(l)}${P.partial[i] ? '*' : ''}</text>`;
+      svg += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
+    });
+    $('dv').innerHTML = svg;
+    attachTip($('dv'), $('dv-tip'), i => `<b>${esc(labels[i])}${P.partial[i] ? ' (진행 중)' : ''}</b><br><span class="sw" style="background:var(--c0)"></span>외지인 ${b[i] == null ? '자료 없음' : fmt(Math.round(b[i] / 1e4)) + '만 명'}<br><span class="sw" style="background:var(--c1)"></span>외국인 ${c[i] == null ? '자료 없음' : fmt(Math.round(c[i] / 1e4)) + '만 명'}${b[i] && c[i] ? `<br>외국인 비중 ${(c[i] / (b[i] + c[i]) * 100).toFixed(2)}%` : ''}`);
+    const name = U ? regionName() : regLabel(curReg());
+    $('dv-sub').textContent = `${name}${!U && state.dong >= 0 ? ' (방문객 자료는 시군구 단위)' : ''} · 한국관광공사 데이터랩 휴대폰 기반 연인원, ${visits.last.slice(0, 4)}.${visits.last.slice(4, 6)}.${visits.last.slice(6)}까지`;
+    $('dv-note').textContent = '외지인은 다른 지역에서 온 내국인입니다. 외국인 자료는 기초 2019년·광역 2020년부터라 그 전에는 외지인만 그립니다. 흐린 막대(*)는 아직 다 모이지 않은 기간입니다.'
+      + (regs.length > 1 ? ' 여러 기초를 합친 값이라 여러 곳을 들른 사람은 중복으로 셉니다.' : '');
+  }
+  $('dv-per').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { dvPer = x.dataset.v; renderDemandVis(); } });
 
   /* ---------- 관광 수요 대비 숙소 ----------
      관광지·방문객 수는 시군구까지만 있으므로 이 칸은 시군구 단위에서 멈춥니다. */

@@ -43,7 +43,7 @@
 
   <div class="kpis" id="kpis" data-tab="now"></div>
 
-  <section data-tab="now">
+  <section>
     <div class="sechead"><h2>지도</h2><p class="sub" id="map-sub">전국 보기에서는 시군구별 원 크기가 시설 수입니다. 광역을 고르면 시설 하나하나가 점으로 나옵니다.</p></div>
     <div class="card tl">
       <div class="tlrow">
@@ -63,6 +63,11 @@
         <div class="railhead" style="margin-top:16px"><h3>관광 (TourAPI)</h3></div>
         <div id="tourlist"></div>
         <p class="note" style="margin-top:4px">광역을 고르면 표시됩니다.</p>
+        <div class="railhead" style="margin-top:16px"><h3>교통·자연</h3></div>
+        <div class="chk"><input type="checkbox" id="ck-park" checked><label for="ck-park"><span class="sw" style="background:#2e7d32"></span>국립공원</label><span class="n" id="n-park"></span></div>
+        <div class="chk"><input type="checkbox" id="ck-air" checked><label for="ck-air"><span class="sw" style="background:#1f3a93"></span>공항</label><span></span></div>
+        <div class="chk"><input type="checkbox" id="ck-rail" checked><label for="ck-rail"><span class="sw" style="background:#8e44ad"></span>철도·지하철 (역은 확대 시)</label><span></span></div>
+        <p class="note" style="margin-top:4px">국립공원은 TourAPI 관광지, 공항·철도는 배경지도(OpenStreetMap) 자료입니다.</p>
         <div class="railhead" style="margin-top:16px"><h3>지형</h3></div>
         <div class="chk"><input type="checkbox" id="ck-shade" checked><label for="ck-shade">산 음영</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-3d"><label for="ck-3d">3D 지형 (기울여 보기)</label><span></span></div>
@@ -75,8 +80,8 @@
     <div class="card"><button class="btn csv" data-csv="share" data-name="업종별_비중">CSV</button><div class="sharelist" id="share"></div><p class="note">세로선은 전국 비중입니다(지역을 골랐을 때).</p></div>
   </section>
 
-  <section data-tab="now">
-    <div class="sechead"><h2>연도별 인허가 추이</h2><p class="sub" id="year-sub"></p></div>
+  <section data-tab="trend">
+    <div class="sechead"><h2>숙박업 동향 · 연도별 인허가</h2><p class="sub" id="year-sub"></p></div>
     <div class="card"><div class="legend" id="year-legend"></div><div class="chartwrap"><svg id="year" viewBox="0 0 900 300" role="img" aria-label="연도별 인허가 수"></svg><div class="tip" id="year-tip" hidden></div></div>
     <p class="note">인허가일자 기준입니다. 영업 상태 필터가 함께 적용됩니다.</p></div>
   </section>
@@ -112,6 +117,15 @@
     <div class="card"><button class="btn csv" data-csv="cmp-table" data-name="지역별_지표">CSV</button><h3 style="margin-bottom:10px">지역별 지표</h3><div class="tablewrap"><table id="cmp-table"></table></div></div>
     <div class="card"><h3 style="margin-bottom:10px">연도별 신규 인허가 (선택 업종)</h3><div class="legend" id="cp-legend"></div>
       <div class="chartwrap"><svg id="cp" viewBox="0 0 900 240" role="img" aria-label="지역별 연도별 인허가"></svg><div class="tip" id="cp-tip" hidden></div></div></div>
+  </section>
+
+  <section data-tab="demand" id="dv-sec">
+    <div class="sechead"><h2>외지인·외국인 방문객 추이</h2><p class="sub" id="dv-sub"></p></div>
+    <div class="card">
+      <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="dv-per" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div>
+        <div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>외지인(내국인)</span><span><i style="background:var(--c1)"></i>외국인</span><span>막대 위 숫자 = 외국인 비중</span></div></div>
+      <div class="chartwrap"><svg id="dv" viewBox="0 0 900 300" role="img" aria-label="외지인·외국인 방문객 추이"></svg><div class="tip" id="dv-tip" hidden></div></div>
+      <p class="note" id="dv-note"></p></div>
   </section>
 
   <section data-tab="demand">

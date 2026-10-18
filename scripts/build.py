@@ -15,6 +15,7 @@ Steps
 9. Visitors (KTO DataLab): 외지인 and 외국인 visitors per 시도 and 시군구 over the latest 12 months (meta.json)
    and per quarter since 2018 (visits.json).
 10. Foreign arrivals (한국문화관광연구원 출입국관광통계): national monthly totals and the top nationalities (arrivals.json).
+11. National parks: TourAPI attractions named "…국립공원" (plus 한라산, listed without the word) for the map (parks.json).
 """
 import difflib
 import glob
@@ -311,6 +312,27 @@ def add_visitors(sidos, sgg_of, sido_meta):
     return meta, visits
 
 
+def write_parks():
+    """TourAPI has no national-park category of its own, so take attractions whose title names a 국립공원
+    (skipping parking lots, campsites, centres and viewpoints). 한라산국립공원 appears only as "한라산"."""
+    seen, out = set(), []
+    for path in sorted(glob.glob(os.path.join(RAW, "tour_*.jsonl"))):
+        for line in open(path, encoding="utf-8"):
+            rec = json.loads(line)
+            title = clean(rec.get("title"))
+            t = title.replace(" ", "")
+            if not ("국립공원" in t or t == "한라산") or re.search(r"(사무소|탐방안내소|주차장|야영장|센터|전망대|캠핑|박물관)", t):
+                continue
+            if rec.get("contentid") in seen or not rec.get("mapx"):
+                continue
+            seen.add(rec.get("contentid"))
+            m = re.match(r"국립공원공단(.+?)생태탐방원", t)  # e.g. 국립공원공단 한려해상생태탐방원
+            park = "한라산국립공원" if t == "한라산" else m.group(1) + "국립공원" if m else re.sub(r"국립공원.*", "국립공원", t)
+            out.append([round(float(rec["mapy"]), 5), round(float(rec["mapx"]), 5), park, title])
+    with open(os.path.join(OUT, "parks.json"), "w", encoding="utf-8") as f:
+        json.dump(sorted(out, key=lambda r: r[2]), f, ensure_ascii=False, separators=(",", ":"))
+
+
 def write_arrivals():
     path = os.path.join(RAW, "arrivals.jsonl")
     if not os.path.exists(path):
@@ -488,6 +510,7 @@ def main():
         sm["tour"] = cnt
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     write_arrivals()
+    write_parks()
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))
