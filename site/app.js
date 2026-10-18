@@ -8,6 +8,7 @@
    data/minbak.json – [sidoIdx, sggIdx, status, zone, bldg, count]  (외국인관광 도시민박, national view)
    data/visits.json – {q:[분기…], qdays, last, sido:[[외지인[], 외국인[]]…], sgg:[[[외지인[], 외국인[]]…]…]} (null = 자료 없음) */
 (async function () {
+  const initHash = new URLSearchParams(location.hash.slice(1)); // 공유 링크로 연 경우의 화면 상태
   const $ = id => document.getElementById(id);
   const fmt = n => n.toLocaleString('ko-KR');
   const pct = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '-';
@@ -26,6 +27,7 @@
   const TL0 = 1990;
   const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'out' : 'tour', cmp: [], vt: { per: 'y', kind: '0' } };
   let D = null; // detail file of the selected 시도, or the merged rows of the 합쳐 보기 regions
+  const csvStore = {}; // CSV 내려받기용: id -> [머리글, 행들]
   let U = null; // 합쳐 보기: {regs:[{si, gi}], names} — 비교 목록의 지역을 하나로 묶어 숙박업 현황에 적용
   const detailCache = {}, tourCache = {};
   const loadDetail = si => (detailCache[si] ||= getJSON(`data/pts/${si}.json`, { dongs: [], ris: {}, rows: [] }));
@@ -81,15 +83,34 @@
   const childLabel = () => U ? '선택 지역' : ['광역', '기초', '읍·면·동', '리', ''][level()];
 
   /* ---------- type filter ---------- */
+  // 대분류 체크박스로 한 번에 켜고 끄며, 소분류는 ▸ 를 눌러 펼칩니다.
+  const catTypes = CATS.map((_, ci) => T.map((_, i) => i).filter(i => catOf[i] === ci));
   $('typelist').innerHTML = CATS.map((c, ci) => {
-    const items = T.map((t, i) => [t, i]).filter(([t]) => t.cat === c);
+    const items = catTypes[ci];
     if (!items.length) return '';
-    return `<div class="cat">${esc(c)}</div>` + items.map(([t, i]) =>
-      `<div class="chk"><input type="checkbox" id="t${i}" data-i="${i}" checked><label for="t${i}"><span class="sw" style="background:var(--c${ci})"></span>${esc(t.name)}</label><span class="n" id="tn${i}"></span></div>`).join('');
+    return `<div class="chk cathead"><input type="checkbox" id="c${ci}" data-c="${ci}" checked><label for="c${ci}"><span class="sw" style="background:var(--c${ci})"></span>${esc(c)}</label><span class="n" id="cn${ci}"></span>`
+      + (items.length > 1 ? `<button class="fold" data-f="${ci}" aria-expanded="false" aria-label="${esc(c)} 소분류 펼치기">▸</button>` : '<span></span>') + '</div>'
+      + `<div class="subtypes" id="sub${ci}" hidden>` + items.map(i =>
+        `<div class="chk"><input type="checkbox" id="t${i}" data-i="${i}" checked><label for="t${i}">${esc(T[i].name)}</label><span class="n" id="tn${i}"></span></div>`).join('') + '</div>';
   }).join('');
-  $('typelist').addEventListener('change', e => { const i = +e.target.dataset.i; e.target.checked ? state.types.add(i) : state.types.delete(i); update(false); });
-  $('t-all').onclick = () => { T.forEach((_, i) => { state.types.add(i); $('t' + i).checked = true; }); update(false); };
-  $('t-none').onclick = () => { state.types.clear(); T.forEach((_, i) => { $('t' + i).checked = false; }); update(false); };
+  function syncTypeBoxes() {
+    T.forEach((_, i) => { $('t' + i).checked = state.types.has(i); });
+    catTypes.forEach((items, ci) => { const box = $('c' + ci); if (!box) return; const n = items.filter(i => state.types.has(i)).length;
+      box.checked = n === items.length; box.indeterminate = n > 0 && n < items.length; });
+  }
+  $('typelist').addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.c != null) for (const i of catTypes[+t.dataset.c]) t.checked ? state.types.add(i) : state.types.delete(i);
+    else { const i = +t.dataset.i; t.checked ? state.types.add(i) : state.types.delete(i); }
+    syncTypeBoxes(); update(false);
+  });
+  $('typelist').addEventListener('click', e => {
+    const b = e.target.closest('button.fold'); if (!b) return;
+    const sub = $('sub' + b.dataset.f), open = sub.hidden;
+    sub.hidden = !open; b.textContent = open ? '▾' : '▸'; b.setAttribute('aria-expanded', String(open));
+  });
+  $('t-all').onclick = () => { T.forEach((_, i) => state.types.add(i)); syncTypeBoxes(); update(false); };
+  $('t-none').onclick = () => { state.types.clear(); syncTypeBoxes(); update(false); };
 
   /* ---------- aggregation ----------
      scanOpen(fn(type, status, year, child, weight)), scanClose(fn(type, closeYear, child, weight)) */
@@ -300,6 +321,7 @@
     const a = agg(), [nb, nn] = natType(), names = childNames();
     const stLabel = state.status < 0 ? '전체 상태' : ST[state.status];
     T.forEach((_, i) => { $('tn' + i).textContent = fmt(a.allType[i]); });
+    catTypes.forEach((items, ci) => { if ($('cn' + ci)) $('cn' + ci).textContent = fmt(items.reduce((p, i) => p + a.allType[i], 0)); });
 
     const topT = a.byType.map((v, i) => [v, i]).sort((x, y) => y[0] - x[0])[0];
     const recent = [yNow - 2, yNow - 1, yNow].reduce((s, y) => s + (a.byYear[y] ? a.byYear[y].reduce((p, q) => p + q, 0) : 0), 0);
@@ -315,6 +337,7 @@
     const order = T.map((_, i) => i).filter(i => state.types.has(i)).sort((x, y) => a.byType[y] - a.byType[x]);
     $('share').innerHTML = rowsHTML(order.map(i => ({ name: T[i].name, value: a.byType[i] / (a.total || 1), color: `var(--c${catOf[i]})`,
       mark: D ? nb[i] / (nn || 1) : null, label: pct(a.byType[i], a.total), extra: fmt(a.byType[i]) + '곳' })), {}) || '<p class="note">선택한 업종이 없습니다.</p>';
+    csvSet('share', ['업종', '시설 수', '비중(%)'], order.map(i => [T[i].name, a.byType[i], a.total ? (a.byType[i] / a.total * 100).toFixed(2) : '']));
     $('share-sub').textContent = topT && a.total ? `${regionName()}(${stLabel}) ${fmt(a.total)}곳 중 ${T[topT[1]].name} 비중이 ${pct(topT[0], a.total)}로 가장 큽니다.` : '';
 
     drawYears(a.byYear);
@@ -324,12 +347,14 @@
     $('rank-title').textContent = level() >= 4 ? '하위 지역 없음' : `${regionName()} ${childLabel()}별 시설 수`;
     $('rank').innerHTML = rowsHTML(ranks.map(([k, v]) => ({ k, name: names[k] ?? '(미상)', value: v, label: fmt(v), extra: pct(v, a.total) })), { button: true })
       || '<p class="note">더 작은 지역 단위가 없습니다.</p>';
+    csvSet('rank', [childLabel() || '지역', '시설 수', '비중(%)'], ranks.map(([k, v]) => [names[k] ?? '(미상)', v, a.total ? (v / a.total * 100).toFixed(2) : '']));
 
     renderStatus(a, names);
     renderCompare();
     renderSupply();
     renderTrend(names);
     renderMinbak(names);
+    writeHash();
     drawTimeline();
     drawMap(fly);
   }
@@ -350,9 +375,10 @@
     const order = T.map((_, i) => i).filter(i => state.types.has(i) && a.stType[i].some(Boolean))
       .sort((x, y) => (a.stType[y][2] + a.stType[y][1]) - (a.stType[x][2] + a.stType[x][1]));
     $('st-type').innerHTML = order.map(i => stackRow(T[i].name, a.stType[i], `var(--c${catOf[i]})`)).join('') || '<p class="note">자료가 없습니다.</p>';
-    const areas = Object.entries(a.stArea).sort((x, y) => (y[1][1] + y[1][2]) - (x[1][1] + x[1][2])).slice(0, 25);
-    $('st-area-title').textContent = level() >= 4 ? '' : `${childLabel()}별 휴업·폐업 (상위 25곳)`;
+    const areas = Object.entries(a.stArea).sort((x, y) => (y[1][1] + y[1][2]) - (x[1][1] + x[1][2]));
+    $('st-area-title').textContent = level() >= 4 ? '' : `${childLabel()}별 휴업·폐업 (많은 순)`;
     $('st-area').innerHTML = areas.map(([k, v]) => stackRow(names[k] ?? '(미상)', v)).join('');
+    csvSet('st-area', [childLabel() || '지역', '영업', '휴업', '폐업', '누적 폐업률(%)'], areas.map(([k, v]) => [names[k] ?? '(미상)', ...v, v[0] + v[2] ? (v[2] / (v[0] + v[2]) * 100).toFixed(2) : '']));
   }
   function stackRow(name, v, dot) {
     const n = v[0] + v[1] + v[2];
@@ -390,12 +416,12 @@
   $('cmp-add').onclick = () => {
     const r = { si: state.sido, gi: state.sido < 0 ? -1 : state.sgg };
     if (state.cmp.length >= 7 || state.cmp.some(x => x.si === r.si && x.gi === r.gi)) return;
-    state.cmp.push(r); renderChips(); renderCompare(); applyUnion();
+    state.cmp.push(r); renderChips(); renderCompare(); applyUnion(); writeHash();
   };
   $('cmp-chips').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.id === 'cmp-clear') state.cmp = []; else state.cmp.splice(+b.dataset.i, 1);
-    renderChips(); renderCompare(); applyUnion();
+    renderChips(); renderCompare(); applyUnion(); writeHash();
   });
   const visOf = r => {
     if (!visits) return null;
@@ -484,6 +510,10 @@
     $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 100만 명당 숙소</th><th>외국인 100만 명당 숙소</th><th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th></tr></thead><tbody>`
       + R.map((r, i) => { const x = stats[i];
         return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
+    csvSet('cmp-table', ['지역', '영업 숙소', '연간 외지인', '연간 외국인', '외지인 100만 명당 숙소', '외국인 100만 명당 숙소', `${Y3 + 1}~${yNow} 증가율(%)`, '누적 폐업률(%)', '영업 도시민박'],
+      R.map((r, i) => { const x = stats[i];
+        return [regLabel(r), x.st[0], x.v ? x.v[0] : '', x.v ? x.v[1] : '', ...[0, 1].map(j => x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(2) : ''),
+          x.tr.base ? ((x.tr.nw - x.tr.cl) / x.tr.base * 100).toFixed(2) : '', x.st[0] + x.st[2] ? (x.st[2] / (x.st[0] + x.st[2]) * 100).toFixed(2) : '', x.mb]; }));
     // 연도별 신규 인허가
     const years = []; for (let y = yNow - 19; y <= yNow; y++) years.push(y);
     $('cp-legend').innerHTML = legend;
@@ -538,6 +568,8 @@
       $('sup-ratio').innerHTML = rowsHTML(list.map(c => ({ k: c.k, name: c.name, value: c.r, mark: avg, label: c.r.toFixed(1) + '곳',
         extra: isVis ? fmt(Math.round(vOf(c) / 1e4)) + '만 명' : '관광지 ' + fmt(c.tour), color: c.r < avg * .5 ? 'var(--closed)' : 'var(--c0)' })), { button: true })
         || '<p class="note">비교할 자료가 없습니다.</p>';
+      csvSet('sup-ratio', [childLabel(), '영업 숙소', isVis ? `연간 ${vName}` : '관광지', isVis ? `${vName} 100만 명당 숙소` : '관광지 1곳당 숙소'],
+        list.map(c => [c.name, c.lod, isVis ? vOf(c) : c.tour, c.r.toFixed(2)]));
       const miss = isVis ? kids.filter(c => !vOf(c)).map(c => c.name) : [];
       $('sup-ratio-note').textContent = (isVis
         ? `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 방문객은 한국관광공사 데이터랩 ${VIS.from.slice(0, 4)}.${VIS.from.slice(4, 6)}~${VIS.to.slice(0, 4)}.${VIS.to.slice(4, 6)} 기준 연인원을 1년치로 환산했습니다.`
@@ -640,8 +672,9 @@
     const bars = (vals, labels, cols) => rowsHTML(vals.map((x, i) => ({ name: labels[i], value: x / (n || 1), color: cols[i], label: pct(x, n), extra: fmt(x) + '곳' })), {});
     $('mb-zone').innerHTML = n ? bars(z, ZN, ZC) : '<p class="note">자료가 없습니다.</p>';
     $('mb-bldg').innerHTML = n ? bars(b, BD, BC) : '';
-    const areas = Object.entries(area).map(([k, x]) => [k, x, x.reduce((p, q) => p + q, 0)]).sort((p, q) => q[2] - p[2]).slice(0, 20);
-    $('mb-area-title').textContent = level() >= 4 ? '' : `도시민박이 몰린 ${childLabel()} (상위 20곳) · 건물 용도별`;
+    const areas = Object.entries(area).map(([k, x]) => [k, x, x.reduce((p, q) => p + q, 0)]).sort((p, q) => q[2] - p[2]);
+    $('mb-area-title').textContent = level() >= 4 ? '' : `도시민박이 몰린 ${childLabel()} · 건물 용도별`;
+    csvSet('mb-area', [childLabel() || '지역', '영업 도시민박', ...BD], areas.map(([k, x, t]) => [names[k] ?? '(미상)', t, ...x]));
     $('mb-area').innerHTML = areas.map(([k, x, t]) => `<button class="row" data-k="${k}"><span class="nm"><span>${esc(names[k] ?? '(미상)')}</span></span>
       <span class="stackbar" style="width:${t / areas[0][2] * 100}%">${x.map((c, i) => c ? `<span style="flex:${c};background:${BC[i]}" title="${esc(BD[i])} ${fmt(c)}"></span>` : '').join('')}</span>
       <span class="val">${fmt(t)}곳<em>${pct(t, n)}</em></span></button>`).join('');
@@ -702,6 +735,87 @@
     attachTip($('oc'), $('oc-tip'), i => `<b>${years[i]}년</b><br><span class="sw" style="background:var(--c0)"></span>인허가 ${fmt(o[i])}<br><span class="sw" style="background:var(--closed)"></span>폐업 ${fmt(c[i])}<br>순증 ${o[i] - c[i] >= 0 ? '+' : ''}${fmt(o[i] - c[i])}`);
   }
 
+  /* ---------- 탭 ---------- */
+  const TABS = ['now', 'demand', 'trend', 'minbak', 'compare'];
+  let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'now';
+  function setTab(t) {
+    tab = t;
+    document.querySelectorAll('[data-tab]').forEach(el => el.classList.toggle('tab-off', el.dataset.tab !== t));
+    document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
+    if (t === 'now' && mapReady) map.resize();
+    writeHash();
+  }
+  $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-t]'); if (b) { setTab(b.dataset.t); scrollTo({ top: 0, behavior: 'smooth' }); } });
+
+  /* ---------- 긴 목록은 10줄까지만 보이고 '더 보기'로 펼침 ---------- */
+  const FOLD = 10, unfolded = new Set();
+  function fold(el) {
+    let more = el.nextElementSibling?.classList.contains('more') ? el.nextElementSibling : null;
+    const n = [...el.children].filter(c => !c.classList.contains('note')).length;
+    if (n <= FOLD) { el.classList.remove('folded'); if (more) more.hidden = true; return; }
+    if (!more) { more = document.createElement('button'); more.className = 'btn more'; el.after(more);
+      more.onclick = () => { unfolded.has(el.id) ? unfolded.delete(el.id) : unfolded.add(el.id); fold(el); }; }
+    const open = unfolded.has(el.id);
+    el.classList.toggle('folded', !open); more.hidden = false;
+    more.textContent = open ? '접기' : `더 보기 (${fmt(n - FOLD)}개 더)`;
+  }
+  for (const id of ['share', 'rank', 'st-type', 'st-area', 'sup-ratio', 'mb-area']) { fold($(id)); new MutationObserver(() => fold($(id))).observe($(id), { childList: true }); }
+
+  /* ---------- CSV 내려받기 ---------- */
+  function csvSet(id, head, rows) { csvStore[id] = [head, rows]; }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button[data-csv]'); if (!b) return;
+    const d = csvStore[b.dataset.csv]; if (!d) return;
+    const cell = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const text = '\ufeff' + [d[0], ...d[1]].map(r => r.map(cell).join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    a.download = `${b.dataset.name}_${(state.cmp.length && b.dataset.csv === 'cmp-table') ? '비교' : regionName()}.csv`.replace(/[\\/:*?"<>|\s]+/g, '_');
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
+  /* ---------- 공유 링크: 탭·지역·영업 상태·비교 목록을 주소(#)에 담음 ---------- */
+  let restoring = true;
+  const regKey = r => r.si < 0 ? '전국' : S[r.si].name + (r.gi >= 0 ? '/' + S[r.si].sgg[r.gi] : '');
+  function writeHash() {
+    if (restoring) return;
+    const h = new URLSearchParams();
+    if (tab !== 'now') h.set('tab', tab);
+    if (state.sido >= 0) h.set('r', [S[state.sido].name, state.sgg >= 0 && S[state.sido].sgg[state.sgg], state.dong >= 0 && dongList()[state.dong], state.ri >= 0 && riList()[state.ri]].filter(Boolean).join('/'));
+    if (state.status !== 0) h.set('st', state.status);
+    if (state.cmp.length) h.set('cmp', state.cmp.map(regKey).join(','));
+    if (U) h.set('u', '1');
+    history.replaceState(null, '', h.toString() ? '#' + h : location.pathname + location.search);
+  }
+  const parseReg = k => { // '전국', '부산광역시', '부산광역시/해운대구' → {si, gi}; 이름이 바뀌어 없으면 null
+    if (k === '전국') return { si: -1, gi: -1 };
+    const [a, b] = k.split('/'), si = S.findIndex(s => s.name === a), gi = si >= 0 && b ? S[si].sgg.indexOf(b) : -1;
+    return si < 0 || (b && gi < 0) ? null : { si, gi };
+  };
+  async function restore() {
+    const st = initHash.get('st');
+    if (st != null && ['-1', '0', '1', '2'].includes(st)) { state.status = +st; $('f-status').value = st; }
+    for (const k of (initHash.get('cmp') || '').split(',').filter(Boolean)) { const r = parseReg(k); if (r) state.cmp.push(r); }
+    if (state.cmp.length) renderChips();
+    const [a, b, c, d] = (initHash.get('r') || '').split('/');
+    const si = a ? S.findIndex(s => s.name === a) : -1;
+    if (si >= 0) {
+      await setSido(si);
+      const gi = b ? S[si].sgg.indexOf(b) : -1; if (gi >= 0) setSgg(gi);
+      const di = c ? dongList().indexOf(c) : -1; if (di >= 0) setDong(di);
+      const ri = d ? riList().indexOf(d) : -1; if (ri >= 0) setRi(ri);
+    }
+    if (initHash.get('u') === '1' && state.cmp.length) { $('cmp-union').checked = true; await applyUnion(); }
+    restoring = false;
+    setTab(tab);
+  }
+  $('share-link').onclick = async () => {
+    writeHash();
+    try { await navigator.clipboard.writeText(location.href); $('share-link').textContent = '복사됨 ✓'; }
+    catch { prompt('이 주소를 복사하세요', location.href); }
+    setTimeout(() => { $('share-link').textContent = '🔗 링크 복사'; }, 1500);
+  };
+
   /* ---------- tour / terrain controls, footer ---------- */
   $('tourlist').innerHTML = TOUR.types.map((n, i) => `<div class="chk"><input type="checkbox" id="tour${i}" data-i="${i}"${state.tour.has(i) ? ' checked' : ''}><label for="tour${i}"><span class="sw ring" style="border-color:${TOUR_COL[i]}"></span>${esc(n)}</label><span class="n">${fmt(TOUR.counts[i] || 0)}</span></div>`).join('');
   $('tourlist').addEventListener('change', e => { const i = +e.target.dataset.i; e.target.checked ? state.tour.add(i) : state.tour.delete(i); drawTour(); renderSupply(); });
@@ -714,4 +828,5 @@
   const c = meta.coords, d = meta.dedupe;
   $('foot').textContent = `숙박업과 관광숙박업에 함께 등록된 시설 ${fmt(d.removed)}건은 관광숙박업으로만 셌습니다. 좌표가 없는 야영장 ${fmt(c.dropped_campgrounds)}곳은 제외했고, 좌표가 없는 그 밖의 시설 ${fmt(c.no_coords)}곳은 통계에는 넣고 지도에서는 뺐습니다. 읍·면·동과 리는 주소의 법정동 기준입니다. 출처: 행정안전부 지방행정인허가 API, 한국관광공사 TourAPI·데이터랩(공공데이터포털), 지형 AWS Terrain Tiles.`;
   update(false);
+  await restore();
 })();

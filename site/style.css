@@ -36,8 +36,7 @@ select:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid 
 .rail{max-height:min(72vh,660px);overflow:auto}
 .railhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .btn{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:4px;padding:3px 9px;font:inherit;font-size:12px;cursor:pointer;margin-left:4px}
-.cat{margin-top:10px;font-size:12px;font-weight:700;color:var(--muted)}
-.chk{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:3px 0;font-size:13px}
+.chk{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:3px 0;font-size:13px}
 .chk input{margin:0;width:15px;height:15px;accent-color:var(--accent)}
 .chk label{cursor:pointer;display:flex;align-items:center;min-width:0}
 .chk .n{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
@@ -99,3 +98,23 @@ th:first-child,td:first-child{text-align:left}
 .unionsw{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--fg);margin-left:6px}
 .unionsw small{color:var(--muted);font-size:12px}
 .unionsw input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+/* tabs */
+.tabbar{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;flex-basis:calc(100% + 32px);border-top:1px solid var(--line);margin:2px -16px -12px;padding:0 16px}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+.tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);font:inherit;font-size:14px;font-weight:500;padding:10px 14px;cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent);font-weight:700}
+.tabs button:hover{color:var(--fg)}
+#share-link{margin:0 0 7px}
+.tab-off{display:none!important}
+/* folded lists */
+.folded > :nth-child(n+11){display:none}
+.btn.more{margin:10px 0 0;width:100%;padding:6px}
+/* csv */
+.card{position:relative}
+.btn.csv{position:absolute;top:12px;right:12px;margin:0;font-size:11.5px;padding:2px 8px;color:var(--muted)}
+.card:has(> .btn.csv) > h3,.card:has(> .btn.csv) > .tlrow{padding-right:56px}
+/* map rail categories */
+.cathead{margin-top:6px;font-weight:500}
+.subtypes{margin:0 0 4px 22px}
+.fold{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;width:20px}
+.card:has(> .btn.csv + .sharelist),.card:has(> .btn.csv + .ranklist){padding-top:42px}

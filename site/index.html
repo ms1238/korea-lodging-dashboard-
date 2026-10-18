@@ -23,11 +23,21 @@
     <label for="f-ri">리<select id="f-ri" disabled><option value="-1">전체</option></select></label>
     <label for="f-status">영업 상태<select id="f-status"><option value="0">영업</option><option value="1">휴업</option><option value="2">폐업</option><option value="-1">전체</option></select></label>
     <span class="cmpbar"><button class="btn" id="cmp-add" title="지금 고른 광역·기초를 비교 목록에 넣습니다">＋ 비교에 추가</button><span id="cmp-chips" class="chips"></span><label id="union-wrap" class="unionsw" hidden><input type="checkbox" id="cmp-union"> 숙박업 현황에 합쳐 보기<small>켜면 위 드롭다운 대신 담은 지역을 합산해 보여줍니다</small></label></span>
+    <div class="tabbar">
+      <nav class="tabs" id="tabs" role="tablist" aria-label="보기">
+        <button role="tab" data-t="now" aria-selected="true">현황</button>
+        <button role="tab" data-t="demand" aria-selected="false">관광 수요</button>
+        <button role="tab" data-t="trend" aria-selected="false">동향</button>
+        <button role="tab" data-t="minbak" aria-selected="false">도시민박</button>
+        <button role="tab" data-t="compare" aria-selected="false">지역 비교</button>
+      </nav>
+      <button class="btn" id="share-link" title="지금 보고 있는 탭·지역·비교 목록을 담은 주소를 복사합니다">🔗 링크 복사</button>
+    </div>
   </div>
 
-  <div class="kpis" id="kpis"></div>
+  <div class="kpis" id="kpis" data-tab="now"></div>
 
-  <section>
+  <section data-tab="now">
     <div class="sechead"><h2>지도</h2><p class="sub" id="map-sub">전국 보기에서는 시군구별 원 크기가 시설 수입니다. 광역을 고르면 시설 하나하나가 점으로 나옵니다.</p></div>
     <div class="card tl">
       <div class="tlrow">
@@ -42,7 +52,7 @@
     <div class="mapgrid">
       <div id="map" class="map" aria-label="숙박시설 지도"></div>
       <div class="card rail">
-        <div class="railhead"><h3>업종 (소분류)</h3><span><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">해제</button></span></div>
+        <div class="railhead"><h3>업종 <small style="font-weight:400">▸ 소분류</small></h3><span><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">해제</button></span></div>
         <div id="typelist"></div>
         <div class="railhead" style="margin-top:16px"><h3>관광 (TourAPI)</h3></div>
         <div id="tourlist"></div>
@@ -54,23 +64,23 @@
     </div>
   </section>
 
-  <section>
+  <section data-tab="now">
     <div class="sechead"><h2>업종별 비중</h2><p class="sub" id="share-sub"></p></div>
-    <div class="card"><div class="sharelist" id="share"></div><p class="note">세로선은 전국 비중입니다(지역을 골랐을 때).</p></div>
+    <div class="card"><button class="btn csv" data-csv="share" data-name="업종별_비중">CSV</button><div class="sharelist" id="share"></div><p class="note">세로선은 전국 비중입니다(지역을 골랐을 때).</p></div>
   </section>
 
-  <section>
+  <section data-tab="now">
     <div class="sechead"><h2>연도별 인허가 추이</h2><p class="sub" id="year-sub"></p></div>
     <div class="card"><div class="legend" id="year-legend"></div><div class="chartwrap"><svg id="year" viewBox="0 0 900 300" role="img" aria-label="연도별 인허가 수"></svg><div class="tip" id="year-tip" hidden></div></div>
     <p class="note">인허가일자 기준입니다. 영업 상태 필터가 함께 적용됩니다.</p></div>
   </section>
 
-  <section>
+  <section data-tab="now">
     <div class="sechead"><h2 id="rank-title">지역별 시설 수</h2></div>
-    <div class="card"><div class="ranklist" id="rank"></div></div>
+    <div class="card"><button class="btn csv" data-csv="rank" data-name="지역별_시설수">CSV</button><div class="ranklist" id="rank"></div></div>
   </section>
 
-  <section>
+  <section data-tab="trend">
     <div class="sechead"><h2>휴업·폐업 현황</h2><p class="sub" id="st-sub"></p></div>
     <div class="kpis" id="st-kpis"></div>
     <div class="card"><div class="legend"><span><i style="background:var(--c0)"></i>인허가</span><span><i style="background:var(--closed)"></i>폐업</span></div>
@@ -79,10 +89,10 @@
     <div class="card"><h3 style="margin-bottom:10px">업종별 상태 구성</h3>
       <div class="legend"><span><i style="background:var(--ok)"></i>영업</span><span><i style="background:var(--pause)"></i>휴업</span><span><i style="background:var(--closed)"></i>폐업</span></div>
       <div class="sharelist" id="st-type"></div></div>
-    <div class="card"><h3 id="st-area-title" style="margin-bottom:10px"></h3><div class="sharelist" id="st-area"></div></div>
+    <div class="card"><button class="btn csv" data-csv="st-area" data-name="지역별_휴폐업">CSV</button><h3 id="st-area-title" style="margin-bottom:10px"></h3><div class="sharelist" id="st-area"></div></div>
   </section>
 
-  <section id="cmp-sec">
+  <section data-tab="compare" id="cmp-sec">
     <div class="sechead"><h2>관광객 추이 · 지역 비교</h2><p class="sub" id="cmp-sub"></p></div>
     <div class="card">
       <div class="tlrow" style="margin-bottom:10px">
@@ -93,15 +103,15 @@
       <div class="chartwrap"><svg id="vt" viewBox="0 0 900 280" role="img" aria-label="관광객 추이"></svg><div class="tip" id="vt-tip" hidden></div></div>
       <p class="note" id="vt-note"></p>
     </div>
-    <div class="card"><h3 style="margin-bottom:10px">지역별 지표</h3><div class="tablewrap"><table id="cmp-table"></table></div></div>
+    <div class="card"><button class="btn csv" data-csv="cmp-table" data-name="지역별_지표">CSV</button><h3 style="margin-bottom:10px">지역별 지표</h3><div class="tablewrap"><table id="cmp-table"></table></div></div>
     <div class="card"><h3 style="margin-bottom:10px">연도별 신규 인허가 (선택 업종)</h3><div class="legend" id="cp-legend"></div>
       <div class="chartwrap"><svg id="cp" viewBox="0 0 900 240" role="img" aria-label="지역별 연도별 인허가"></svg><div class="tip" id="cp-tip" hidden></div></div></div>
   </section>
 
-  <section>
+  <section data-tab="demand">
     <div class="sechead"><h2>관광 수요 대비 숙소</h2><p class="sub" id="sup-sub"></p></div>
     <div class="kpis" id="sup-kpis"></div>
-    <div class="card" id="sup-ratio-card">
+    <div class="card" id="sup-ratio-card"><button class="btn csv" data-csv="sup-ratio" data-name="수요대비_숙소">CSV</button>
       <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="sup-seg" role="group" aria-label="기준"><button data-m="out" aria-pressed="true">외지인 기준</button><button data-m="for" aria-pressed="false">외국인 기준</button><button data-m="tour" aria-pressed="false">관광지 기준</button></div><h3 id="sup-ratio-title"></h3></div>
       <div class="sharelist" id="sup-ratio"></div>
       <p class="note" id="sup-ratio-note"></p></div>
@@ -112,7 +122,7 @@
     <p class="note" id="sup-note"></p>
   </section>
 
-  <section>
+  <section data-tab="trend">
     <div class="sechead"><h2>뜨는 지역 · 지는 지역</h2><p class="sub" id="tr-sub"></p></div>
     <div class="kpis" id="tr-kpis"></div>
     <div class="two">
@@ -122,14 +132,14 @@
     <p class="note" id="tr-note"></p>
   </section>
 
-  <section id="mb-sec">
+  <section data-tab="minbak" id="mb-sec">
     <div class="sechead"><h2>외국인관광 도시민박 입지</h2><p class="sub" id="mb-sub"></p></div>
     <div class="kpis" id="mb-kpis"></div>
     <div class="two">
       <div class="card"><h3 style="margin-bottom:10px">용도지역</h3><div class="sharelist" id="mb-zone"></div></div>
       <div class="card"><h3 style="margin-bottom:10px">건물 용도</h3><div class="sharelist" id="mb-bldg"></div></div>
     </div>
-    <div class="card"><h3 id="mb-area-title" style="margin-bottom:10px"></h3><div class="legend" id="mb-legend"></div><div class="sharelist" id="mb-area"></div></div>
+    <div class="card"><button class="btn csv" data-csv="mb-area" data-name="도시민박_지역별">CSV</button><h3 id="mb-area-title" style="margin-bottom:10px"></h3><div class="legend" id="mb-legend"></div><div class="sharelist" id="mb-area"></div></div>
   </section>
 
   <footer class="note" id="foot"></footer>
