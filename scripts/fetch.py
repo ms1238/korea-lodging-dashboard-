@@ -1,6 +1,6 @@
 """Download every record from the 8 MOIS permit APIs into raw/<endpoint>.jsonl,
 plus tourist attractions from the Korea Tourism Organization TourAPI (KorService2) into raw/tour_<type>.jsonl,
-plus daily visitor counts from the KTO DataLabService (last 14 calendar months) into raw/datalab_sido.jsonl / datalab_sgg.jsonl.
+plus visitor counts from the KTO DataLabService (daily since 2018, summed per month) into raw/datalab_sido.jsonl / datalab_sgg.jsonl.
 
 Endpoint pattern: https://apis.data.go.kr/1741000/<endpoint>/info
 The service key is read from the DATA_GO_KR_KEY environment variable (a GitHub Actions secret);
@@ -31,6 +31,7 @@ TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2/areaBasedList2"
 TOUR_TYPES = {"12": "관광지", "14": "문화시설", "28": "레포츠"}  # TourAPI contentTypeId
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
+DATALAB_FROM = 2018  # first year the service has data for
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -101,24 +102,34 @@ def main():
 
 
 def fetch_datalab(key):
-    """One request per calendar month (about 25,000 rows for 기초), covering the last 14 calendar months."""
+    """One request per calendar month since 2018-01 (about 25,000 daily rows for 기초), summed per month
+    into {ym, code, name, kind, n, days, last} so the raw file stays small."""
     today = date.today()
-    months = [(today.year, today.month - i) for i in range(13, -1, -1)]
-    months = [(y + (m - 1) // 12, (m - 1) % 12 + 1) for y, m in months]
+    months = [(y, m) for y in range(DATALAB_FROM, today.year + 1) for m in range(1, 13) if (y, m) <= (today.year, today.month)]
     for out, (op, code_f, name_f) in DATALAB.items():
+        def month(ym):
+            y, m = ym
+            end = date(y + m // 12, m % 12 + 1, 1).toordinal() - 1
+            params = {"serviceKey": key, "pageNo": 1, "numOfRows": 50000, "_type": "json",
+                      "MobileOS": "ETC", "MobileApp": "korea-lodging-dashboard",
+                      "startYmd": f"{y}{m:02d}01", "endYmd": date.fromordinal(end).strftime("%Y%m%d")}
+            return ym, get_body(DATALAB_BASE.format(op), params, f"{out} {y}-{m:02d}")
+        with ThreadPoolExecutor(WORKERS) as pool:
+            bodies = list(pool.map(month, months))
         n = total = 0
         with open(os.path.join(RAW_DIR, f"{out}.jsonl"), "w", encoding="utf-8") as f:
-            for y, m in months:
-                end = date(y + m // 12, m % 12 + 1, 1).toordinal() - 1
-                params = {"serviceKey": key, "pageNo": 1, "numOfRows": 50000, "_type": "json",
-                          "MobileOS": "ETC", "MobileApp": "korea-lodging-dashboard",
-                          "startYmd": f"{y}{m:02d}01", "endYmd": date.fromordinal(end).strftime("%Y%m%d")}
-                body = get_body(DATALAB_BASE.format(op), params, f"{out} {y}-{m:02d}")
+            for (y, m), body in bodies:
                 total += int(body.get("totalCount") or 0)
+                agg = {}
                 for it in items_of(body):
-                    f.write(json.dumps({"ymd": it["baseYmd"], "code": it[code_f], "name": it[name_f],
-                                        "kind": it["touDivCd"], "n": it["touNum"]}, ensure_ascii=False) + "\n")
+                    k = (it[code_f], it[name_f], it["touDivCd"])
+                    cur = agg.setdefault(k, [0.0, set()])
+                    cur[0] += float(it["touNum"])
+                    cur[1].add(it["baseYmd"])
                     n += 1
+                for (code, name, kind), (v, days) in agg.items():
+                    f.write(json.dumps({"ym": f"{y}{m:02d}", "code": code, "name": name, "kind": kind,
+                                        "n": round(v), "days": len(days), "last": max(days)}, ensure_ascii=False) + "\n")
         print(f"{out}: total {total}, fetched {n}", flush=True)
         if n < total * 0.98:
             sys.exit(f"{out}: fetched {n} of {total}; aborting so the last good build stays published")

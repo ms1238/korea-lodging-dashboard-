@@ -22,6 +22,7 @@
     <label for="f-dong">읍·면·동<select id="f-dong" disabled><option value="-1">전체</option></select></label>
     <label for="f-ri">리<select id="f-ri" disabled><option value="-1">전체</option></select></label>
     <label for="f-status">영업 상태<select id="f-status"><option value="0">영업</option><option value="1">휴업</option><option value="2">폐업</option><option value="-1">전체</option></select></label>
+    <span class="cmpbar"><button class="btn" id="cmp-add" title="지금 고른 광역·기초를 비교 목록에 넣습니다">＋ 비교에 추가</button><span id="cmp-chips" class="chips"></span></span>
   </div>
 
   <div class="kpis" id="kpis"></div>
@@ -79,6 +80,22 @@
       <div class="legend"><span><i style="background:var(--ok)"></i>영업</span><span><i style="background:var(--pause)"></i>휴업</span><span><i style="background:var(--closed)"></i>폐업</span></div>
       <div class="sharelist" id="st-type"></div></div>
     <div class="card"><h3 id="st-area-title" style="margin-bottom:10px"></h3><div class="sharelist" id="st-area"></div></div>
+  </section>
+
+  <section id="cmp-sec">
+    <div class="sechead"><h2>관광객 추이 · 지역 비교</h2><p class="sub" id="cmp-sub"></p></div>
+    <div class="card">
+      <div class="tlrow" style="margin-bottom:10px">
+        <div class="seg" id="vt-per" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div>
+        <div class="seg" id="vt-kind" role="group" aria-label="방문객 구분"><button data-v="t" aria-pressed="true">외지인+외국인</button><button data-v="0" aria-pressed="false">외지인</button><button data-v="1" aria-pressed="false">외국인</button></div>
+      </div>
+      <div class="legend" id="vt-legend"></div>
+      <div class="chartwrap"><svg id="vt" viewBox="0 0 900 280" role="img" aria-label="관광객 추이"></svg><div class="tip" id="vt-tip" hidden></div></div>
+      <p class="note" id="vt-note"></p>
+    </div>
+    <div class="card"><h3 style="margin-bottom:10px">지역별 지표</h3><div class="tablewrap"><table id="cmp-table"></table></div></div>
+    <div class="card"><h3 style="margin-bottom:10px">연도별 신규 인허가 (선택 업종)</h3><div class="legend" id="cp-legend"></div>
+      <div class="chartwrap"><svg id="cp" viewBox="0 0 900 240" role="img" aria-label="지역별 연도별 인허가"></svg><div class="tip" id="cp-tip" hidden></div></div></div>
   </section>
 
   <section>

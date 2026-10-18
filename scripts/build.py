@@ -12,7 +12,8 @@ Steps
 7. Tourist attractions (TourAPI): tour/<sido>.json, already in WGS84, with the number of
    operating lodgings within 1 km and 3 km of each attraction.
 8. 외국인관광 도시민박: 용도지역·건물용도 groups (minbak.json for the national view).
-9. Visitors (KTO DataLab): 외지인 and 외국인 visitor counts over the latest 365 days, per 시도 and 시군구.
+9. Visitors (KTO DataLab): 외지인 and 외국인 visitors per 시도 and 시군구 over the latest 12 months (meta.json)
+   and per quarter since 2018 (visits.json).
 """
 import difflib
 import glob
@@ -223,57 +224,89 @@ def dedupe(rows):
 
 
 def add_visitors(sidos, sgg_of, sido_meta):
-    """Annual 외지인(2) and 외국인(3) visitors per 시도 and 시군구 as [외지인, 외국인] in sido_meta[i]["vis"] / ["visg"].
+    """Visitors from KTO DataLab monthly sums (외지인 kind 2, 외국인 kind 3).
 
-    Uses the latest 365 days. Areas reported for fewer days (e.g. 인천 구 created in 2026) are scaled up to a year
-    and listed under "partial". Old 광주광역시/전라남도 rows count toward 전남광주통합특별시."""
+    sido_meta[i]["vis"] / ["visg"]: [외지인, 외국인] over the latest 12 months, scaled to 365 days; areas reported
+    for fewer days (e.g. 인천 구 created in 2026) are listed under "partial".
+    Returns (meta block, quarterly series for visits.json). Old 광주광역시/전라남도 rows count toward
+    전남광주통합특별시; a 시군구 that moved between 시도 (군위군) is matched by its unique name."""
     def read(name):
         path = os.path.join(RAW, f"{name}.jsonl")
         return [json.loads(l) for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
     sido_rows, sgg_rows = read("datalab_sido"), read("datalab_sgg")
     if not sido_rows:
-        return None
-    last = max(r["ymd"] for r in sido_rows)
-    first = (datetime.strptime(last, "%Y%m%d") - timedelta(days=364)).strftime("%Y%m%d")
+        return None, None
 
     def norm(name):
         if name in ("광주광역시", "전라남도") and MERGED_GWANGJU_JEONNAM in sidos:
             return MERGED_GWANGJU_JEONNAM
         return SIDO_ALIASES.get(name, name)
     code_sido = {r["code"]: norm(r["name"]) for r in sido_rows}
-    sums, days, unmatched = defaultdict(lambda: [0.0, 0.0]), defaultdict(set), set()
+    by_name = defaultdict(list)
+    for s in sidos:
+        for g in sgg_of[s]:
+            by_name[g].append(s)
+    unmatched = set()
 
-    def add(key, r):
-        sums[key][int(r["kind"]) - 2] += float(r["n"])
-        days[key].add(r["ymd"])
-    for r in sido_rows:
-        if first <= r["ymd"] <= last and r["kind"] in ("2", "3"):
+    def key_of(r, level):
+        if level == "sido":
             sido = norm(r["name"])
-            add((sido, None), r) if sido in sidos else unmatched.add(r["name"])
-    for r in sgg_rows:
-        # 구 of a 시 (e.g. "수원시 장안구") are also reported at 시 level; keep the 시 row only
-        if not (first <= r["ymd"] <= last and r["kind"] in ("2", "3")) or " " in r["name"]:
-            continue
+            return (sido, None) if sido in sidos else unmatched.add(r["name"])
+        if " " in r["name"]:  # 구 of a 시 (e.g. "수원시 장안구") are also reported at 시 level
+            return None
         sido = code_sido.get(r["code"][:2])
         name = sido if r["name"] == sido else r["name"]  # 세종 reports itself as its only 시군구
         if sido in sidos and name in sgg_of[sido]:
-            add((sido, name), r)
-        else:
-            unmatched.add(f"{sido} {r['name']}")
-    full = len({r["ymd"] for r in sido_rows if first <= r["ymd"] <= last})
+            return (sido, name)
+        if len(by_name.get(name, [])) == 1:
+            return (by_name[name][0], name)
+        unmatched.add(f"{sido} {r['name']}")
+
+    months = sorted({r["ym"] for r in sido_rows})
+    window = set(months[-12:])
+    last = max(r["last"] for r in sido_rows)
+    quarters = sorted({f"{ym[:4]}Q{(int(ym[4:]) - 1) // 3 + 1}" for ym in months})
+    qi = {q: i for i, q in enumerate(quarters)}
+    year_sum, year_days = defaultdict(lambda: [0, 0]), defaultdict(lambda: defaultdict(int))
+    series = defaultdict(lambda: [[None] * len(quarters), [None] * len(quarters)])
+    for level, rows in (("sido", sido_rows), ("sgg", sgg_rows)):
+        for r in rows:
+            if r["kind"] not in ("2", "3"):
+                continue
+            k = key_of(r, level)
+            if not k:
+                continue
+            j = int(r["kind"]) - 2
+            arr = series[k][j]
+            q = qi[f"{r['ym'][:4]}Q{(int(r['ym'][4:]) - 1) // 3 + 1}"]
+            arr[q] = (arr[q] or 0) + r["n"]
+            if r["ym"] in window:
+                year_sum[k][j] += r["n"]
+                year_days[k][r["ym"]] = max(year_days[k][r["ym"]], r["days"])
+    full = max(sum(year_days[(s, None)].values()) for s in sidos if (s, None) in year_days)
     partial = []
 
-    def year(key):
-        if key not in sums:
+    def year(k):
+        if k not in year_sum:
             return None
-        n = len(days[key])
+        n = sum(year_days[k].values())
         if n < full * 0.95:
-            partial.append(" ".join(k for k in key if k))
-        return [round(v * full / n) for v in sums[key]]
+            partial.append(" ".join(x for x in k if x))
+        return [round(v * 365 / n) for v in year_sum[k]]
     for s, sm in zip(sidos, sido_meta):
         sm["vis"] = year((s, None))
         sm["visg"] = [year((s, g)) for g in sm["sgg"]]
-    return {"from": first, "to": last, "partial": partial, "unmatched": sorted(unmatched)}
+    # days covered per quarter (national), so the page can mark the quarter still in progress
+    qdays = [0] * len(quarters)
+    for ym in months:
+        days = max(r["days"] for r in sido_rows if r["ym"] == ym)
+        qdays[qi[f"{ym[:4]}Q{(int(ym[4:]) - 1) // 3 + 1}"]] += days
+    visits = {"q": quarters, "qdays": qdays, "last": last,
+              "sido": [series.get((s, None)) for s in sidos],
+              "sgg": [[series.get((s, g)) for g in sgg_of[s]] for s in sidos]}
+    first_month = min(window)
+    meta = {"from": first_month + "01", "to": last, "partial": partial, "unmatched": sorted(unmatched)}
+    return meta, visits
 
 
 def main():
@@ -431,7 +464,10 @@ def main():
             if r[3] >= 0:
                 cnt[r[3]][r[2]] += 1
         sm["tour"] = cnt
-    visitors = add_visitors(sidos, sgg_of, sido_meta)
+    visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
+    if visits:
+        with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
+            json.dump(visits, f, separators=(",", ":"))
     for si in range(len(sidos)):
         with open(os.path.join(OUT, "tour", f"{si}.json"), "w", encoding="utf-8") as f:
             json.dump(tour_by.get(si, []), f, ensure_ascii=False, separators=(",", ":"))

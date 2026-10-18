@@ -5,7 +5,8 @@
    data/pts/<si>.json – {dongs:[[읍면동…] per 시군구], ris:{"g:d":[리…]},
                          rows:[[lat, lon, type, sgg, dong, ri, status, year, closeYear, name, addr, date, closed, approx, zone, bldg]]}
    data/tour/<si>.json – [[lat, lon, tourType, sgg, title, addr, img, contentId, lodgings≤1km, lodgings≤3km]]
-   data/minbak.json – [sidoIdx, sggIdx, status, zone, bldg, count]  (외국인관광 도시민박, national view) */
+   data/minbak.json – [sidoIdx, sggIdx, status, zone, bldg, count]  (외국인관광 도시민박, national view)
+   data/visits.json – {q:[분기…], qdays, last, sido:[[외지인[], 외국인[]]…], sgg:[[[외지인[], 외국인[]]…]…]} (null = 자료 없음) */
 (async function () {
   const $ = id => document.getElementById(id);
   const fmt = n => n.toLocaleString('ko-KR');
@@ -13,7 +14,7 @@
   const esc = s => String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const getJSON = (u, fb) => fetch(u).then(r => r.ok ? r.json() : fb).catch(() => fb);
-  const [meta, cube, close, minbak] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []), getJSON('data/minbak.json', [])]);
+  const [meta, cube, close, minbak, visits] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []), getJSON('data/minbak.json', []), getJSON('data/visits.json', null)]);
   const T = meta.types, CATS = meta.categories, S = meta.sido, ST = meta.status;
   const catOf = T.map(t => CATS.indexOf(t.cat));
   const col = c => css('--c' + c);
@@ -23,7 +24,7 @@
   const yNow = new Date().getFullYear();
 
   const TL0 = 1990;
-  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'vis' : 'tour' };
+  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'vis' : 'tour', cmp: [], vt: { per: 'y', kind: 't' } };
   let D = null; // detail file of the selected 시도
   const detailCache = {}, tourCache = {};
   const loadDetail = si => (detailCache[si] ||= getJSON(`data/pts/${si}.json`, { dongs: [], ris: {}, rows: [] }));
@@ -320,6 +321,7 @@
       || '<p class="note">더 작은 지역 단위가 없습니다.</p>';
 
     renderStatus(a, names);
+    renderCompare();
     renderSupply();
     renderTrend(names);
     renderMinbak(names);
@@ -353,6 +355,122 @@
       <span class="stackbar">${v.map((x, i) => x ? `<span style="flex:${x};background:${STC[i]}" title="${ST[i]} ${fmt(x)}"></span>` : '').join('')}</span>
       <span class="val">폐업 ${pct(v[2], v[0] + v[2])}<em>휴업 ${fmt(v[1])}</em></span></div>`;
   }
+
+  /* ---------- 관광객 추이 · 지역 비교 ----------
+     비교 목록(state.cmp)이 비어 있으면 상단 필터의 지역 하나를 보여줍니다. 지역 = {si, gi} (si −1 전국, gi −1 광역 전체). */
+  const short = n => n.replace(/(통합특별시|특별자치시|특별자치도|특별시|광역시)$/, '').replace(/^(.).(.)도$/, '$1$2');
+  const regLabel = r => r.si < 0 ? '전국' : r.gi < 0 ? S[r.si].name : `${short(S[r.si].name)} ${S[r.si].sgg[r.gi]}`;
+  const inReg = (r, si, gi) => r.si < 0 || (si === r.si && (r.gi < 0 || gi === r.gi));
+  const regions = () => state.cmp.length ? state.cmp : [{ si: state.sido, gi: state.sido < 0 ? -1 : state.sgg }];
+  function renderChips() {
+    $('cmp-chips').innerHTML = state.cmp.map((r, i) => `<span class="chip"><span class="sw" style="background:var(--c${i})"></span>${esc(regLabel(r))}<button data-i="${i}" aria-label="${esc(regLabel(r))} 빼기">×</button></span>`).join('')
+      + (state.cmp.length ? '<button class="btn" id="cmp-clear">비우기</button>' : '');
+  }
+  $('cmp-add').onclick = () => {
+    const r = { si: state.sido, gi: state.sido < 0 ? -1 : state.sgg };
+    if (state.cmp.length >= 7 || state.cmp.some(x => x.si === r.si && x.gi === r.gi)) return;
+    state.cmp.push(r); renderChips(); renderCompare();
+  };
+  $('cmp-chips').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.id === 'cmp-clear') state.cmp = []; else state.cmp.splice(+b.dataset.i, 1);
+    renderChips(); renderCompare();
+  });
+  const visOf = r => {
+    if (!visits) return null;
+    if (r.si >= 0) return r.gi < 0 ? visits.sido[r.si] : visits.sgg[r.si][r.gi];
+    const out = [visits.q.map(() => null), visits.q.map(() => null)];
+    for (const v of visits.sido) if (v) for (let j = 0; j < 2; j++) v[j].forEach((x, i) => { if (x != null) out[j][i] = (out[j][i] || 0) + x; });
+    return out;
+  };
+  function visPeriods() {
+    // 분기 또는 연도 단위로 묶고, 자료가 95% 미만인 기간(진행 중)을 표시
+    const q = visits.q, daysIn = k => { const y = +k.slice(0, 4), leap = (y % 4 === 0) ? 1 : 0;
+      return k.length === 4 ? 365 + leap : [90 + leap, 91, 92, 92][+k[5] - 1]; };
+    const keys = [], idx = [];
+    q.forEach((k, i) => { const key = state.vt.per === 'y' ? k.slice(0, 4) : k; let j = keys.indexOf(key); if (j < 0) { keys.push(key); idx.push([]); j = keys.length - 1; } idx[j].push(i); });
+    const partial = keys.map((k, j) => idx[j].reduce((a, i) => a + visits.qdays[i], 0) < daysIn(k) * .95);
+    return { keys, idx, partial };
+  }
+  function visValues(v, P) {
+    const k = state.vt.kind, val = i => k === 't' ? (v[0][i] == null || v[1][i] == null ? null : v[0][i] + v[1][i]) : v[+k][i];
+    return P.idx.map(ii => { const xs = ii.map(val); return xs.some(x => x == null) ? null : xs.reduce((a, b) => a + b, 0); });
+  }
+  function lineChart(svg, tip, labels, series, opt) {
+    // series: [{name, color, vals:[number|null]}]; opt.partial: [bool] (점선·빈 점), opt.unit(v) 축 단위
+    const W = 900, H = +svg.getAttribute('viewBox').split(' ')[3], L = 64, R = 12, Tp = 14, B = 26, iw = W - L - R, ih = H - Tp - B;
+    const all = series.flatMap(s => s.vals).filter(v => v != null), mx = Math.max(1, ...all);
+    const step = niceStep(mx / opt.div) * opt.div, top = Math.ceil(mx / step) * step, n = labels.length, bw = iw / n;
+    const X = i => L + i * bw + bw / 2, Y = v => Tp + ih - v / top * ih;
+    let s = '';
+    for (let v = 0; v <= top; v += step) s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${opt.unit(v)}</text>`;
+    const every = Math.ceil(n / 12);
+    labels.forEach((l, i) => { if ((n - 1 - i) % every === 0) s += `<text x="${X(i)}" y="${H - 8}" text-anchor="middle">${esc(l)}${opt.partial?.[i] ? '*' : ''}</text>`; });
+    for (const se of series) {
+      let d = '', dash = '';
+      se.vals.forEach((v, i) => {
+        if (v == null) return;
+        const p = `${X(i)},${Y(v)}`, prev = se.vals[i - 1];
+        if (opt.partial?.[i] && prev != null) dash += `M${X(i - 1)},${Y(prev)}L${p}`;
+        else d += (prev == null ? 'M' : 'L') + p;
+      });
+      s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.2"/><path d="${dash}" fill="none" stroke="${se.color}" stroke-width="2" stroke-dasharray="4 4"/>`;
+      se.vals.forEach((v, i) => { if (v != null) s += `<circle cx="${X(i)}" cy="${Y(v)}" r="${n > 24 ? 2 : 3}" fill="${opt.partial?.[i] ? 'var(--panel)' : se.color}" stroke="${se.color}" stroke-width="1.5"/>`; });
+    }
+    labels.forEach((_, i) => { s += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`; });
+    svg.innerHTML = s;
+    attachTip(svg, tip, i => `<b>${esc(labels[i])}${opt.partial?.[i] ? ' (진행 중)' : ''}</b><br>` + series.map(se => `<span class="sw" style="background:${se.color}"></span>${esc(se.name)} ${se.vals[i] == null ? '자료 없음' : opt.tip(se.vals[i])}`).join('<br>'));
+  }
+  function regStats(r) {
+    const Y3 = yNow - 3, inW = y => y > Y3 && y <= yNow, st = [0, 0, 0], tr = { nw: 0, cl: 0, base: 0 }, py = {};
+    for (const c of cube) {
+      if (!state.types.has(c[2]) || !inReg(r, c[0], c[1])) continue;
+      st[c[3]] += c[5];
+      if (c[4]) py[c[4]] = (py[c[4]] || 0) + c[5];
+      if (inW(c[4])) tr.nw += c[5];
+      if (c[3] < 2 && c[4] && c[4] <= Y3) tr.base += c[5];
+    }
+    for (const c of close) {
+      if (!state.types.has(c[2]) || !inReg(r, c[0], c[1])) continue;
+      if (inW(c[3])) tr.cl += c[5];
+      if (c[4] && c[4] <= Y3 && c[3] > Y3) tr.base += c[5];
+    }
+    let mb = 0;
+    for (const m of minbak) if (m[2] === 0 && inReg(r, m[0], m[1])) mb += m[5];
+    const v = r.si < 0 ? S.reduce((a, s) => a + (visSum(s.vis) || 0), 0) : visSum(r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]);
+    return { st, tr, py, mb, v };
+  }
+  function renderCompare() {
+    const R = regions(), cols = R.map((_, i) => state.cmp.length ? `var(--c${i})` : 'var(--c0)');
+    $('cmp-sub').textContent = state.cmp.length ? `비교 중: ${R.map(regLabel).join(', ')}` : `${regLabel(R[0])} · 상단 필터에서 지역을 고르고 '＋ 비교에 추가'를 누르면 여러 곳을 나란히 봅니다(광역 무관, 최대 7곳).`;
+    document.querySelectorAll('#vt-per button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === state.vt.per)));
+    document.querySelectorAll('#vt-kind button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === state.vt.kind)));
+    const legend = R.map((r, i) => `<span><i style="background:${cols[i]}"></i>${esc(regLabel(r))}</span>`).join('');
+    // 관광객 추이
+    if (visits) {
+      const P = visPeriods();
+      const series = R.map((r, i) => { const v = visOf(r); return { name: regLabel(r), color: cols[i], vals: v ? visValues(v, P) : P.keys.map(() => null) }; });
+      $('vt-legend').innerHTML = legend;
+      lineChart($('vt'), $('vt-tip'), P.keys.map(k => state.vt.per === 'y' ? k : `${k.slice(2, 4)}.${k.slice(5)}Q`), series,
+        { partial: P.partial, div: 1e4, unit: v => !v ? '0' : v >= 1e8 ? (v / 1e8).toFixed(v % 1e8 ? 1 : 0) + '억' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(Math.round(v / 1e4)) + '만 명' });
+      const L = visits.last;
+      $('vt-note').textContent = `한국관광공사 데이터랩 휴대폰 기반 방문자 수(연인원), ${L.slice(0, 4)}.${L.slice(4, 6)}.${L.slice(6)}까지. *·점선은 아직 다 모이지 않은 기간입니다. 외국인은 기초 2019년, 광역 2020년부터 있어 합계는 그 이후만 그립니다.`
+        + (R.some(r => r.si === S.findIndex(s => s.name === '인천광역시') && r.gi >= 0) ? ' 인천 신설 구는 2026년부터만 있습니다.' : '');
+    } else { $('vt').innerHTML = ''; $('vt-note').textContent = '방문객 자료가 없습니다.'; }
+    // 지표 표
+    const stats = R.map(regStats), Y3 = yNow - 3;
+    const pctS = (a, b) => b ? (a >= 0 ? '+' : '') + (a / b * 100).toFixed(1) + '%' : '-';
+    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 방문객</th><th>방문객 100만 명당 숙소</th><th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th></tr></thead><tbody>`
+      + R.map((r, i) => { const x = stats[i];
+        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td><td>${x.v ? fmt(Math.round(x.v / 1e4)) + '만' : '-'}</td><td>${x.v ? (x.st[0] / (x.v / 1e6)).toFixed(1) : '-'}</td><td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
+    // 연도별 신규 인허가
+    const years = []; for (let y = yNow - 19; y <= yNow; y++) years.push(y);
+    $('cp-legend').innerHTML = legend;
+    lineChart($('cp'), $('cp-tip'), years.map(String), R.map((r, i) => ({ name: regLabel(r), color: cols[i], vals: years.map(y => stats[i].py[y] || 0) })),
+      { partial: years.map(y => y === yNow), div: 1, unit: fmt, tip: v => fmt(v) + '곳' });
+  }
+  $('vt-per').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.vt.per = b.dataset.v; renderCompare(); } });
+  $('vt-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.vt.kind = b.dataset.v; renderCompare(); } });
 
   /* ---------- 관광 수요 대비 숙소 ----------
      관광지·방문객 수는 시군구까지만 있으므로 이 칸은 시군구 단위에서 멈춥니다. */
@@ -396,7 +514,7 @@
         || '<p class="note">비교할 자료가 없습니다.</p>';
       const miss = mode === 'vis' ? kids.filter(c => !c.vis).map(c => c.name) : [];
       $('sup-ratio-note').textContent = (mode === 'vis'
-        ? `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 방문객은 한국관광공사 데이터랩 ${VIS.from.slice(0, 4)}.${VIS.from.slice(4, 6)}~${VIS.to.slice(0, 4)}.${VIS.to.slice(4, 6)} 기준 연인원입니다(현지인 제외).`
+        ? `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 방문객은 한국관광공사 데이터랩 ${VIS.from.slice(0, 4)}.${VIS.from.slice(4, 6)}~${VIS.to.slice(0, 4)}.${VIS.to.slice(4, 6)} 기준 연인원을 1년치로 환산했습니다(현지인 제외).`
         : `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 관광 유형은 지도 옆 체크박스를 따릅니다${si >= 0 ? ' · 관광지 5곳 미만 지역은 뺐습니다' : ''}.`)
         + (miss.length ? ` 방문객 자료 없음: ${miss.join(', ')}.` : '')
         + ((p => p.length && mode === 'vis' ? ` ${p.join(', ')}는 신설 구라 집계 기간이 짧아 연간으로 환산했습니다.` : '')(si < 0 || !VIS ? [] : VIS.partial.filter(x => x.startsWith(S[si].name + ' ')).map(x => x.slice(S[si].name.length + 1))));

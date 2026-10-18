@@ -85,3 +85,14 @@ svg .grid{stroke:var(--line)}
 @media (max-width:520px){.two .row{grid-template-columns:minmax(0,1fr) 96px}}
 .track i.neg{background:var(--closed)!important}
 [hidden]{display:none!important}
+.cmpbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex-basis:100%}
+.cmpbar .btn{margin-left:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:999px;padding:2px 4px 2px 10px;font-size:12.5px;background:var(--panel)}
+.chip button{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;padding:0 4px;line-height:1}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:500;font-size:12px}
+th:first-child,td:first-child{text-align:left}
+@media (max-width:520px){.controls{position:static}}
