@@ -17,6 +17,8 @@
 
 관광 정보는 한국관광공사 TourAPI(`https://apis.data.go.kr/B551011/KorService2/areaBasedList2`)에서 관광지(12)·문화시설(14)·레포츠(28)를 받습니다. 같은 공공데이터포털 키를 씁니다.
 
+방문객 수는 한국관광공사 데이터랩(`https://apis.data.go.kr/B551011/DataLabService`)의 광역·기초 지자체 일별 방문자 수에서 최근 365일 외지인·외국인을 합산합니다. 같은 키를 씁니다.
+
 지도 지형(산 음영, 3D)은 AWS Terrain Tiles(Terrarium)를 씁니다.
 
 ## 구조

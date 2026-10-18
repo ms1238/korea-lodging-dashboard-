@@ -9,11 +9,15 @@ Steps
    the median position of the same 시군구+동 when possible.
 6. Write meta.json, cube.json / close.json (national aggregates; close rows carry 폐업 and 인허가 year) and
    pts/<sido>.json (every record of the province with 읍면동·리 indices, for detail views).
-7. Tourist attractions (TourAPI): tour/<sido>.json, already in WGS84.
+7. Tourist attractions (TourAPI): tour/<sido>.json, already in WGS84, with the number of
+   operating lodgings within 1 km and 3 km of each attraction.
+8. 외국인관광 도시민박: 용도지역·건물용도 groups (minbak.json for the national view).
+9. Visitors (KTO DataLab): 외지인 and 외국인 visitor counts over the latest 365 days, per 시도 and 시군구.
 """
 import difflib
 import glob
 import json
+import math
 import os
 import re
 import statistics
@@ -41,6 +45,28 @@ CATEGORIES = ["숙박업", "관광숙박업", "외국인관광 도시민박업",
 CAMP = {"general_campgrounds", "auto_campgrounds"}
 TOUR_TYPES = [("12", "관광지"), ("14", "문화시설"), ("28", "레포츠")]
 STATUS = ["영업", "휴업", "폐업"]  # 폐업 also covers 취소·말소·만료 etc.
+ZONES = ["주거지역", "상업지역", "공업지역", "녹지·관리지역", "미상"]
+BLDGS = ["아파트", "다세대·연립", "단독·다가구", "기타", "미상"]
+
+
+def zone_of(s):
+    s = clean(s)
+    if not s:
+        return 4
+    return 0 if "주거" in s else 1 if "상업" in s else 2 if "공업" in s else 3
+
+
+def bldg_of(s):
+    s = clean(s)
+    if not s:
+        return 4
+    if "아파트" in s:
+        return 0
+    if "다세대" in s or "연립" in s:
+        return 1
+    if "단독" in s or "다가구" in s or "다중" in s:
+        return 2
+    return 3
 
 SIDO_ALIASES = {
     "서울": "서울특별시", "부산": "부산광역시", "대구": "대구광역시", "인천": "인천광역시",
@@ -167,6 +193,8 @@ def load():
                     "status": status_of(rec),
                     "date": ymd(rec.get("LCPMT_YMD")), "closed": ymd(rec.get("CLSBIZ_YMD")),
                     "ll": coords(rec), "id": clean(rec.get("MNG_NO")),
+                    "zone": zone_of(rec.get("RGN_SE_NM")) if ep == "foreigner_city_homestays" else -1,
+                    "bldg": bldg_of(rec.get("BLDG_USG_NM")) if ep == "foreigner_city_homestays" else -1,
                 })
     return rows
 
@@ -192,6 +220,60 @@ def dedupe(rows):
                 continue
         keep.append(r)
     return keep, removed, examples
+
+
+def add_visitors(sidos, sgg_of, sido_meta):
+    """Annual 외지인(2) and 외국인(3) visitors per 시도 and 시군구 as [외지인, 외국인] in sido_meta[i]["vis"] / ["visg"].
+
+    Uses the latest 365 days. Areas reported for fewer days (e.g. 인천 구 created in 2026) are scaled up to a year
+    and listed under "partial". Old 광주광역시/전라남도 rows count toward 전남광주통합특별시."""
+    def read(name):
+        path = os.path.join(RAW, f"{name}.jsonl")
+        return [json.loads(l) for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
+    sido_rows, sgg_rows = read("datalab_sido"), read("datalab_sgg")
+    if not sido_rows:
+        return None
+    last = max(r["ymd"] for r in sido_rows)
+    first = (datetime.strptime(last, "%Y%m%d") - timedelta(days=364)).strftime("%Y%m%d")
+
+    def norm(name):
+        if name in ("광주광역시", "전라남도") and MERGED_GWANGJU_JEONNAM in sidos:
+            return MERGED_GWANGJU_JEONNAM
+        return SIDO_ALIASES.get(name, name)
+    code_sido = {r["code"]: norm(r["name"]) for r in sido_rows}
+    sums, days, unmatched = defaultdict(lambda: [0.0, 0.0]), defaultdict(set), set()
+
+    def add(key, r):
+        sums[key][int(r["kind"]) - 2] += float(r["n"])
+        days[key].add(r["ymd"])
+    for r in sido_rows:
+        if first <= r["ymd"] <= last and r["kind"] in ("2", "3"):
+            sido = norm(r["name"])
+            add((sido, None), r) if sido in sidos else unmatched.add(r["name"])
+    for r in sgg_rows:
+        # 구 of a 시 (e.g. "수원시 장안구") are also reported at 시 level; keep the 시 row only
+        if not (first <= r["ymd"] <= last and r["kind"] in ("2", "3")) or " " in r["name"]:
+            continue
+        sido = code_sido.get(r["code"][:2])
+        name = sido if r["name"] == sido else r["name"]  # 세종 reports itself as its only 시군구
+        if sido in sidos and name in sgg_of[sido]:
+            add((sido, name), r)
+        else:
+            unmatched.add(f"{sido} {r['name']}")
+    full = len({r["ymd"] for r in sido_rows if first <= r["ymd"] <= last})
+    partial = []
+
+    def year(key):
+        if key not in sums:
+            return None
+        n = len(days[key])
+        if n < full * 0.95:
+            partial.append(" ".join(k for k in key if k))
+        return [round(v * full / n) for v in sums[key]]
+    for s, sm in zip(sidos, sido_meta):
+        sm["vis"] = year((s, None))
+        sm["visg"] = [year((s, g)) for g in sm["sgg"]]
+    return {"from": first, "to": last, "partial": partial, "unmatched": sorted(unmatched)}
 
 
 def main():
@@ -245,6 +327,7 @@ def main():
 
     cube = Counter()
     close = Counter()
+    minbak = Counter()
     sido_meta = []
     for si, s in enumerate(sidos):
         sggs = sgg_of[s]
@@ -268,9 +351,12 @@ def main():
             cube[(si, g, tidx[r["type"]], r["status"], y)] += 1
             if cy:
                 close[(si, g, tidx[r["type"]], cy, y)] += 1
+            if r["zone"] >= 0:
+                minbak[(si, g, r["status"], r["zone"], r["bldg"])] += 1
             lat, lon = r["ll"] if r["ll"] else (None, None)
             out.append([lat, lon, tidx[r["type"]], g, d, q, r["status"], y, cy,
-                        r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0)])
+                        r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0),
+                        r["zone"], r["bldg"]])
             if r["ll"]:
                 cen[r["sgg"]].append(r["ll"])
         with open(os.path.join(OUT, "pts", f"{si}.json"), "w", encoding="utf-8") as f:
@@ -287,6 +373,28 @@ def main():
         })
     with open(os.path.join(OUT, "close.json"), "w", encoding="utf-8") as f:
         json.dump([[*k, v] for k, v in sorted(close.items())], f, separators=(",", ":"))
+    with open(os.path.join(OUT, "minbak.json"), "w", encoding="utf-8") as f:
+        json.dump([[*k, v] for k, v in sorted(minbak.items())], f, separators=(",", ":"))
+
+    # operating lodgings (campgrounds excluded) on a ~1 km grid, for attraction proximity counts
+    grid = defaultdict(list)
+    for r in rows:
+        if r["status"] == 0 and r["ll"] and r["src"] not in CAMP:
+            grid[(int(r["ll"][0] * 100), int(r["ll"][1] * 100))].append(r["ll"])
+
+    def near(lat, lon):
+        n1 = n3 = 0
+        ci, cj = int(lat * 100), int(lon * 100)
+        kx = 111.32 * math.cos(math.radians(lat))
+        for i in range(ci - 3, ci + 4):
+            for j in range(cj - 4, cj + 5):
+                for la, lo in grid.get((i, j), ()):
+                    d2 = ((la - lat) * 110.95) ** 2 + ((lo - lon) * kx) ** 2
+                    if d2 <= 9:
+                        n3 += 1
+                        if d2 <= 1:
+                            n1 += 1
+        return n1, n3
 
     # tourist attractions, grouped by the same 시도/시군구 indices
     os.makedirs(os.path.join(OUT, "tour"), exist_ok=True)
@@ -313,9 +421,17 @@ def main():
                 si = sidos.index(sido)
                 gi = sgg_of[sido].index(sgg) if sgg in sgg_of[sido] else -1
                 img = clean(rec.get("firstimage2") or rec.get("firstimage")).replace("http://", "https://")
+                n1, n3 = near(lat, lon)
                 tour_by[si].append([round(lat, 5), round(lon, 5), ti, gi, clean(rec.get("title")),
-                                    re.sub(r"^\S+\s", "", clean(rec.get("addr1"))), img, clean(rec.get("contentid"))])
+                                    re.sub(r"^\S+\s", "", clean(rec.get("addr1"))), img, clean(rec.get("contentid")), n1, n3])
                 tour_n[ti] += 1
+    for si, sm in enumerate(sido_meta):
+        cnt = [[0] * len(TOUR_TYPES) for _ in sm["sgg"]]
+        for r in tour_by.get(si, []):
+            if r[3] >= 0:
+                cnt[r[3]][r[2]] += 1
+        sm["tour"] = cnt
+    visitors = add_visitors(sidos, sgg_of, sido_meta)
     for si in range(len(sidos)):
         with open(os.path.join(OUT, "tour", f"{si}.json"), "w", encoding="utf-8") as f:
             json.dump(tour_by.get(si, []), f, ensure_ascii=False, separators=(",", ":"))
@@ -333,6 +449,8 @@ def main():
         "coords": {"dropped_campgrounds": dropped_camp, "filled_from_dong": filled, "no_coords": nocoord},
         "unknown_region": unknown_region,
         "tour": {"types": [n for _, n in TOUR_TYPES], "counts": [tour_n[i] for i in range(len(TOUR_TYPES))]},
+        "zones": ZONES, "bldgs": BLDGS,
+        "visitors": visitors,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))

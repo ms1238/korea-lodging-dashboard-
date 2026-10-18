@@ -81,6 +81,40 @@
     <div class="card"><h3 id="st-area-title" style="margin-bottom:10px"></h3><div class="sharelist" id="st-area"></div></div>
   </section>
 
+  <section>
+    <div class="sechead"><h2>관광 수요 대비 숙소</h2><p class="sub" id="sup-sub"></p></div>
+    <div class="kpis" id="sup-kpis"></div>
+    <div class="card" id="sup-ratio-card">
+      <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="sup-seg" role="group" aria-label="기준"><button data-m="vis" aria-pressed="true">방문객 기준</button><button data-m="tour" aria-pressed="false">관광지 기준</button></div><h3 id="sup-ratio-title"></h3></div>
+      <div class="sharelist" id="sup-ratio"></div>
+      <p class="note" id="sup-ratio-note"></p></div>
+    <div class="two" id="sup-tour">
+      <div class="card"><h3 style="margin-bottom:10px">숙소 공백 관광지 · 반경 3km 숙소가 적은 순</h3><div class="sharelist" id="sup-gap"></div></div>
+      <div class="card"><h3 style="margin-bottom:10px">숙소 밀집 관광지 · 반경 1km 숙소가 많은 순</h3><div class="sharelist" id="sup-dense"></div></div>
+    </div>
+    <p class="note" id="sup-note"></p>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>뜨는 지역 · 지는 지역</h2><p class="sub" id="tr-sub"></p></div>
+    <div class="kpis" id="tr-kpis"></div>
+    <div class="two">
+      <div class="card"><h3 style="margin-bottom:10px">뜨는 곳 · 증가율 상위</h3><div class="sharelist" id="tr-up"></div></div>
+      <div class="card"><h3 style="margin-bottom:10px">지는 곳 · 증가율 하위</h3><div class="sharelist" id="tr-down"></div></div>
+    </div>
+    <p class="note" id="tr-note"></p>
+  </section>
+
+  <section id="mb-sec">
+    <div class="sechead"><h2>외국인관광 도시민박 입지</h2><p class="sub" id="mb-sub"></p></div>
+    <div class="kpis" id="mb-kpis"></div>
+    <div class="two">
+      <div class="card"><h3 style="margin-bottom:10px">용도지역</h3><div class="sharelist" id="mb-zone"></div></div>
+      <div class="card"><h3 style="margin-bottom:10px">건물 용도</h3><div class="sharelist" id="mb-bldg"></div></div>
+    </div>
+    <div class="card"><h3 id="mb-area-title" style="margin-bottom:10px"></h3><div class="legend" id="mb-legend"></div><div class="sharelist" id="mb-area"></div></div>
+  </section>
+
   <footer class="note" id="foot"></footer>
 </div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
