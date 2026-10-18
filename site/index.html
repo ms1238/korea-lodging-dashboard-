@@ -123,7 +123,8 @@
     <div class="sechead"><h2>외지인·외국인 방문객 추이</h2><p class="sub" id="dv-sub"></p></div>
     <div class="card">
       <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="dv-per" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div>
-        <div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>외지인(내국인)</span><span><i style="background:var(--c1)"></i>외국인</span><span>막대 위 숫자 = 외국인 비중</span></div></div>
+        <div class="seg" id="dv-mode" role="group" aria-label="그래프 모양"><button data-v="bar" aria-pressed="true">막대</button><button data-v="line" aria-pressed="false">선</button></div>
+        <div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>외지인(내국인)</span><span><i style="background:var(--c1)"></i>외국인</span><span id="dv-hint">막대 위 숫자 = 외국인 비중</span></div></div>
       <div class="chartwrap"><svg id="dv" viewBox="0 0 900 300" role="img" aria-label="외지인·외국인 방문객 추이"></svg><div class="tip" id="dv-tip" hidden></div></div>
       <p class="note" id="dv-note"></p></div>
   </section>
@@ -148,7 +149,7 @@
     <div class="card"><h3 style="margin-bottom:10px">월별 방한 외래관광객</h3>
       <div class="chartwrap"><svg id="arr" viewBox="0 0 900 260" role="img" aria-label="월별 방한 외래관광객"></svg><div class="tip" id="arr-tip" hidden></div></div></div>
     <div class="card"><button class="btn csv" data-csv="arr-top" data-name="방한객_국적별">CSV</button><h3 style="margin-bottom:10px" id="arr-top-title"></h3><div class="sharelist" id="arr-top"></div>
-      <p class="note">출처: 한국문화관광연구원 출입국관광통계(공공데이터포털). 국적별 입국자 수로, 시도별 자료는 없습니다.</p></div>
+      <p class="note">출처: 한국문화관광연구원 출입국관광통계(공공데이터포털). 국적별 입국자 수로 전국 단위만 있습니다. 지역별 외국인 방문객은 위 "외지인·외국인 방문객 추이"에서 보세요(데이터랩, 국적 구분 없음).</p></div>
   </section>
 
   <section data-tab="trend">

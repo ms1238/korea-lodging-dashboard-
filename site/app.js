@@ -674,7 +674,7 @@
   const pc1 = x => (x * 100).toFixed(1) + '%';
 
   /* ---------- 외지인·외국인 방문객 추이 (지금 고른 지역, 누적 막대 + 외국인 비중) ---------- */
-  let dvPer = 'y';
+  let dvPer = 'y', dvMode = 'bar';
   function renderDemandVis() {
     if (!visits) { $('dv-sec').hidden = true; return; }
     const regs = U ? U.regs : [curReg()];
@@ -683,13 +683,36 @@
     const P = visPeriods(dvPer), agg = j => P.idx.map(ii => ii.some(i => sum[j][i] == null) ? null : ii.reduce((a, i) => a + sum[j][i], 0));
     const b = agg(0), c = agg(1), labels = P.keys.map(k => dvPer === 'y' ? k : `${k.slice(2, 4)}.${k.slice(5)}Q`);
     document.querySelectorAll('#dv-per button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === dvPer)));
-    const W = 900, H = 300, L = 64, R = 12, Tp = 22, B = 26, iw = W - L - R, ih = H - Tp - B, n = labels.length, bw = iw / n;
+    document.querySelectorAll('#dv-mode button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === dvMode)));
+    $('dv-hint').textContent = dvMode === 'line' ? '외지인 = 왼쪽 축 · 외국인 = 오른쪽 축' : '막대 위 숫자 = 외국인 비중';
+    const W = 900, H = 300, L = 64, R = dvMode === 'line' ? 64 : 12, Tp = 22, B = 26, iw = W - L - R, ih = H - Tp - B, n = labels.length, bw = iw / n;
     const mx = Math.max(1, ...b.map((x, i) => (x || 0) + (c[i] || 0))), step = niceStep(mx / 1e4) * 1e4, top = Math.ceil(mx / step) * step;
     const Y = v => Tp + ih - v / top * ih, unit = v => !v ? '0' : v >= 1e8 ? (v / 1e8).toFixed(v % 1e8 ? 1 : 0) + '억' : fmt(Math.round(v / 1e4)) + '만';
     let svg = '';
-    for (let v = 0; v <= top; v += step) svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${unit(v)}</text>`;
     const every = Math.ceil(n / 12);
-    labels.forEach((l, i) => {
+    if (dvMode === 'line') {
+      // 선: 외지인(왼쪽 축)과 외국인(오른쪽 축)의 규모 차이가 커서 축을 따로 씁니다
+      const scale = vals => { const m = Math.max(1, ...vals.filter(v => v != null)), st = niceStep(m / 1e4) * 1e4; return { st, top: Math.ceil(m / st) * st }; };
+      const sb = scale(b), sc = scale(c), X = i => L + i * bw + bw / 2, Yb = v => Tp + ih - v / sb.top * ih, Yc = v => Tp + ih - v / sc.top * ih;
+      for (let k = 0; k <= sb.top / sb.st; k++) {
+        const y = Tp + ih - k / (sb.top / sb.st) * ih;
+        svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text x="${L - 8}" y="${y + 4}" text-anchor="end" style="fill:var(--c0)">${unit(sb.st * k)}</text>`;
+      }
+      for (let v = 0; v <= sc.top; v += sc.st) svg += `<text x="${W - R + 8}" y="${Yc(v) + 4}" style="fill:var(--c1)">${unit(v)}</text>`;
+      const line = (vals, Yf, col) => {
+        let d = '', dash = '';
+        vals.forEach((v, i) => { if (v == null) return; const pt = `${X(i)},${Yf(v)}`, pv = vals[i - 1];
+          if (P.partial[i] && pv != null) dash += `M${X(i - 1)},${Yf(pv)}L${pt}`; else d += (pv == null ? 'M' : 'L') + pt; });
+        return `<path d="${d}" fill="none" stroke="${col}" stroke-width="2.4"/><path d="${dash}" fill="none" stroke="${col}" stroke-width="2" stroke-dasharray="4 4"/>`
+          + vals.map((v, i) => v == null ? '' : `<circle cx="${X(i)}" cy="${Yf(v)}" r="${n > 24 ? 2 : 3.5}" fill="${P.partial[i] ? 'var(--panel)' : col}" stroke="${col}" stroke-width="1.5"/>`).join('');
+      };
+      svg += line(b, Yb, 'var(--c0)') + line(c, Yc, 'var(--c1)');
+      labels.forEach((l, i) => {
+        if ((n - 1 - i) % every === 0) svg += `<text x="${X(i)}" y="${H - 8}" text-anchor="middle">${esc(l)}${P.partial[i] ? '*' : ''}</text>`;
+        svg += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
+      });
+    } else for (let v = 0; v <= top; v += step) svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${unit(v)}</text>`;
+    if (dvMode === 'bar') labels.forEach((l, i) => {
       const x = L + i * bw + bw * .15, w = bw * .7, op = P.partial[i] ? .45 : 1;
       if (b[i]) svg += `<rect x="${x}" y="${Y(b[i])}" width="${w}" height="${Tp + ih - Y(b[i])}" fill="var(--c0)" opacity="${op}"/>`;
       if (b[i] && c[i]) svg += `<rect x="${x}" y="${Y(b[i] + c[i])}" width="${w}" height="${Y(b[i]) - Y(b[i] + c[i])}" fill="var(--c1)" opacity="${op}"/>`;
@@ -701,10 +724,12 @@
     attachTip($('dv'), $('dv-tip'), i => `<b>${esc(labels[i])}${P.partial[i] ? ' (진행 중)' : ''}</b><br><span class="sw" style="background:var(--c0)"></span>외지인 ${b[i] == null ? '자료 없음' : fmt(Math.round(b[i] / 1e4)) + '만 명'}<br><span class="sw" style="background:var(--c1)"></span>외국인 ${c[i] == null ? '자료 없음' : fmt(Math.round(c[i] / 1e4)) + '만 명'}${b[i] && c[i] ? `<br>외국인 비중 ${(c[i] / (b[i] + c[i]) * 100).toFixed(2)}%` : ''}`);
     const name = U ? regionName() : regLabel(curReg());
     $('dv-sub').textContent = `${name}${!U && state.dong >= 0 ? ' (방문객 자료는 시군구 단위)' : ''} · 한국관광공사 데이터랩 휴대폰 기반 연인원, ${visits.last.slice(0, 4)}.${visits.last.slice(4, 6)}.${visits.last.slice(6)}까지`;
-    $('dv-note').textContent = '외지인은 다른 지역에서 온 내국인입니다. 외국인 자료는 기초 2019년·광역 2020년부터라 그 전에는 외지인만 그립니다. 흐린 막대(*)는 아직 다 모이지 않은 기간입니다.'
+    $('dv-note').textContent = (dvMode === 'line' ? '선 보기는 외지인(왼쪽 축)과 외국인(오른쪽 축)의 눈금이 다릅니다. ' : '')
+      + '외지인은 다른 지역에서 온 내국인입니다. 외국인 자료는 기초 2019년·광역 2020년부터라 그 전에는 외지인만 그립니다. 흐린 막대·점선(*)은 아직 다 모이지 않은 기간입니다.'
       + (regs.length > 1 ? ' 여러 기초를 합친 값이라 여러 곳을 들른 사람은 중복으로 셉니다.' : '');
   }
   $('dv-per').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { dvPer = x.dataset.v; renderDemandVis(); } });
+  $('dv-mode').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { dvMode = x.dataset.v; renderDemandVis(); } });
 
   /* ---------- 관광 수요 대비 숙소 ----------
      관광지·방문객 수는 시군구까지만 있으므로 이 칸은 시군구 단위에서 멈춥니다. */
