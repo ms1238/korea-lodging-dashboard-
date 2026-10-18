@@ -37,10 +37,11 @@ DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
 DATALAB_FROM = 2018  # first year the service has data for
 ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntTourismStatsList"
-OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
+OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
+# a bounding box of South Korea instead of an area lookup: some mirrors have no area index and answer 500
 SUBWAY_QUERY = """[out:json][timeout:240];
-area["ISO3166-1"="KR"][admin_level=2]->.kr;
-relation["route"~"^(subway|light_rail)$"](area.kr);
+relation["route"~"^(subway|light_rail)$"](33.0,124.5,38.7,131.0);
 out geom;"""
 OPTIONAL = {"subway"}  # the page works without these, so a failed first fetch does not stop the deploy
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
@@ -115,18 +116,23 @@ def fetch_permits(key, ep):
 
 def fetch_subway(_key):
     """Route relations with member way geometry; kept small: name/ref/colour/network and rounded coordinates."""
-    last = None
+    rels = None
     for url in OVERPASS:
-        try:
-            r = requests.post(url, data={"data": SUBWAY_QUERY}, timeout=300,
-                              headers={"User-Agent": "korea-lodging-dashboard (github.com/ms1238/korea-lodging-dashboard-)"})
-            r.raise_for_status()
-            rels = r.json()["elements"]
+        for attempt in range(2):
+            try:
+                r = requests.post(url, data={"data": SUBWAY_QUERY}, timeout=300,
+                                  headers={"User-Agent": "korea-lodging-dashboard (github.com/ms1238/korea-lodging-dashboard-)"})
+                if r.status_code != 200:
+                    raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]!r}")
+                rels = r.json()["elements"]
+                break
+            except Exception as e:  # noqa: BLE001
+                print(f"  overpass {url} try {attempt + 1}: {e}", flush=True)
+                time.sleep(10)
+        if rels:
             break
-        except Exception as e:  # noqa: BLE001
-            last = e
-    else:
-        raise RuntimeError(f"Overpass failed: {last}")
+    if not rels:
+        raise RuntimeError("all Overpass mirrors failed")
     out = [{"id": rel["id"], **{k: rel.get("tags", {}).get(k, "") for k in ("route", "name", "ref", "colour", "network")},
             "ways": [[m["ref"], [[round(p["lon"], 5), round(p["lat"], 5)] for p in m["geometry"]]]
                      for m in rel.get("members", []) if m.get("type") == "way" and m.get("geometry")]}
