@@ -27,10 +27,26 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - name: Fetch 8 permit APIs and TourAPI
+      # 공공데이터포털 APIs have daily request quotas. A code push rebuilds from the data of the last run;
+      # the daily schedule and manual runs fetch again (monthly sources only refresh their latest months).
+      - name: Restore raw data from the last run
+        id: raw
+        uses: actions/cache/restore@v4
+        with:
+          path: raw
+          key: raw-${{ github.run_id }}
+          restore-keys: raw-
+      - name: Fetch permit APIs, TourAPI, DataLab and arrivals
+        if: github.event_name != 'push' || steps.raw.outputs.cache-matched-key == ''
         env:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
         run: python scripts/fetch.py
+      - name: Save raw data for later runs
+        if: github.event_name != 'push' || steps.raw.outputs.cache-matched-key == ''
+        uses: actions/cache/save@v4
+        with:
+          path: raw
+          key: raw-${{ github.run_id }}
       - name: Build dashboard data
         run: python scripts/build.py
       - name: Version the page assets so browsers do not mix a new page with cached old scripts

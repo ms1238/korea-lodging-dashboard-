@@ -77,41 +77,78 @@ def items_of(body):
     return items or []
 
 
+def write_rows(name, rows):
+    """Write raw/<name>.jsonl atomically, so a failed fetch never leaves a half-written file behind."""
+    path = os.path.join(RAW_DIR, f"{name}.jsonl")
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    os.replace(path + ".tmp", path)
+
+
+def check(name, n, total):
+    print(f"{name}: total {total}, fetched {n}", flush=True)
+    if n < total * 0.98:
+        raise RuntimeError(f"{name}: fetched {n} of {total}")
+
+
+def fetch_permits(key, ep):
+    first = get_page(key, ep, 1)
+    total = int(first.get("totalCount") or 0)
+    size = max(1, len(items_of(first)) or int(first.get("numOfRows") or PAGE_SIZE))
+    pages = max(1, math.ceil(total / size))
+    with ThreadPoolExecutor(WORKERS) as pool:
+        rest = list(pool.map(lambda p: get_page(key, ep, p), range(2, pages + 1)))
+    rows = [item for body in [first] + rest for item in items_of(body)]
+    check(ep, len(rows), total)
+    write_rows(ep, rows)
+
+
 def main():
+    """Fetch every source. If one fails (e.g. the daily request quota is used up) and a copy from an earlier run
+    is present in raw/ (restored from the Actions cache), keep that copy and go on; otherwise stop."""
     key = os.environ.get("DATA_GO_KR_KEY")
     if not key:
         sys.exit("DATA_GO_KR_KEY is not set")
     os.makedirs(RAW_DIR, exist_ok=True)
+    failed = []
     for ep in sys.argv[1:] or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals"]:
-        if ep == "datalab":
-            fetch_datalab(key)
-            continue
-        if ep == "arrivals":
-            fetch_arrivals(key)
-            continue
-        first = get_page(key, ep, 1)
-        total = int(first.get("totalCount") or 0)
-        size = max(1, len(items_of(first)) or int(first.get("numOfRows") or PAGE_SIZE))
-        pages = max(1, math.ceil(total / size))
-        with ThreadPoolExecutor(WORKERS) as pool:
-            rest = list(pool.map(lambda p: get_page(key, ep, p), range(2, pages + 1)))
-        n = 0
-        with open(os.path.join(RAW_DIR, f"{ep}.jsonl"), "w", encoding="utf-8") as f:
-            for body in [first] + rest:
-                for item in items_of(body):
-                    f.write(json.dumps(item, ensure_ascii=False) + "\n")
-                    n += 1
-        print(f"{ep}: total {total}, fetched {n}", flush=True)
-        if n < total * 0.98:
-            sys.exit(f"{ep}: fetched {n} of {total}; aborting so the last good build stays published")
+        files = list(DATALAB) if ep == "datalab" else [ep]
+        try:
+            fetch_datalab(key) if ep == "datalab" else fetch_arrivals(key) if ep == "arrivals" else fetch_permits(key, ep)
+        except Exception as e:  # noqa: BLE001
+            if all(os.path.exists(os.path.join(RAW_DIR, f"{f}.jsonl")) for f in files):
+                print(f"WARNING {ep}: {e}; keeping the copy from the last run", flush=True)
+                failed.append(ep)
+            else:
+                sys.exit(f"{ep}: {e}; no earlier copy, aborting so the last good build stays published")
+    if failed:
+        print(f"Kept earlier data for: {', '.join(failed)}", flush=True)
+
+
+REFRESH_MONTHS = 3  # monthly sources: past months do not change, so only the latest few are fetched again
+
+
+def months_to_fetch(name):
+    """All months since DATALAB_FROM, minus those already in raw/<name>.jsonl except the latest REFRESH_MONTHS.
+    Returns (months, kept rows)."""
+    today = date.today()
+    months = [(y, m) for y in range(DATALAB_FROM, today.year + 1) for m in range(1, 13) if (y, m) <= (today.year, today.month)]
+    path = os.path.join(RAW_DIR, f"{name}.jsonl")
+    if not os.path.exists(path):
+        return months, []
+    cut = months[-REFRESH_MONTHS] if len(months) >= REFRESH_MONTHS else months[0]
+    cut = f"{cut[0]}{cut[1]:02d}"
+    kept = [r for r in (json.loads(l) for l in open(path, encoding="utf-8")) if r["ym"] < cut]
+    have = {r["ym"] for r in kept}
+    return [ym for ym in months if f"{ym[0]}{ym[1]:02d}" not in have], kept
 
 
 def fetch_datalab(key):
     """One request per calendar month since 2018-01 (about 25,000 daily rows for 기초), summed per month
-    into {ym, code, name, kind, n, days, last} so the raw file stays small."""
-    today = date.today()
-    months = [(y, m) for y in range(DATALAB_FROM, today.year + 1) for m in range(1, 13) if (y, m) <= (today.year, today.month)]
+    into {ym, code, name, kind, n, days, last} so the raw file stays small. Months already fetched are reused."""
     for out, (op, code_f, name_f) in DATALAB.items():
+        months, kept = months_to_fetch(out)
         def month(ym):
             y, m = ym
             end = date(y + m // 12, m % 12 + 1, 1).toordinal() - 1
@@ -122,45 +159,38 @@ def fetch_datalab(key):
         with ThreadPoolExecutor(WORKERS) as pool:
             bodies = list(pool.map(month, months))
         n = total = 0
-        with open(os.path.join(RAW_DIR, f"{out}.jsonl"), "w", encoding="utf-8") as f:
-            for (y, m), body in bodies:
-                total += int(body.get("totalCount") or 0)
-                agg = {}
-                for it in items_of(body):
-                    k = (it[code_f], it[name_f], it["touDivCd"])
-                    cur = agg.setdefault(k, [0.0, set()])
-                    cur[0] += float(it["touNum"])
-                    cur[1].add(it["baseYmd"])
-                    n += 1
-                for (code, name, kind), (v, days) in agg.items():
-                    f.write(json.dumps({"ym": f"{y}{m:02d}", "code": code, "name": name, "kind": kind,
-                                        "n": round(v), "days": len(days), "last": max(days)}, ensure_ascii=False) + "\n")
-        print(f"{out}: total {total}, fetched {n}", flush=True)
-        if n < total * 0.98:
-            sys.exit(f"{out}: fetched {n} of {total}; aborting so the last good build stays published")
+        rows = list(kept)
+        for (y, m), body in bodies:
+            total += int(body.get("totalCount") or 0)
+            agg = {}
+            for it in items_of(body):
+                k = (it[code_f], it[name_f], it["touDivCd"])
+                cur = agg.setdefault(k, [0.0, set()])
+                cur[0] += float(it["touNum"])
+                cur[1].add(it["baseYmd"])
+                n += 1
+            rows += [{"ym": f"{y}{m:02d}", "code": code, "name": name, "kind": kind, "n": round(v), "days": len(days), "last": max(days)}
+                     for (code, name, kind), (v, days) in agg.items()]
+        check(f"{out} ({len(months)} months)", n, total)
+        write_rows(out, sorted(rows, key=lambda r: r["ym"]))
 
 
 def fetch_arrivals(key):
-    """방한외래관광객(ED_CD=E) per nationality, one request per month; empty months (not yet published) are skipped."""
-    today = date.today()
-    months = [(y, m) for y in range(DATALAB_FROM, today.year + 1) for m in range(1, 13) if (y, m) <= (today.year, today.month)]
+    """방한외래관광객(ED_CD=E) per nationality, one request per month; empty months (not yet published) are skipped.
+    Months already fetched are reused."""
+    months, kept = months_to_fetch("arrivals")
 
     def month(ym):
         params = {"serviceKey": key, "_type": "json", "numOfRows": 1000, "pageNo": 1, "YM": f"{ym[0]}{ym[1]:02d}", "ED_CD": "E"}
         return ym, get_body(ARRIVALS, params, f"arrivals {ym[0]}-{ym[1]:02d}")
     with ThreadPoolExecutor(WORKERS) as pool:
         bodies = list(pool.map(month, months))
-    n = total = 0
-    with open(os.path.join(RAW_DIR, "arrivals.jsonl"), "w", encoding="utf-8") as f:
-        for _, body in bodies:
-            total += int(body.get("totalCount") or 0)
-            for it in items_of(body):
-                f.write(json.dumps({"ym": str(it["ym"]), "nat": it["natCd"], "name": " ".join(str(it["natKorNm"]).split()),
-                                    "n": it["num"]}, ensure_ascii=False) + "\n")
-                n += 1
-    print(f"arrivals: total {total}, fetched {n}", flush=True)
-    if n < total * 0.98:
-        sys.exit(f"arrivals: fetched {n} of {total}; aborting so the last good build stays published")
+    total, new = 0, []
+    for _, body in bodies:
+        total += int(body.get("totalCount") or 0)
+        new += [{"ym": str(it["ym"]), "nat": it["natCd"], "name": " ".join(str(it["natKorNm"]).split()), "n": it["num"]} for it in items_of(body)]
+    check(f"arrivals ({len(months)} months)", len(new), total)
+    write_rows("arrivals", sorted(kept + new, key=lambda r: r["ym"]))
 
 
 if __name__ == "__main__":
