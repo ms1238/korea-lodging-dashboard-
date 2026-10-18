@@ -1,0 +1,18 @@
+# Temporary: shows sample responses of the 한국문화관광연구원 출입국관광통계서비스 (http only, unreachable from the dev sandbox).
+name: Probe KCTI API
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: |
+          B=http://openapi.tour.go.kr/openapi/service/EdrcntTourismStatsService/getEdrcntTourismStatsList
+          for q in "YM=202501&NAT_CD=112&ED_CD=E" "YM=202501&NAT_CD=112&ED_CD=E&_type=json" "YM=202501&ED_CD=E&numOfRows=5&_type=json"; do
+            echo "== $q"
+            curl -sS -m 60 "$B?serviceKey=$KEY&$q" | head -c 3000
+            echo
+          done
