@@ -205,12 +205,21 @@
       if (vec) {
         map.addLayer({ id: 'rail-line', type: 'line', source: vec, 'source-layer': 'transportation',
           filter: ['all', ['match', ['get', 'class'], ['rail', 'transit'], true, false], ['!', ['has', 'service']]],
-          paint: { 'line-color': '#8e44ad', 'line-opacity': .55, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, 2] } }, firstSymbol);
+          paint: { 'line-color': '#5d6d7e', 'line-opacity': .55, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, 2] } }, firstSymbol);
         map.addLayer({ id: 'rail-st', type: 'circle', source: vec, 'source-layer': 'poi', minzoom: 9, filter: ['==', ['get', 'class'], 'railway'],
           paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.5, 14, 5], 'circle-color': '#8e44ad', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } });
         map.addLayer({ id: 'airports', type: 'circle', source: vec, 'source-layer': 'aerodrome_label', filter: ['has', 'iata'],
           paint: { 'circle-radius': 6, 'circle-color': '#1f3a93', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
       }
+      // 지하철·경전철: OpenStreetMap 노선 관계의 공식 색(build.py → subway.json). 있으면 배경지도의 도시철도 선은 숨김
+      map.addSource('subway', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'subway', type: 'line', source: 'subway', layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': ['get', 'c'], 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 11, 2.6, 15, 5], 'line-opacity': .9 } }, firstSymbol);
+      getJSON('data/subway.json', null).then(g => {
+        if (!g || !g.features.length) return;
+        map.getSource('subway').setData(g);
+        if (map.getLayer('rail-line')) map.setFilter('rail-line', ['all', ['==', ['get', 'class'], 'rail'], ['!', ['has', 'service']]]);
+      });
       map.addSource('parks', { type: 'geojson', data: empty });
       getJSON('data/parks.json', []).then(rows => { map.getSource('parks').setData({ type: 'FeatureCollection', features: rows.map(r => ({
         type: 'Feature', geometry: { type: 'Point', coordinates: [r[1], r[0]] }, properties: { park: r[2], title: r[3] } })) });
@@ -244,12 +253,13 @@
       const pop = (ll, html) => new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(ll).setHTML(html).addTo(map);
       map.on('click', 'parks', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.park)}</b><br>${esc(p.title)}<br><small>출처: 한국관광공사 TourAPI</small>`); });
       map.on('click', 'airports', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name)}</b>${p.iata ? ` (${esc(p.iata)})` : ''}<br><small>출처: OpenStreetMap</small>`); });
+      map.on('click', 'subway', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'rail-st', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['parks']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st']]]) {
+      for (const [ck, ls] of [['ck-park', ['parks']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
-      for (const l of ['pts', 'areas', 'tour', 'parks', 'airports', 'rail-st']) {
+      for (const l of ['pts', 'areas', 'tour', 'parks', 'airports', 'rail-st', 'subway']) {
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }

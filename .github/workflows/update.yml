@@ -41,8 +41,13 @@ jobs:
         env:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
         run: python scripts/fetch.py
+      - name: Fetch only sources missing from the cached data (code pushes)
+        if: github.event_name == 'push' && steps.raw.outputs.cache-matched-key != ''
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: python scripts/fetch.py --only-missing
       - name: Save raw data for later runs
-        if: github.event_name != 'push' || steps.raw.outputs.cache-matched-key == ''
+        if: hashFiles('fetched.flag') != ''
         uses: actions/cache/save@v4
         with:
           path: raw

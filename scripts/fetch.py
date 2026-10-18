@@ -1,7 +1,10 @@
 """Download every record from the 8 MOIS permit APIs into raw/<endpoint>.jsonl,
 plus tourist attractions from the Korea Tourism Organization TourAPI (KorService2) into raw/tour_<type>.jsonl,
 plus visitor counts from the KTO DataLabService (daily since 2018, summed per month) into raw/datalab_sido.jsonl / datalab_sgg.jsonl,
-plus monthly foreign arrivals by nationality (한국문화관광연구원 출입국관광통계, since 2018) into raw/arrivals.jsonl.
+plus monthly foreign arrivals by nationality (한국문화관광연구원 출입국관광통계, since 2018) into raw/arrivals.jsonl,
+plus subway / light-rail routes with their line colours from OpenStreetMap (Overpass API, no key) into raw/subway.json.
+
+`--only-missing` fetches only sources that have no file in raw/ yet (used on code pushes, which reuse cached data).
 
 Endpoint pattern: https://apis.data.go.kr/1741000/<endpoint>/info
 The service key is read from the DATA_GO_KR_KEY environment variable (a GitHub Actions secret);
@@ -34,6 +37,12 @@ DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
 DATALAB_FROM = 2018  # first year the service has data for
 ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntTourismStatsList"
+OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
+SUBWAY_QUERY = """[out:json][timeout:240];
+area["ISO3166-1"="KR"][admin_level=2]->.kr;
+relation["route"~"^(subway|light_rail)$"](area.kr);
+out geom;"""
+OPTIONAL = {"subway"}  # the page works without these, so a failed first fetch does not stop the deploy
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -104,6 +113,33 @@ def fetch_permits(key, ep):
     write_rows(ep, rows)
 
 
+def fetch_subway(_key):
+    """Route relations with member way geometry; kept small: name/ref/colour/network and rounded coordinates."""
+    last = None
+    for url in OVERPASS:
+        try:
+            r = requests.post(url, data={"data": SUBWAY_QUERY}, timeout=300,
+                              headers={"User-Agent": "korea-lodging-dashboard (github.com/ms1238/korea-lodging-dashboard-)"})
+            r.raise_for_status()
+            rels = r.json()["elements"]
+            break
+        except Exception as e:  # noqa: BLE001
+            last = e
+    else:
+        raise RuntimeError(f"Overpass failed: {last}")
+    out = [{"id": rel["id"], **{k: rel.get("tags", {}).get(k, "") for k in ("route", "name", "ref", "colour", "network")},
+            "ways": [[m["ref"], [[round(p["lon"], 5), round(p["lat"], 5)] for p in m["geometry"]]]
+                     for m in rel.get("members", []) if m.get("type") == "way" and m.get("geometry")]}
+           for rel in rels]
+    print(f"subway: {len(out)} routes, {sum(len(r['ways']) for r in out)} ways", flush=True)
+    if not out:
+        raise RuntimeError("no routes returned")
+    path = os.path.join(RAW_DIR, "subway.json")
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(path + ".tmp", path)
+
+
 def main():
     """Fetch every source. If one fails (e.g. the daily request quota is used up) and a copy from an earlier run
     is present in raw/ (restored from the Actions cache), keep that copy and go on; otherwise stop."""
@@ -111,19 +147,27 @@ def main():
     if not key:
         sys.exit("DATA_GO_KR_KEY is not set")
     os.makedirs(RAW_DIR, exist_ok=True)
-    failed = []
-    for ep in sys.argv[1:] or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals"]:
-        files = list(DATALAB) if ep == "datalab" else [ep]
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    only_missing = "--only-missing" in sys.argv
+    failed, fetched = [], []
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway"]:
+        files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else ["subway.json"] if ep == "subway" else [f"{ep}.jsonl"]
+        have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
+        if only_missing and have:
+            continue
         try:
-            fetch_datalab(key) if ep == "datalab" else fetch_arrivals(key) if ep == "arrivals" else fetch_permits(key, ep)
+            {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway}.get(ep, lambda k: fetch_permits(k, ep))(key)
+            fetched.append(ep)
         except Exception as e:  # noqa: BLE001
-            if all(os.path.exists(os.path.join(RAW_DIR, f"{f}.jsonl")) for f in files):
-                print(f"WARNING {ep}: {e}; keeping the copy from the last run", flush=True)
+            if have or ep in OPTIONAL:
+                print(f"WARNING {ep}: {e}; {'keeping the copy from the last run' if have else 'skipped (optional)'}", flush=True)
                 failed.append(ep)
             else:
                 sys.exit(f"{ep}: {e}; no earlier copy, aborting so the last good build stays published")
     if failed:
-        print(f"Kept earlier data for: {', '.join(failed)}", flush=True)
+        print(f"Kept earlier data or skipped: {', '.join(failed)}", flush=True)
+    if fetched:  # tells the workflow to save a new cache
+        open(os.path.join(RAW_DIR, "..", "fetched.flag"), "w").write(",".join(fetched))
 
 
 REFRESH_MONTHS = 3  # monthly sources: past months do not change, so only the latest few are fetched again

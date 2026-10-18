@@ -17,6 +17,7 @@ Steps
 10. Foreign arrivals (한국문화관광연구원 출입국관광통계): national monthly totals and the top nationalities (arrivals.json).
 11. National parks: TourAPI attractions named "…국립공원" (plus 한라산·금정산, listed without the word) for the map (parks.json).
 12. cubeq.json / closeq.json: the last six years by quarter (year*10 + quarter) for the quarterly charts.
+13. subway.json: subway / light-rail lines (OpenStreetMap) as GeoJSON with each line's colour.
 """
 import difflib
 import glob
@@ -335,6 +336,26 @@ def write_parks():
         json.dump(sorted(out, key=lambda r: r[2]), f, ensure_ascii=False, separators=(",", ":"))
 
 
+def write_subway():
+    """One LineString per OSM way; a way shared by several routes (both directions, through-running) is drawn once
+    with the colour of the first route that has one."""
+    path = os.path.join(RAW, "subway.json")
+    if not os.path.exists(path):
+        return
+    ways = {}
+    for rel in json.load(open(path, encoding="utf-8")):
+        colour = rel["colour"] if re.fullmatch(r"#?[0-9A-Fa-f]{6}", rel["colour"] or "") else ""
+        colour = ("#" + colour.lstrip("#")) if colour else ""
+        name = rel["name"] or rel["ref"]
+        for wid, coords in rel["ways"]:
+            if wid not in ways or (colour and not ways[wid][0]):
+                ways[wid] = (colour, name, coords)
+    feats = [{"type": "Feature", "properties": {"c": c or "#7f8c8d", "n": n},
+              "geometry": {"type": "LineString", "coordinates": g}} for c, n, g in ways.values() if len(g) > 1]
+    with open(os.path.join(OUT, "subway.json"), "w", encoding="utf-8") as f:
+        json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def write_arrivals():
     path = os.path.join(RAW, "arrivals.jsonl")
     if not os.path.exists(path):
@@ -525,6 +546,7 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     write_arrivals()
     write_parks()
+    write_subway()
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))
