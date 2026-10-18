@@ -24,7 +24,7 @@
   const yNow = new Date().getFullYear();
 
   const TL0 = 1990;
-  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'vis' : 'tour', cmp: [], vt: { per: 'y', kind: 't' } };
+  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'out' : 'tour', cmp: [], vt: { per: 'y', kind: '0' } };
   let D = null; // detail file of the selected 시도
   const detailCache = {}, tourCache = {};
   const loadDetail = si => (detailCache[si] ||= getJSON(`data/pts/${si}.json`, { dongs: [], ris: {}, rows: [] }));
@@ -437,7 +437,7 @@
     }
     let mb = 0;
     for (const m of minbak) if (m[2] === 0 && inReg(r, m[0], m[1])) mb += m[5];
-    const v = r.si < 0 ? S.reduce((a, s) => a + (visSum(s.vis) || 0), 0) : visSum(r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]);
+    const v = r.si < 0 ? S.reduce((a, s) => s.vis ? [a[0] + s.vis[0], a[1] + s.vis[1]] : a, [0, 0]) : (r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]);
     return { st, tr, py, mb, v };
   }
   function renderCompare() {
@@ -460,9 +460,9 @@
     // 지표 표
     const stats = R.map(regStats), Y3 = yNow - 3;
     const pctS = (a, b) => b ? (a >= 0 ? '+' : '') + (a / b * 100).toFixed(1) + '%' : '-';
-    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 방문객</th><th>방문객 100만 명당 숙소</th><th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th></tr></thead><tbody>`
+    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 100만 명당 숙소</th><th>외국인 100만 명당 숙소</th><th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th></tr></thead><tbody>`
       + R.map((r, i) => { const x = stats[i];
-        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td><td>${x.v ? fmt(Math.round(x.v / 1e4)) + '만' : '-'}</td><td>${x.v ? (x.st[0] / (x.v / 1e6)).toFixed(1) : '-'}</td><td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
+        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
     // 연도별 신규 인허가
     const years = []; for (let y = yNow - 19; y <= yNow; y++) years.push(y);
     $('cp-legend').innerHTML = legend;
@@ -475,7 +475,6 @@
   /* ---------- 관광 수요 대비 숙소 ----------
      관광지·방문객 수는 시군구까지만 있으므로 이 칸은 시군구 단위에서 멈춥니다. */
   const VIS = meta.visitors;
-  const visSum = v => v ? v[0] + v[1] : null;
   const tourSel = g => g ? g.reduce((s, v, i) => s + (state.tour.has(i) ? v : 0), 0) : 0;
   let supToken = 0, supRows = [];
   async function renderSupply() {
@@ -486,38 +485,42 @@
     const lod = {};
     if (!D) { for (const r of cube) if (r[3] === 0 && state.types.has(r[2])) lod[r[0]] = (lod[r[0]] || 0) + r[5]; }
     else for (const r of D.rows) if (r[6] === 0 && state.types.has(r[2])) lod[r[3]] = (lod[r[3]] || 0) + 1;
-    const kids = si < 0 ? S.map((s, i) => ({ k: i, name: s.name, vis: visSum(s.vis), tour: (s.tour || []).reduce((a, g) => a + tourSel(g), 0), lod: lod[i] || 0 }))
-      : S[si].sgg.map((g, i) => ({ k: i, name: g, vis: visSum((S[si].visg || [])[i]), tour: tourSel((S[si].tour || [])[i]), lod: lod[i] || 0 }));
+    const kids = si < 0 ? S.map((s, i) => ({ k: i, name: s.name, vis: s.vis, tour: (s.tour || []).reduce((a, g) => a + tourSel(g), 0), lod: lod[i] || 0 }))
+      : S[si].sgg.map((g, i) => ({ k: i, name: g, vis: (S[si].visg || [])[i], tour: tourSel((S[si].tour || [])[i]), lod: lod[i] || 0 }));
     const sel = atSgg ? kids.filter(c => c.k === gi) : kids;
     const sum = f => sel.reduce((a, c) => a + (c[f] || 0), 0);
-    const L = sum('lod'), V = sum('vis'), TT = sum('tour');
+    const vj = mode === 'for' ? 1 : 0, vOf = c => c.vis ? c.vis[vj] : null, vName = mode === 'for' ? '외국인' : '외지인';
+    const L = sum('lod'), TT = sum('tour'), VO = sel.reduce((a, c) => a + (c.vis ? c.vis[0] : 0), 0), VF = sel.reduce((a, c) => a + (c.vis ? c.vis[1] : 0), 0);
     const perVis = (l, v) => v ? l / (v / 1e6) : null, perTour = (l, t) => t ? l / t : null;
+    const man = v => VIS && v ? fmt(Math.round(v / 1e4)) + '만' : '-';
     $('sup-kpis').innerHTML = [
       [fmt(L), `${regName} 영업 숙소 (선택 업종)`],
-      [VIS ? fmt(Math.round(V / 1e4)) + '만' : '-', VIS ? '연간 방문객 (외지인+외국인)' : '방문객 자료 없음'],
-      [V ? perVis(L, V).toFixed(1) : '-', '방문객 100만 명당 숙소'],
-      [TT ? perTour(L, TT).toFixed(1) : '-', state.tour.size ? '관광지 1곳당 숙소 (선택 관광 유형)' : '관광 유형을 고르세요'],
+      [man(VO), VIS ? '연간 외지인 방문객' : '방문객 자료 없음'],
+      [man(VF), VIS ? '연간 외국인 방문객' : '방문객 자료 없음'],
+      mode === 'tour' ? [TT ? perTour(L, TT).toFixed(1) : '-', state.tour.size ? '관광지 1곳당 숙소 (선택 관광 유형)' : '관광 유형을 고르세요']
+        : [perVis(L, vj ? VF : VO)?.toFixed(1) ?? '-', `${vName} 100만 명당 숙소`],
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
     $('sup-sub').textContent = `${regName} 기준. 숙소가 수요보다 적은 곳과 관광지 주변 숙소 공백을 봅니다.`;
 
     // child-area ranking, fewest lodgings per demand first
     $('sup-ratio-card').hidden = atSgg;
-    document.querySelectorAll('#sup-seg button').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.m === mode)); b.disabled = b.dataset.m === 'vis' && !VIS; });
+    document.querySelectorAll('#sup-seg button').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.m === mode)); b.disabled = b.dataset.m !== 'tour' && !VIS; });
     if (!atSgg) {
-      const f = mode === 'vis' ? c => perVis(c.lod, c.vis) : c => perTour(c.lod, c.tour);
-      const minD = mode === 'vis' ? 0 : si < 0 ? 1 : 5;
-      const list = kids.filter(c => mode === 'vis' ? c.vis : c.tour && c.tour >= minD).map(c => ({ ...c, r: f(c) })).sort((a, b) => a.r - b.r);
-      const avg = mode === 'vis' ? perVis(L, V) : perTour(L, TT);
-      $('sup-ratio-title').textContent = `${childLabel()}별 ${mode === 'vis' ? '방문객 100만 명당' : '관광지 1곳당'} 숙소 · 적은 순`;
+      const isVis = mode !== 'tour';
+      const f = isVis ? c => perVis(c.lod, vOf(c)) : c => perTour(c.lod, c.tour);
+      const minD = si < 0 ? 1 : 5;
+      const list = kids.filter(c => isVis ? vOf(c) : c.tour && c.tour >= minD).map(c => ({ ...c, r: f(c) })).sort((a, b) => a.r - b.r);
+      const avg = isVis ? perVis(L, vj ? VF : VO) : perTour(L, TT);
+      $('sup-ratio-title').textContent = `${childLabel()}별 ${isVis ? vName + ' 100만 명당' : '관광지 1곳당'} 숙소 · 적은 순`;
       $('sup-ratio').innerHTML = rowsHTML(list.map(c => ({ k: c.k, name: c.name, value: c.r, mark: avg, label: c.r.toFixed(1) + '곳',
-        extra: mode === 'vis' ? fmt(Math.round(c.vis / 1e4)) + '만 명' : '관광지 ' + fmt(c.tour), color: c.r < avg * .5 ? 'var(--closed)' : 'var(--c0)' })), { button: true })
+        extra: isVis ? fmt(Math.round(vOf(c) / 1e4)) + '만 명' : '관광지 ' + fmt(c.tour), color: c.r < avg * .5 ? 'var(--closed)' : 'var(--c0)' })), { button: true })
         || '<p class="note">비교할 자료가 없습니다.</p>';
-      const miss = mode === 'vis' ? kids.filter(c => !c.vis).map(c => c.name) : [];
-      $('sup-ratio-note').textContent = (mode === 'vis'
-        ? `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 방문객은 한국관광공사 데이터랩 ${VIS.from.slice(0, 4)}.${VIS.from.slice(4, 6)}~${VIS.to.slice(0, 4)}.${VIS.to.slice(4, 6)} 기준 연인원을 1년치로 환산했습니다(현지인 제외).`
+      const miss = isVis ? kids.filter(c => !vOf(c)).map(c => c.name) : [];
+      $('sup-ratio-note').textContent = (isVis
+        ? `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 방문객은 한국관광공사 데이터랩 ${VIS.from.slice(0, 4)}.${VIS.from.slice(4, 6)}~${VIS.to.slice(0, 4)}.${VIS.to.slice(4, 6)} 기준 연인원을 1년치로 환산했습니다.`
         : `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 관광 유형은 지도 옆 체크박스를 따릅니다${si >= 0 ? ' · 관광지 5곳 미만 지역은 뺐습니다' : ''}.`)
         + (miss.length ? ` 방문객 자료 없음: ${miss.join(', ')}.` : '')
-        + ((p => p.length && mode === 'vis' ? ` ${p.join(', ')}는 신설 구라 집계 기간이 짧아 연간으로 환산했습니다.` : '')(si < 0 || !VIS ? [] : VIS.partial.filter(x => x.startsWith(S[si].name + ' ')).map(x => x.slice(S[si].name.length + 1))));
+        + ((p => p.length && isVis ? ` ${p.join(', ')}는 신설 구라 집계 기간이 짧아 연간으로 환산했습니다.` : '')(si < 0 || !VIS ? [] : VIS.partial.filter(x => x.startsWith(S[si].name + ' ')).map(x => x.slice(S[si].name.length + 1))));
     }
 
     // attractions with the fewest / most lodgings nearby (광역을 골랐을 때)
