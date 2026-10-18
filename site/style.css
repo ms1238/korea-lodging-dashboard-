@@ -96,3 +96,6 @@ th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;whit
 th{color:var(--muted);font-weight:500;font-size:12px}
 th:first-child,td:first-child{text-align:left}
 @media (max-width:520px){.controls{position:static}}
+.unionsw{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--fg);margin-left:6px}
+.unionsw small{color:var(--muted);font-size:12px}
+.unionsw input{accent-color:var(--accent);width:15px;height:15px;margin:0}

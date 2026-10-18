@@ -25,14 +25,15 @@
 
   const TL0 = 1990;
   const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'out' : 'tour', cmp: [], vt: { per: 'y', kind: '0' } };
-  let D = null; // detail file of the selected 시도
+  let D = null; // detail file of the selected 시도, or the merged rows of the 합쳐 보기 regions
+  let U = null; // 합쳐 보기: {regs:[{si, gi}], names} — 비교 목록의 지역을 하나로 묶어 숙박업 현황에 적용
   const detailCache = {}, tourCache = {};
   const loadDetail = si => (detailCache[si] ||= getJSON(`data/pts/${si}.json`, { dongs: [], ris: {}, rows: [] }));
   const loadTour = si => (tourCache[si] ||= getJSON(`data/tour/${si}.json`, []));
   $('updated').textContent = `마지막 갱신 ${meta.updated}.`;
 
   /* ---------- region dropdowns: 광역 → 기초 → 읍면동 → 리 ---------- */
-  const level = () => state.sido < 0 ? 0 : state.sgg < 0 ? 1 : state.dong < 0 ? 2 : state.ri < 0 ? 3 : 4;
+  const level = () => U ? 1 : state.sido < 0 ? 0 : state.sgg < 0 ? 1 : state.dong < 0 ? 2 : state.ri < 0 ? 3 : 4;
   const dongList = () => (D && state.sgg >= 0) ? D.dongs[state.sgg] || [] : [];
   const riList = () => (D && state.dong >= 0) ? D.ris[`${state.sgg}:${state.dong}`] || [] : [];
   const opts = (sel, list, all) => { sel.innerHTML = `<option value="-1">${all}</option>` + list.map((n, i) => `<option value="${i}">${esc(n)}</option>`).join(''); sel.disabled = !list.length; };
@@ -44,8 +45,9 @@
   $('f-sido').insertAdjacentHTML('beforeend', S.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join(''));
   async function setSido(i) {
     state.sido = i; state.sgg = state.dong = state.ri = -1;
-    D = i < 0 ? null : await loadDetail(i);
+    const d = i < 0 ? null : await loadDetail(i);
     if (state.sido !== i) return;
+    if (!U) D = d;
     $('f-sido').value = i; fillBelow(1); update(true);
   }
   function setSgg(i) { state.sgg = i; state.dong = state.ri = -1; $('f-sgg').value = i; fillBelow(2); update(true); }
@@ -59,6 +61,7 @@
   fillBelow(1);
 
   function regionName() {
+    if (U) return U.names.length > 3 ? `${U.names.slice(0, 3).join(', ')} 외 ${U.names.length - 3}곳` : U.names.join(', ');
     if (state.sido < 0) return '전국';
     const p = [S[state.sido].name];
     if (state.sgg >= 0) p.push(S[state.sido].sgg[state.sgg]);
@@ -69,13 +72,13 @@
   function childNames() {
     switch (level()) {
       case 0: return S.map(s => s.name);
-      case 1: return S[state.sido].sgg;
+      case 1: return U ? U.names : S[state.sido].sgg;
       case 2: return dongList();
       case 3: return riList();
       default: return [];
     }
   }
-  const childLabel = () => ['광역', '기초', '읍·면·동', '리', ''][level()];
+  const childLabel = () => U ? '선택 지역' : ['광역', '기초', '읍·면·동', '리', ''][level()];
 
   /* ---------- type filter ---------- */
   $('typelist').innerHTML = CATS.map((c, ci) => {
@@ -90,7 +93,7 @@
 
   /* ---------- aggregation ----------
      scanOpen(fn(type, status, year, child, weight)), scanClose(fn(type, closeYear, child, weight)) */
-  const inDetail = r => (state.sgg < 0 || r[3] === state.sgg) && (state.dong < 0 || r[4] === state.dong) && (state.ri < 0 || r[5] === state.ri);
+  const inDetail = r => U || (state.sgg < 0 || r[3] === state.sgg) && (state.dong < 0 || r[4] === state.dong) && (state.ri < 0 || r[5] === state.ri);
   const childOfRow = r => [null, r[3], r[4], r[5], null][level()];
   function scanOpen(fn) {
     if (!D) { for (const r of cube) fn(r[2], r[3], r[4], r[0], r[5]); return; }
@@ -243,10 +246,12 @@
 
   async function drawTour() {
     if (!mapReady) return;
-    if (state.sido < 0 || !state.tour.size) { map.getSource('tour').setData(empty); return; }
-    const si = state.sido, rows = await loadTour(si);
-    if (si !== state.sido) return;
-    map.getSource('tour').setData({ type: 'FeatureCollection', features: rows.filter(r => state.tour.has(r[2]) && (state.sgg < 0 || r[3] === state.sgg)).map(r => ({
+    const regs = U ? U.regs : state.sido < 0 ? [] : [{ si: state.sido, gi: state.sgg }];
+    if (!regs.length || !state.tour.size) { map.getSource('tour').setData(empty); return; }
+    const key = JSON.stringify(regs), all = await Promise.all(regs.map(r => loadTour(r.si)));
+    if (key !== JSON.stringify(U ? U.regs : state.sido < 0 ? [] : [{ si: state.sido, gi: state.sgg }])) return;
+    const rows = regs.flatMap((g, k) => all[k].filter(r => g.gi < 0 || r[3] === g.gi));
+    map.getSource('tour').setData({ type: 'FeatureCollection', features: rows.filter(r => state.tour.has(r[2])).map(r => ({
       type: 'Feature', geometry: { type: 'Point', coordinates: [r[1], r[0]] }, properties: { t: r[2], name: r[4], addr: r[5], img: r[6], n1: r[8], n3: r[9] } })) });
   }
   function drawMap(fly) {
@@ -329,7 +334,7 @@
     drawMap(fly);
   }
   const drill = e => {
-    const b = e.target.closest('button.row'); if (!b || b.dataset.k == null) return;
+    const b = e.target.closest('button.row'); if (U || !b || b.dataset.k == null) return;
     const k = +b.dataset.k;
     [setSido, setSgg, setDong, setRi][level()]?.(k);
   };
@@ -362,19 +367,35 @@
   const regLabel = r => r.si < 0 ? '전국' : r.gi < 0 ? S[r.si].name : `${short(S[r.si].name)} ${S[r.si].sgg[r.gi]}`;
   const inReg = (r, si, gi) => r.si < 0 || (si === r.si && (r.gi < 0 || gi === r.gi));
   const regions = () => state.cmp.length ? state.cmp : [{ si: state.sido, gi: state.sido < 0 ? -1 : state.sgg }];
+  async function applyUnion() {
+    // 광역 전체가 담겨 있으면 그 광역의 기초는 중복이라 뺍니다. 전국 칩은 합쳐 보기에서 제외합니다.
+    const all = state.cmp.filter(r => r.si >= 0);
+    const regs = all.filter(r => r.gi < 0 || !all.some(x => x.si === r.si && x.gi < 0));
+    if (!$('cmp-union').checked || !regs.length) {
+      if (U) { U = null; D = state.sido < 0 ? null : await loadDetail(state.sido); update(true); }
+      return;
+    }
+    const sis = [...new Set(regs.map(r => r.si))], det = await Promise.all(sis.map(loadDetail)), rows = [];
+    regs.forEach((g, k) => { for (const x of det[sis.indexOf(g.si)].rows) if (g.gi < 0 || x[3] === g.gi) { const y = x.slice(); y[3] = k; y[4] = y[5] = -1; rows.push(y); } });
+    U = { regs, names: regs.map(regLabel) };
+    D = { dongs: [], ris: {}, rows };
+    update(true);
+  }
+  $('cmp-union').onchange = applyUnion;
   function renderChips() {
+    $('union-wrap').hidden = !state.cmp.length;
     $('cmp-chips').innerHTML = state.cmp.map((r, i) => `<span class="chip"><span class="sw" style="background:var(--c${i})"></span>${esc(regLabel(r))}<button data-i="${i}" aria-label="${esc(regLabel(r))} 빼기">×</button></span>`).join('')
       + (state.cmp.length ? '<button class="btn" id="cmp-clear">비우기</button>' : '');
   }
   $('cmp-add').onclick = () => {
     const r = { si: state.sido, gi: state.sido < 0 ? -1 : state.sgg };
     if (state.cmp.length >= 7 || state.cmp.some(x => x.si === r.si && x.gi === r.gi)) return;
-    state.cmp.push(r); renderChips(); renderCompare();
+    state.cmp.push(r); renderChips(); renderCompare(); applyUnion();
   };
   $('cmp-chips').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.id === 'cmp-clear') state.cmp = []; else state.cmp.splice(+b.dataset.i, 1);
-    renderChips(); renderCompare();
+    renderChips(); renderCompare(); applyUnion();
   });
   const visOf = r => {
     if (!visits) return null;
@@ -479,6 +500,8 @@
   let supToken = 0, supRows = [];
   async function renderSupply() {
     const token = ++supToken, si = state.sido, gi = state.sgg, mode = state.sup;
+    for (const id of ['sup-kpis', 'sup-ratio-card', 'sup-tour']) $(id).hidden = !!U;
+    if (U) { $('sup-sub').textContent = ''; $('sup-note').textContent = '합쳐 보기 중에는 이 칸 대신 위 "지역 비교"의 지표 표에서 지역별 방문객 대비 숙소를 보세요.'; return; }
     const atSgg = si >= 0 && gi >= 0;
     const regName = si < 0 ? '전국' : S[si].name + (atSgg ? ' ' + S[si].sgg[gi] : '');
     // 영업 중 숙소 (선택 업종) by child area: 광역 (전국 보기) or 기초 (광역 보기)
@@ -603,9 +626,10 @@
     else for (const r of D.rows) if (r[2] === MB && r[6] === 0 && inDetail(r) && r[14] >= 0) add(childOfRow(r), r[14], r[15], 1);
     const known = n - z[ZN.length - 1];
     // 외국인 방문객 대비: 시군구까지만
-    const v = state.sido < 0 ? S.reduce((a, s) => a + (s.vis ? s.vis[1] : 0), 0)
+    const visF = r => ((r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]) || [0, 0])[1];
+    const v = U ? U.regs.reduce((a, r) => a + visF(r), 0) : state.sido < 0 ? S.reduce((a, s) => a + (s.vis ? s.vis[1] : 0), 0)
       : state.sgg < 0 ? (S[state.sido].vis || [0, 0])[1] : ((S[state.sido].visg || [])[state.sgg] || [0, 0])[1];
-    const vReg = state.sido < 0 ? '전국' : state.sgg < 0 ? S[state.sido].name : S[state.sido].sgg[state.sgg];
+    const vReg = U ? '선택 지역' : state.sido < 0 ? '전국' : state.sgg < 0 ? S[state.sido].name : S[state.sido].sgg[state.sgg];
     $('mb-kpis').innerHTML = [
       [fmt(n), `${regionName()} 영업 중 도시민박`],
       [pct(z[0], known), `주거지역 비율 (용도지역 확인된 ${fmt(known)}곳 중)`],
