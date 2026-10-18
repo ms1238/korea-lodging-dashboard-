@@ -33,6 +33,8 @@ jobs:
         run: python scripts/fetch.py
       - name: Build dashboard data
         run: python scripts/build.py
+      - name: Version the page assets so browsers do not mix a new page with cached old scripts
+        run: sed -i -E "s/(app\.js|style\.css)\"/\1?v=${GITHUB_SHA::7}\"/g" site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
