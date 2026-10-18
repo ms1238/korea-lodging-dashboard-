@@ -79,6 +79,7 @@ SIDO_ALIASES = {
     "제주도": "제주특별자치도",
 }
 MERGED_GWANGJU_JEONNAM = "전남광주통합특별시"
+GWANGJU_GU = ["동구", "서구", "남구", "북구", "광산구"]  # 통합 이전 광주광역시; the page offers them as one group "광주시"
 
 to_wgs84 = Transformer.from_crs("EPSG:5174", "EPSG:4326", always_xy=True)
 KST = timezone(timedelta(hours=9))
@@ -423,6 +424,8 @@ def main():
             "name": s, "n": sido_n[s], "sgg": sggs, "sggc": sgg_c,
             "c": [round(statistics.median(p[0] for p in allc), 4), round(statistics.median(p[1] for p in allc), 4)] if allc else None,
         })
+        if s == MERGED_GWANGJU_JEONNAM:
+            sido_meta[-1]["groups"] = [{"name": "광주시", "gis": [sggs.index(g) for g in GWANGJU_GU if g in sggs]}]
     with open(os.path.join(OUT, "close.json"), "w", encoding="utf-8") as f:
         json.dump([[*k, v] for k, v in sorted(close.items())], f, separators=(",", ":"))
     with open(os.path.join(OUT, "minbak.json"), "w", encoding="utf-8") as f:

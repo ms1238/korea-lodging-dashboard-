@@ -26,8 +26,9 @@
   const yNow = new Date().getFullYear();
 
   const TL0 = 1990;
-  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'out' : 'tour', cmp: [], vt: { per: 'y', kind: '0' } };
+  const state = { sido: -1, sgg: -1, dong: -1, ri: -1, status: 0, types: new Set(T.map((_, i) => i)), tour: new Set([0]), tl: { mode: 'off', year: yNow }, sup: meta.visitors ? 'out' : 'tour', cmp: [], vt: { per: 'y', kind: '0' }, grp: -1 };
   let D = null; // detail file of the selected 시도, or the merged rows of the 합쳐 보기 regions
+  let Dbase = null; // detail file of the selected 시도 (kept while D holds merged rows)
   const csvStore = {}; // CSV 내려받기용: id -> [머리글, 행들]
   let U = null; // 합쳐 보기: {regs:[{si, gi}], names} — 비교 목록의 지역을 하나로 묶어 숙박업 현황에 적용
   const detailCache = {}, tourCache = {};
@@ -41,29 +42,43 @@
   const riList = () => (D && state.dong >= 0) ? D.ris[`${state.sgg}:${state.dong}`] || [] : [];
   const opts = (sel, list, all) => { sel.innerHTML = `<option value="-1">${all}</option>` + list.map((n, i) => `<option value="${i}">${esc(n)}</option>`).join(''); sel.disabled = !list.length; };
   function fillBelow(from) {
-    if (from <= 1) opts($('f-sgg'), state.sido < 0 ? [] : S[state.sido].sgg, '전체');
+    if (from <= 1) {
+      opts($('f-sgg'), state.sido < 0 ? [] : S[state.sido].sgg, '전체');
+      const gs = state.sido < 0 ? [] : S[state.sido].groups || [];
+      $('f-sgg').options[0].insertAdjacentHTML('afterend', gs.map((g, k) => `<option value="g${k}">${esc(g.name)} (${g.gis.map(i => S[state.sido].sgg[i]).join('·')} 합계)</option>`).join(''));
+    }
     if (from <= 2) opts($('f-dong'), dongList(), '전체');
     if (from <= 3) opts($('f-ri'), riList(), '전체');
   }
   $('f-sido').insertAdjacentHTML('beforeend', S.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join(''));
   async function setSido(i) {
-    state.sido = i; state.sgg = state.dong = state.ri = -1;
+    state.sido = i; state.sgg = state.dong = state.ri = -1; state.grp = -1;
     const d = i < 0 ? null : await loadDetail(i);
     if (state.sido !== i) return;
+    Dbase = d;
+    if (U && !unionOn()) U = null;
     if (!U) D = d;
     $('f-sido').value = i; fillBelow(1); update(true);
   }
-  function setSgg(i) { state.sgg = i; state.dong = state.ri = -1; $('f-sgg').value = i; fillBelow(2); update(true); }
+  function setSgg(i) {
+    if (state.grp >= 0) { state.grp = -1; if (U && !unionOn()) { U = null; D = Dbase; } }
+    state.sgg = i; state.dong = state.ri = -1; $('f-sgg').value = i; fillBelow(2); update(true); }
   function setDong(i) { state.dong = i; state.ri = -1; $('f-dong').value = i; fillBelow(3); update(true); }
   function setRi(i) { state.ri = i; $('f-ri').value = i; update(true); }
   $('f-sido').onchange = e => setSido(+e.target.value);
-  $('f-sgg').onchange = e => setSgg(+e.target.value);
+  $('f-sgg').onchange = e => e.target.value[0] === 'g' ? setGroup(+e.target.value.slice(1)) : setSgg(+e.target.value);
+  async function setGroup(k) { // 묶음(예: 광주시)을 합쳐 보기와 같은 방식으로 보여줍니다
+    state.sgg = state.dong = state.ri = -1; state.grp = k;
+    $('f-sgg').value = 'g' + k; fillBelow(2);
+    await applyUnion();
+  }
   $('f-dong').onchange = e => setDong(+e.target.value);
   $('f-ri').onchange = e => setRi(+e.target.value);
   $('f-status').onchange = e => { state.status = +e.target.value; update(false); };
   fillBelow(1);
 
   function regionName() {
+    if (U && U.label) return U.label;
     if (U) return U.names.length > 3 ? `${U.names.slice(0, 3).join(', ')} 외 ${U.names.length - 3}곳` : U.names.join(', ');
     if (state.sido < 0) return '전국';
     const p = [S[state.sido].name];
@@ -81,7 +96,7 @@
       default: return [];
     }
   }
-  const childLabel = () => U ? '선택 지역' : ['광역', '기초', '읍·면·동', '리', ''][level()];
+  const childLabel = () => U ? (U.label ? '기초' : '선택 지역') : ['광역', '기초', '읍·면·동', '리', ''][level()];
 
   /* ---------- type filter ---------- */
   // 대분류 체크박스로 한 번에 켜고 끄며, 소분류는 ▸ 를 눌러 펼칩니다.
@@ -391,20 +406,24 @@
   /* ---------- 관광객 추이 · 지역 비교 ----------
      비교 목록(state.cmp)이 비어 있으면 상단 필터의 지역 하나를 보여줍니다. 지역 = {si, gi} (si −1 전국, gi −1 광역 전체). */
   const short = n => n.replace(/(통합특별시|특별자치시|특별자치도|특별시|광역시)$/, '').replace(/^(.).(.)도$/, '$1$2');
-  const regLabel = r => r.si < 0 ? '전국' : r.gi < 0 ? S[r.si].name : `${short(S[r.si].name)} ${S[r.si].sgg[r.gi]}`;
-  const inReg = (r, si, gi) => r.si < 0 || (si === r.si && (r.gi < 0 || gi === r.gi));
-  const regions = () => state.cmp.length ? state.cmp : [{ si: state.sido, gi: state.sido < 0 ? -1 : state.sgg }];
+  // 지역 = {si, gi} 또는 묶음 {si, gi: -1, grp}. gisOf: 해당 기초 목록 (null = 광역 전체)
+  const gisOf = r => r.grp != null ? S[r.si].groups[r.grp].gis : r.gi >= 0 ? [r.gi] : null;
+  const regLabel = r => r.si < 0 ? '전국' : r.grp != null ? `${short(S[r.si].name)} ${S[r.si].groups[r.grp].name}` : r.gi < 0 ? S[r.si].name : `${short(S[r.si].name)} ${S[r.si].sgg[r.gi]}`;
+  const inReg = (r, si, gi) => r.si < 0 || (si === r.si && (!gisOf(r) || gisOf(r).includes(gi)));
+  const curReg = () => state.sido < 0 ? { si: -1, gi: -1 } : state.grp >= 0 ? { si: state.sido, gi: -1, grp: state.grp } : { si: state.sido, gi: state.sgg };
+  const regions = () => state.cmp.length ? state.cmp : [curReg()];
+  const unionOn = () => $('cmp-union').checked && state.cmp.some(r => r.si >= 0);
   async function applyUnion() {
-    // 광역 전체가 담겨 있으면 그 광역의 기초는 중복이라 뺍니다. 전국 칩은 합쳐 보기에서 제외합니다.
-    const all = state.cmp.filter(r => r.si >= 0);
-    const regs = all.filter(r => r.gi < 0 || !all.some(x => x.si === r.si && x.gi < 0));
-    if (!$('cmp-union').checked || !regs.length) {
-      if (U) { U = null; D = state.sido < 0 ? null : await loadDetail(state.sido); update(true); }
-      return;
-    }
+    // 합쳐 보기(비교 목록)가 켜져 있으면 그것을, 아니면 드롭다운에서 고른 묶음(예: 광주시)을 하나로 묶어 보여줍니다.
+    // 묶음은 기초들로 풀고, 광역 전체가 담겨 있으면 그 광역의 기초는 중복이라 뺍니다. 전국 칩은 제외합니다.
+    let regs, label = null;
+    if (unionOn()) regs = state.cmp.filter(r => r.si >= 0).flatMap(r => r.grp != null ? gisOf(r).map(gi => ({ si: r.si, gi })) : [r]);
+    else if (state.grp >= 0) { regs = gisOf(curReg()).map(gi => ({ si: state.sido, gi })); label = `${S[state.sido].name} ${S[state.sido].groups[state.grp].name}`; }
+    else { if (U) { U = null; D = state.sido < 0 ? null : await loadDetail(state.sido); update(true); } return; }
+    regs = regs.filter((r, i) => (r.gi < 0 || !regs.some(x => x.si === r.si && x.gi < 0)) && regs.findIndex(x => x.si === r.si && x.gi === r.gi) === i);
     const sis = [...new Set(regs.map(r => r.si))], det = await Promise.all(sis.map(loadDetail)), rows = [];
     regs.forEach((g, k) => { for (const x of det[sis.indexOf(g.si)].rows) if (g.gi < 0 || x[3] === g.gi) { const y = x.slice(); y[3] = k; y[4] = y[5] = -1; rows.push(y); } });
-    U = { regs, names: regs.map(regLabel) };
+    U = { regs, names: regs.map(r => label ? S[r.si].sgg[r.gi] : regLabel(r)), label };
     D = { dongs: [], ris: {}, rows };
     update(true);
   }
@@ -415,8 +434,8 @@
       + (state.cmp.length ? '<button class="btn" id="cmp-clear">비우기</button>' : '');
   }
   $('cmp-add').onclick = () => {
-    const r = { si: state.sido, gi: state.sido < 0 ? -1 : state.sgg };
-    if (state.cmp.length >= 7 || state.cmp.some(x => x.si === r.si && x.gi === r.gi)) return;
+    const r = curReg();
+    if (state.cmp.length >= 7 || state.cmp.some(x => regKey(x) === regKey(r))) return;
     state.cmp.push(r); renderChips(); renderCompare(); applyUnion(); writeHash();
   };
   $('cmp-chips').addEventListener('click', e => {
@@ -426,7 +445,12 @@
   });
   const visOf = r => {
     if (!visits) return null;
-    if (r.si >= 0) return r.gi < 0 ? visits.sido[r.si] : visits.sgg[r.si][r.gi];
+    if (r.si >= 0 && r.grp == null) return r.gi < 0 ? visits.sido[r.si] : visits.sgg[r.si][r.gi];
+    if (r.si >= 0) { // 묶음: 기초별 값을 더함 (자료가 없는 분기는 비움)
+      const out = [visits.q.map(() => null), visits.q.map(() => null)];
+      for (const gi of gisOf(r)) { const v = visits.sgg[r.si][gi]; if (v) for (let j = 0; j < 2; j++) v[j].forEach((x, i) => { if (x != null) out[j][i] = (out[j][i] || 0) + x; }); }
+      return out;
+    }
     const out = [visits.q.map(() => null), visits.q.map(() => null)];
     for (const v of visits.sido) if (v) for (let j = 0; j < 2; j++) v[j].forEach((x, i) => { if (x != null) out[j][i] = (out[j][i] || 0) + x; });
     return out;
@@ -485,7 +509,8 @@
     }
     let mb = 0;
     for (const m of minbak) if (m[2] === 0 && inReg(r, m[0], m[1])) mb += m[5];
-    const v = r.si < 0 ? S.reduce((a, s) => s.vis ? [a[0] + s.vis[0], a[1] + s.vis[1]] : a, [0, 0]) : (r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]);
+    const sumV = vs => vs.reduce((a, v) => v ? [a[0] + v[0], a[1] + v[1]] : a, [0, 0]);
+    const v = r.si < 0 ? sumV(S.map(s => s.vis)) : r.grp != null ? sumV(gisOf(r).map(gi => (S[r.si].visg || [])[gi])) : (r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]);
     return { st, tr, py, mb, v };
   }
   function renderCompare() {
@@ -596,7 +621,7 @@
   async function renderSupply() {
     const token = ++supToken, si = state.sido, gi = state.sgg, mode = state.sup;
     for (const id of ['sup-kpis', 'sup-ratio-card', 'sup-tour']) $(id).hidden = !!U;
-    if (U) { $('sup-sub').textContent = ''; $('sup-note').textContent = '합쳐 보기 중에는 이 칸 대신 위 "지역 비교"의 지표 표에서 지역별 방문객 대비 숙소를 보세요.'; return; }
+    if (U) { $('sup-sub').textContent = ''; $('sup-note').textContent = '여러 지역을 묶어 보는 중(합쳐 보기·광주시 등)에는 이 칸 대신 "지역 비교" 탭의 지표 표에서 방문객 대비 숙소를 보세요.'; return; }
     const atSgg = si >= 0 && gi >= 0;
     const regName = si < 0 ? '전국' : S[si].name + (atSgg ? ' ' + S[si].sgg[gi] : '');
     // 영업 중 숙소 (선택 업종) by child area: 광역 (전국 보기) or 기초 (광역 보기)
@@ -842,20 +867,22 @@
 
   /* ---------- 공유 링크: 탭·지역·영업 상태·비교 목록을 주소(#)에 담음 ---------- */
   let restoring = true;
-  const regKey = r => r.si < 0 ? '전국' : S[r.si].name + (r.gi >= 0 ? '/' + S[r.si].sgg[r.gi] : '');
+  function regKey(r) { return r.si < 0 ? '전국' : S[r.si].name + (r.grp != null ? '/' + S[r.si].groups[r.grp].name : r.gi >= 0 ? '/' + S[r.si].sgg[r.gi] : ''); }
   function writeHash() {
     if (restoring) return;
     const h = new URLSearchParams();
     if (tab !== 'now') h.set('tab', tab);
-    if (state.sido >= 0) h.set('r', [S[state.sido].name, state.sgg >= 0 && S[state.sido].sgg[state.sgg], state.dong >= 0 && dongList()[state.dong], state.ri >= 0 && riList()[state.ri]].filter(Boolean).join('/'));
+    if (state.sido >= 0) h.set('r', state.grp >= 0 ? regKey(curReg()) : [S[state.sido].name, state.sgg >= 0 && S[state.sido].sgg[state.sgg], state.dong >= 0 && dongList()[state.dong], state.ri >= 0 && riList()[state.ri]].filter(Boolean).join('/'));
     if (state.status !== 0) h.set('st', state.status);
     if (state.cmp.length) h.set('cmp', state.cmp.map(regKey).join(','));
-    if (U) h.set('u', '1');
+    if (U && unionOn()) h.set('u', '1');
     history.replaceState(null, '', h.toString() ? '#' + h : location.pathname + location.search);
   }
   const parseReg = k => { // '전국', '부산광역시', '부산광역시/해운대구' → {si, gi}; 이름이 바뀌어 없으면 null
     if (k === '전국') return { si: -1, gi: -1 };
     const [a, b] = k.split('/'), si = S.findIndex(s => s.name === a), gi = si >= 0 && b ? S[si].sgg.indexOf(b) : -1;
+    const grp = si >= 0 && b ? (S[si].groups || []).findIndex(g => g.name === b) : -1;
+    if (grp >= 0) return { si, gi: -1, grp };
     return si < 0 || (b && gi < 0) ? null : { si, gi };
   };
   async function restore() {
@@ -867,7 +894,8 @@
     const si = a ? S.findIndex(s => s.name === a) : -1;
     if (si >= 0) {
       await setSido(si);
-      const gi = b ? S[si].sgg.indexOf(b) : -1; if (gi >= 0) setSgg(gi);
+      const gi = b ? S[si].sgg.indexOf(b) : -1, grp = b ? (S[si].groups || []).findIndex(g => g.name === b) : -1;
+      if (gi >= 0) setSgg(gi); else if (grp >= 0) await setGroup(grp);
       const di = c ? dongList().indexOf(c) : -1; if (di >= 0) setDong(di);
       const ri = d ? riList().indexOf(d) : -1; if (ri >= 0) setRi(ri);
     }
