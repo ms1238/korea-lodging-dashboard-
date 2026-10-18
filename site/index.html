@@ -35,6 +35,12 @@
     </div>
   </div>
 
+  <div class="card summary" id="summary-card">
+    <button class="btn csv" id="summary-copy" title="요약 문장을 복사합니다">요약 복사</button>
+    <h3 id="summary-title" style="margin-bottom:8px"></h3>
+    <ul id="summary"></ul>
+  </div>
+
   <div class="kpis" id="kpis" data-tab="now"></div>
 
   <section data-tab="now">
@@ -120,6 +126,15 @@
       <div class="card"><h3 style="margin-bottom:10px">숙소 밀집 관광지 · 반경 1km 숙소가 많은 순</h3><div class="sharelist" id="sup-dense"></div></div>
     </div>
     <p class="note" id="sup-note"></p>
+  </section>
+
+  <section data-tab="demand" id="arr-sec">
+    <div class="sechead"><h2>방한 외래관광객 (전국)</h2><p class="sub" id="arr-sub"></p></div>
+    <div class="kpis" id="arr-kpis"></div>
+    <div class="card"><h3 style="margin-bottom:10px">월별 방한 외래관광객</h3>
+      <div class="chartwrap"><svg id="arr" viewBox="0 0 900 260" role="img" aria-label="월별 방한 외래관광객"></svg><div class="tip" id="arr-tip" hidden></div></div></div>
+    <div class="card"><button class="btn csv" data-csv="arr-top" data-name="방한객_국적별">CSV</button><h3 style="margin-bottom:10px" id="arr-top-title"></h3><div class="sharelist" id="arr-top"></div>
+      <p class="note">출처: 한국문화관광연구원 출입국관광통계(공공데이터포털). 국적별 입국자 수로, 시도별 자료는 없습니다.</p></div>
   </section>
 
   <section data-tab="trend">

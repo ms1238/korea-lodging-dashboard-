@@ -15,7 +15,8 @@
   const esc = s => String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const getJSON = (u, fb) => fetch(u).then(r => r.ok ? r.json() : fb).catch(() => fb);
-  const [meta, cube, close, minbak, visits] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []), getJSON('data/minbak.json', []), getJSON('data/visits.json', null)]);
+  const [meta, cube, close, minbak, visits, arrivals] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []),
+    getJSON('data/minbak.json', []), getJSON('data/visits.json', null), getJSON('data/arrivals.json', null)]);
   const T = meta.types, CATS = meta.categories, S = meta.sido, ST = meta.status;
   const catOf = T.map(t => CATS.indexOf(t.cat));
   const col = c => css('--c' + c);
@@ -352,7 +353,7 @@
     renderStatus(a, names);
     renderCompare();
     renderSupply();
-    renderTrend(names);
+    renderSummary(a, renderTrend(names));
     renderMinbak(names);
     writeHash();
     drawTimeline();
@@ -523,6 +524,70 @@
   $('vt-per').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.vt.per = b.dataset.v; renderCompare(); } });
   $('vt-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.vt.kind = b.dataset.v; renderCompare(); } });
 
+  /* ---------- 한눈에 보기: 지금 고른 지역을 전국과 견준 3~4문장 ----------
+     비교 표현은 ±20%를 넘을 때만 "높다/낮다"라고 씁니다. 업종 필터는 따르고, 영업 상태 필터와 관계없이 영업 중 시설 기준입니다. */
+  function renderSummary(a, tr) {
+    const Y3 = yNow - 3, isNat = !U && state.sido < 0;
+    const nat = regStats({ si: -1, gi: -1 }), natT = T.map(() => 0);
+    for (const r of cube) if (r[3] === 0 && state.types.has(r[2])) natT[r[2]] += r[5];
+    const word = (x, y) => !y ? '' : x > y * 1.2 ? '보다 높습니다' : x < y * .8 ? '보다 낮습니다' : '과 비슷합니다';
+    const big = v => v >= 1e8 ? (v / 1e8).toFixed(1) + '억' : fmt(Math.round(v / 1e4)) + '만';
+    const pc = (x, d = 1) => (x * 100).toFixed(d) + '%', sg = x => (x >= 0 ? '+' : '') + pc(x);
+    const lines = [];
+    const N = a.st[0], top = T.map((_, i) => i).filter(i => state.types.has(i)).sort((x, y) => a.stType[y][0] - a.stType[x][0])[0];
+    if (!N) { $('summary-title').textContent = `한눈에 보기 · ${regionName()}`; $('summary').innerHTML = '<li>영업 중인 시설이 없습니다.</li>'; return; }
+    lines.push(`영업 중 숙소 ${fmt(N)}곳. 가장 많은 업종은 ${T[top].name}(${pc(a.stType[top][0] / N)}${isNat ? '' : `, 전국 ${pc(natT[top] / (nat.st[0] || 1))}`})입니다.`);
+    if (tr.base) {
+      const g = (tr.nw - tr.cl) / tr.base, ng = nat.tr.base ? (nat.tr.nw - nat.tr.cl) / nat.tr.base : null;
+      lines.push(`${Y3 + 1}년 이후 신규 ${fmt(tr.nw)}곳·폐업 ${fmt(tr.cl)}곳으로, ${Y3}년 말보다 ${sg(g)} ${g >= 0 ? '늘었습니다' : '줄었습니다'}`
+        + (isNat || ng == null ? '.' : ` (전국 ${sg(ng)}, ${g > ng + .05 ? '전국보다 빠름' : g < ng - .05 ? '전국보다 느림' : '전국과 비슷'}).`)
+        + (tr.base < 30 ? ' 시설 수가 적어 비율이 크게 흔들릴 수 있습니다.' : ''));
+    }
+    const cr = a.st[0] + a.st[2] ? a.st[2] / (a.st[0] + a.st[2]) : null, ncr = nat.st[0] + nat.st[2] ? nat.st[2] / (nat.st[0] + nat.st[2]) : null;
+    if (cr != null) lines.push(`누적 폐업률 ${pc(cr)}${isNat ? '.' : ` — 전국(${pc(ncr)})${word(cr, ncr)}.`}`);
+    // 방문객 대비 공급: 방문객 자료가 시군구까지라 읍·면·동 이하에서는 생략
+    const vOf = r => r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi];
+    const vp = U ? U.regs.map(vOf).reduce((s, v) => v ? [s[0] + v[0], s[1] + v[1]] : s, [0, 0])
+      : isNat ? nat.v : level() <= 2 ? vOf({ si: state.sido, gi: state.sgg }) : null;
+    if (VIS && vp && vp[0] && vp[1]) {
+      const per = (n, v) => n / (v / 1e6), npo = per(nat.st[0], nat.v[0]), npf = per(nat.st[0], nat.v[1]);
+      lines.push(`연간 외지인 ${big(vp[0])}·외국인 ${big(vp[1])} 명(연인원). 숙소는 외지인 100만 명당 ${per(N, vp[0]).toFixed(1)}곳, 외국인 100만 명당 ${per(N, vp[1]).toFixed(1)}곳`
+        + (isNat ? '입니다.' : `입니다. 외지인 기준으로 전국(${npo.toFixed(1)}곳)${word(per(N, vp[0]), npo)}.`));
+    }
+    $('summary-title').textContent = `한눈에 보기 · ${regionName()}`;
+    $('summary').innerHTML = lines.map(l => `<li>${esc(l)}</li>`).join('');
+  }
+  $('summary-copy').onclick = async () => {
+    const text = $('summary-title').textContent + '\n' + [...$('summary').children].map(li => '- ' + li.textContent).join('\n');
+    try { await navigator.clipboard.writeText(text); $('summary-copy').textContent = '복사됨 ✓'; } catch { prompt('복사하세요', text); }
+    setTimeout(() => { $('summary-copy').textContent = '요약 복사'; }, 1500);
+  };
+
+  /* ---------- 방한 외래관광객 (전국, 월별·국적별) ---------- */
+  function renderArrivals() {
+    $('arr-sec').hidden = !arrivals;
+    if (!arrivals) return;
+    const { months, total, top } = arrivals, n = months.length, sum = (arr, a, b) => arr.slice(Math.max(0, a), b).reduce((p, q) => p + q, 0);
+    const ym = k => `${k.slice(0, 4)}.${k.slice(4)}`, l12 = sum(total, n - 12, n), p12 = sum(total, n - 24, n - 12);
+    const y19 = months.reduce((s, k, i) => s + (k.startsWith('2019') ? total[i] : 0), 0);
+    const yoy = (a, b) => b ? (a >= b ? '+' : '') + ((a / b - 1) * 100).toFixed(1) + '%' : '-';
+    const man = v => fmt(Math.round(v / 1e4)) + '만';
+    $('arr-kpis').innerHTML = [
+      [man(l12), `최근 12개월 (${ym(months[n - 12] || months[0])}~${ym(months[n - 1])})`],
+      [yoy(l12, p12), '직전 12개월 대비'],
+      [man(total[n - 1]), `${ym(months[n - 1])} (전년 동월 ${yoy(total[n - 1], total[n - 13])})`],
+      [y19 ? (l12 / y19 * 100).toFixed(0) + '%' : '-', '2019년 연간 대비 (최근 12개월)'],
+    ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
+    $('arr-sub').textContent = `${ym(months[0])}~${ym(months[n - 1])} 월별 입국자 수입니다. 지역별 숙소 수요의 배경으로 보세요.`;
+    lineChart($('arr'), $('arr-tip'), months.map(k => `${k.slice(2, 4)}.${k.slice(4)}`), [{ name: '방한 외래관광객', color: 'var(--c0)', vals: total }],
+      { div: 1e4, unit: v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(v) + '명' });
+    const rows = top.map(t => ({ name: t.name, v: sum(t.n, n - 12, n), p: sum(t.n, n - 24, n - 12) }));
+    $('arr-top-title').textContent = `국적별 상위 10 · 최근 12개월 (괄호는 직전 12개월 대비)`;
+    $('arr-top').innerHTML = rowsHTML(rows.map(r => ({ name: r.name, value: r.v, label: man(r.v), extra: `${pc1(r.v / l12)} · ${yoy(r.v, r.p)}` })), {});
+    csvSet('arr-top', ['국적', '최근 12개월', '직전 12개월', '증감률(%)', '비중(%)'], rows.map(r => [r.name, r.v, r.p, r.p ? ((r.v / r.p - 1) * 100).toFixed(2) : '', (r.v / l12 * 100).toFixed(2)]));
+  }
+  const pc1 = x => (x * 100).toFixed(1) + '%';
+
   /* ---------- 관광 수요 대비 숙소 ----------
      관광지·방문객 수는 시군구까지만 있으므로 이 칸은 시군구 단위에서 멈춥니다. */
   const VIS = meta.visitors;
@@ -640,6 +705,7 @@
     $('tr-up').innerHTML = up.slice(0, n).map(row).join('') || empty;
     $('tr-down').innerHTML = up.slice(-n).reverse().map(row).join('') || empty;
     $('tr-note').textContent = `${Y3}년 말 운영 시설이 ${Math.max(1, minBase)}곳 이상인 ${childLabel() || '지역'}만 비교합니다. 막대에 마우스를 올리면 신규·폐업 수가 보입니다. 폐업일이 없는 폐업 시설은 빠집니다.`;
+    return tot;
   }
 
   /* ---------- 외국인관광 도시민박 입지 ---------- */
@@ -827,6 +893,7 @@
   };
   const c = meta.coords, d = meta.dedupe;
   $('foot').textContent = `숙박업과 관광숙박업에 함께 등록된 시설 ${fmt(d.removed)}건은 관광숙박업으로만 셌습니다. 좌표가 없는 야영장 ${fmt(c.dropped_campgrounds)}곳은 제외했고, 좌표가 없는 그 밖의 시설 ${fmt(c.no_coords)}곳은 통계에는 넣고 지도에서는 뺐습니다. 읍·면·동과 리는 주소의 법정동 기준입니다. 출처: 행정안전부 지방행정인허가 API, 한국관광공사 TourAPI·데이터랩(공공데이터포털), 지형 AWS Terrain Tiles.`;
+  renderArrivals();
   update(false);
   await restore();
 })();

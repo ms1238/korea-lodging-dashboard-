@@ -118,3 +118,7 @@ th:first-child,td:first-child{text-align:left}
 .subtypes{margin:0 0 4px 22px}
 .fold{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;width:20px}
 .card:has(> .btn.csv + .sharelist),.card:has(> .btn.csv + .ranklist){padding-top:42px}
+/* summary */
+.summary{border-left:4px solid var(--accent)}
+.summary ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:14.5px;line-height:1.6}
+.summary h3{padding-right:80px}

@@ -14,6 +14,7 @@ Steps
 8. 외국인관광 도시민박: 용도지역·건물용도 groups (minbak.json for the national view).
 9. Visitors (KTO DataLab): 외지인 and 외국인 visitors per 시도 and 시군구 over the latest 12 months (meta.json)
    and per quarter since 2018 (visits.json).
+10. Foreign arrivals (한국문화관광연구원 출입국관광통계): national monthly totals and the top nationalities (arrivals.json).
 """
 import difflib
 import glob
@@ -309,6 +310,24 @@ def add_visitors(sidos, sgg_of, sido_meta):
     return meta, visits
 
 
+def write_arrivals():
+    path = os.path.join(RAW, "arrivals.jsonl")
+    if not os.path.exists(path):
+        return
+    rows = [json.loads(l) for l in open(path, encoding="utf-8")]
+    months = sorted({r["ym"] for r in rows})
+    mi = {m: i for i, m in enumerate(months)}
+    total, by_nat = [0] * len(months), defaultdict(lambda: [0] * len(months))
+    for r in rows:
+        total[mi[r["ym"]]] += r["n"]
+        by_nat["".join(r["name"].split())][mi[r["ym"]]] += r["n"]  # "중  국" -> "중국"
+    last12 = range(max(0, len(months) - 12), len(months))
+    top = sorted(by_nat, key=lambda k: -sum(by_nat[k][i] for i in last12))[:10]
+    with open(os.path.join(OUT, "arrivals.json"), "w", encoding="utf-8") as f:
+        json.dump({"months": months, "total": total, "top": [{"name": k, "n": by_nat[k]} for k in top]},
+                  f, ensure_ascii=False, separators=(",", ":"))
+
+
 def main():
     rows = load()
     merged = any((r["road"] or r["lot"]).startswith(MERGED_GWANGJU_JEONNAM) for r in rows)
@@ -465,6 +484,7 @@ def main():
                 cnt[r[3]][r[2]] += 1
         sm["tour"] = cnt
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
+    write_arrivals()
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))

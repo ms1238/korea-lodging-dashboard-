@@ -1,6 +1,7 @@
 """Download every record from the 8 MOIS permit APIs into raw/<endpoint>.jsonl,
 plus tourist attractions from the Korea Tourism Organization TourAPI (KorService2) into raw/tour_<type>.jsonl,
-plus visitor counts from the KTO DataLabService (daily since 2018, summed per month) into raw/datalab_sido.jsonl / datalab_sgg.jsonl.
+plus visitor counts from the KTO DataLabService (daily since 2018, summed per month) into raw/datalab_sido.jsonl / datalab_sgg.jsonl,
+plus monthly foreign arrivals by nationality (한국문화관광연구원 출입국관광통계, since 2018) into raw/arrivals.jsonl.
 
 Endpoint pattern: https://apis.data.go.kr/1741000/<endpoint>/info
 The service key is read from the DATA_GO_KR_KEY environment variable (a GitHub Actions secret);
@@ -32,6 +33,7 @@ TOUR_TYPES = {"12": "관광지", "14": "문화시설", "28": "레포츠"}  # Tou
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
 DATALAB_FROM = 2018  # first year the service has data for
+ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntTourismStatsList"
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -80,9 +82,12 @@ def main():
     if not key:
         sys.exit("DATA_GO_KR_KEY is not set")
     os.makedirs(RAW_DIR, exist_ok=True)
-    for ep in sys.argv[1:] or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab"]:
+    for ep in sys.argv[1:] or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals"]:
         if ep == "datalab":
             fetch_datalab(key)
+            continue
+        if ep == "arrivals":
+            fetch_arrivals(key)
             continue
         first = get_page(key, ep, 1)
         total = int(first.get("totalCount") or 0)
@@ -133,6 +138,29 @@ def fetch_datalab(key):
         print(f"{out}: total {total}, fetched {n}", flush=True)
         if n < total * 0.98:
             sys.exit(f"{out}: fetched {n} of {total}; aborting so the last good build stays published")
+
+
+def fetch_arrivals(key):
+    """방한외래관광객(ED_CD=E) per nationality, one request per month; empty months (not yet published) are skipped."""
+    today = date.today()
+    months = [(y, m) for y in range(DATALAB_FROM, today.year + 1) for m in range(1, 13) if (y, m) <= (today.year, today.month)]
+
+    def month(ym):
+        params = {"serviceKey": key, "_type": "json", "numOfRows": 1000, "pageNo": 1, "YM": f"{ym[0]}{ym[1]:02d}", "ED_CD": "E"}
+        return ym, get_body(ARRIVALS, params, f"arrivals {ym[0]}-{ym[1]:02d}")
+    with ThreadPoolExecutor(WORKERS) as pool:
+        bodies = list(pool.map(month, months))
+    n = total = 0
+    with open(os.path.join(RAW_DIR, "arrivals.jsonl"), "w", encoding="utf-8") as f:
+        for _, body in bodies:
+            total += int(body.get("totalCount") or 0)
+            for it in items_of(body):
+                f.write(json.dumps({"ym": str(it["ym"]), "nat": it["natCd"], "name": " ".join(str(it["natKorNm"]).split()),
+                                    "n": it["num"]}, ensure_ascii=False) + "\n")
+                n += 1
+    print(f"arrivals: total {total}, fetched {n}", flush=True)
+    if n < total * 0.98:
+        sys.exit(f"arrivals: fetched {n} of {total}; aborting so the last good build stays published")
 
 
 if __name__ == "__main__":
