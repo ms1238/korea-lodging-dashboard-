@@ -778,10 +778,12 @@ def add_population(sidos, sgg_of, sido_meta):
             by_name[g].append(sd)
     exact, parts, unmatched = {}, defaultdict(int), set()
     for r in d["sgg"]:
-        sd, name = norm(r["sido"]), r["sgg"].strip()
+        sd, name = norm(r["sido"]), r["sgg"].strip() or norm(r["sido"])  # 세종 reports no 시군구 name
         city = name.split(" ")[0]
         if sd in sidos and name in sgg_of[sd]:
             exact[(sd, name)] = r["pop"]
+        elif sd in sidos and name.replace(" ", "") in sgg_of[sd]:  # 전주시완산구 in the permit addresses
+            exact[(sd, name.replace(" ", ""))] = r["pop"]
         elif sd in sidos and city in sgg_of[sd]:
             parts[(sd, city)] += r["pop"]
         elif len(by_name.get(name, [])) == 1:
