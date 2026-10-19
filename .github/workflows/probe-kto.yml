@@ -24,29 +24,34 @@ jobs:
               titles = [re.sub(r"<[^>]+>|\s+", " ", x).strip() for x in re.findall(r'<span class="title">(.*?)</span>', t, re.S)]
               print(f"== SEARCH {kw} {dtype}: {list(zip(ids, titles))[:25]}", flush=True)
               return ids
-          found = None
-          for kw in ("AreaTarDivService", "한국관광공사 다양성", "한국관광공사 지역별 관광"):
-              for cid in search(kw, "API")[:15]:
-                  t = requests.get(f"https://www.data.go.kr/data/{cid}/openapi.do", headers=H, timeout=90).text
-                  if "AreaTarDivService" in t:
-                      found = (cid, t); break
-              if found: break
-          if found:
+          for svc, kws in (("AreaTarDivService", ("AreaTarDivService", "한국관광공사 다양성", "한국관광공사 지역별 관광")),
+                           ("AreaTarDemDsService", ("AreaTarDemDsService", "한국관광공사 체류", "한국관광공사 수요"))):
+              found = None
+              for kw in kws:
+                  for cid in search(kw, "API")[:15]:
+                      t = requests.get(f"https://www.data.go.kr/data/{cid}/openapi.do", headers=H, timeout=90).text
+                      if svc in t:
+                          found = (cid, t); break
+                  if found: break
+              if not found:
+                  print(f"== {svc} not found in the searched pages", flush=True); continue
               cid, t = found
-              print("== FOUND", cid, re.findall(r"<title>(.*?)</title>", t, re.S)[:1])
+              print("== FOUND", svc, cid, re.findall(r"<title>(.*?)</title>", t, re.S)[:1])
               m = re.search(r"swaggerJson\s*=\s*`(.*?)`", t, re.S)
               sw = m.group(1) if m else ""
-              print("== description:", re.findall(r'"description":"(.{0,600}?)"', sw)[:1])
-              for op in re.findall(r'"(/\w+)":\{"get"', sw):
+              print("== description:", re.findall(r'"description":"(.{0,800}?)"', sw)[:1])
+              ops = re.findall(r'"(/\w+)":\{"get"', sw)
+              for op in ops:
                   j = sw.find(f'"{op}"')
                   print("== OP", op, re.findall(r'"summary":"([^"]*)"', sw[j:j + 30000])[:1],
-                        "\n   desc:", re.findall(r'"description":"([^"]{0,300})"', sw[j:j + 30000])[:1],
-                        "\n   params:", re.findall(r'"name":"([^"]+)","description":"([^"]*)"', sw[j:j + 30000])[:14],
+                        "\n   desc:", re.findall(r'"description":"([^"]{0,400})"', sw[j:j + 30000])[:1],
+                        "\n   params:", re.findall(r'"name":"([^"]+)","description":"([^"]*)"', sw[j:j + 30000])[:16],
                         "\n   fields:", re.findall(r'"(\w+)":\{"type":"(?:string|number|integer)","description":"([^"]*)"', sw[j:j + 30000])[:30], flush=True)
-              for op in re.findall(r'"(/\w+)":\{"get"', sw)[:6]:
-                  r = requests.get("https://apis.data.go.kr/B551011/AreaTarDivService" + op, params={"serviceKey": K, "pageNo": 1, "numOfRows": 3, "MobileOS": "ETC", "MobileApp": "test", "_type": "json"}, timeout=90)
-                  print(f"== CALL {op} [{r.status_code}] {r.text[:1200]}\n", flush=True)
-          else:
-              print("== AreaTarDivService not found in the searched pages", flush=True)
+              for op in ops[:6]:
+                  r = requests.get(f"https://apis.data.go.kr/B551011/{svc}" + op, params={"serviceKey": K, "pageNo": 1, "numOfRows": 3, "MobileOS": "ETC", "MobileApp": "test", "_type": "json"}, timeout=90)
+                  print(f"== CALL {svc}{op} [{r.status_code}] {r.text[:1200]}\n", flush=True)
+          t = requests.get("https://www.data.go.kr/data/15013205/standard.do", headers=H, timeout=90).text
+          for k in ("limitAtchFileId", "fileDownload", "atchFileId", ".do'", '.do"', "url:"):
+              print(f"== STD {k}:", [re.sub(r"\s+", " ", x) for x in re.findall(r".{0,160}%s.{0,160}" % re.escape(k), t)][:6], flush=True)
           for kw in ("관광특구", "관광특구 경계", "관광특구 공간"):
               search(kw, "FILE"); search(kw, "API")

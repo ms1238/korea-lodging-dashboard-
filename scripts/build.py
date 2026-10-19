@@ -466,14 +466,23 @@ def write_stations(rows, sidos, sgg_of, tidx):
     wide = {korail_norm(r["name"]) for r in load("korail_wide.json")}
     mp = os.path.join(RAW, "korail_main.jsonl")
     main = {korail_norm(json.loads(l)["name"]) for l in open(mp, encoding="utf-8")} if os.path.exists(mp) else set()
+    # by name with the parentheses kept (김천(구미) → 김천구미), and also without their text (총신대입구(이수) → 총신대입구)
+    # unless another station has that exact name (김천)
     by_name = defaultdict(list)
+    full = lambda r: korail_norm(r["name"].replace("(", "").replace(")", ""))
     for r in rail:
-        by_name[korail_norm(r["name"])].append(r)
+        by_name[full(r)].append(r)
+    for r in rail:
+        if korail_norm(r["name"]) != full(r) and korail_norm(r["name"]) not in by_name:
+            by_name[korail_norm(r["name"])].append(r)
     nodes += [dict(r, src="korail") for n in wide for r in by_name.get(n, [])]
-    # a 간선 station name that several distant railway stations share cannot be placed: skip it
+    # a 간선 station name that several distant railway stations share (양평 on 경의중앙선 and on 5호선) goes to the one
+    # Korail operates; if that is still not one place, the name is skipped
     far = lambda rs: any(dist2(x["lat"], x["lon"], y["lat"], y["lon"]) > 25 for x in rs for y in rs)
-    amb = sorted(n for n in main if far(by_name.get(n, [])))
-    nodes += [dict(r, src="main") for n in main if n not in amb for r in by_name.get(n, [])]
+    korail_op = lambda rs: [r for r in rs if re.search(r"한국철도|코레일|Korail|KORAIL", r.get("op", ""))]
+    pick = {n: (korail_op(by_name[n]) if far(by_name[n]) else by_name[n]) for n in main if by_name.get(n)}
+    amb = sorted(n for n, rs in pick.items() if not rs or far(rs))
+    nodes += [dict(r, src="main") for n, rs in pick.items() if n not in amb for r in rs]
     print(f"stations: 간선 {len(main)} names, {sum(1 for n in main if by_name.get(n))} found among railway stations; "
           f"same name far apart (skipped): {' '.join(amb)}; not found: {' '.join(sorted(n for n in main if not by_name.get(n)))}", flush=True)
     std = load("metro_std.json")
@@ -599,8 +608,8 @@ def add_main(out, srcs):
         if r["ym"] in mym:
             by[korail_norm(r["name"])][r["ym"]] = (r["ride"], r["goff"])
     hit = 0
-    for o, src in zip(out, srcs):
-        series = by.get(korail_norm(o[2])) if "main" in src else None
+    for o, src in zip(out, srcs):  # 김천(구미): try 김천구미 before 김천
+        series = (by.get(korail_norm(o[2].replace("(", "").replace(")", ""))) or by.get(korail_norm(o[2]))) if "main" in src else None
         if series:
             o[-1] = [[series.get(m, (0, 0))[0] for m in mym], [series.get(m, (0, 0))[1] for m in mym]]
             hit += 1
@@ -611,7 +620,7 @@ def add_main(out, srcs):
 KORAIL_SIDO = ("서울특별시", "경기도", "인천광역시", "강원특별자치도", "충청남도", "부산광역시", "울산광역시", "대구광역시", "경상북도")  # where 코레일 광역철도 runs (동해선, 대경선 included)
 
 
-KORAIL_ALIAS = {"디엠시": "디지털미디어시티"}  # names the 광역철도 table abbreviates
+KORAIL_ALIAS = {"디엠시": "디지털미디어시티", "인천공항T1": "인천공항1터미널", "인천공항T2": "인천공항2터미널"}  # names the Korail tables abbreviate
 
 
 def korail_norm(n):
