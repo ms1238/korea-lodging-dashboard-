@@ -20,7 +20,7 @@ Steps
 13. subway.json: subway / light-rail lines (OpenStreetMap) as GeoJSON with each line's colour.
 14. park_areas.json: national-park boundaries (OpenStreetMap) as simplified polygons with their map area;
     금정산 falls back to the boundary traced from the designation map (scripts/static/geumjeongsan.json).
-15. stations.json: subway / light-rail stations (OpenStreetMap) with their lines, 시도/시군구 and the number of
+15. stations.json: subway / light-rail, 코레일 광역철도 and KTX / SRT stations (OpenStreetMap) with their lines, 시도/시군구 and the number of
     operating lodgings per type within 0.5 / 1 / 3 / 5 km (records with an exact position only), plus the monthly
     boardings / alightings of 코레일 광역철도 stations matched by name (latest 12 months).
 16. icn.json: 인천공항 arriving / departing passengers per month and the top countries of the route.
@@ -480,15 +480,28 @@ def write_stations(rows, sidos, sgg_of, tidx):
         extra = [dict(s, korail=1) for s in json.load(open(rail, encoding="utf-8")) if korail_norm(s["name"]) in served]
         print(f"stations: {len(extra)} railway stations named like a 광역철도 station", flush=True)
         nodes += extra
+    ktx = os.path.join(RAW, "ktx_stops.json")
+    if os.path.exists(rail) and os.path.exists(ktx):
+        stops = defaultdict(list)
+        for p in json.load(open(ktx, encoding="utf-8")):
+            stops[(int(p["lat"] * 100), int(p["lon"] * 100))].append((p["lat"], p["lon"]))
+        near_stop = lambda s: any(dist2(s["lat"], s["lon"], *p) <= 0.36 for i in (-1, 0, 1) for j in (-1, 0, 1)
+                                  for p in stops.get((int(s["lat"] * 100) + i, int(s["lon"] * 100) + j), ()))
+        hs = [dict(s, ktx=1) for s in json.load(open(rail, encoding="utf-8")) if near_stop(s)]
+        print(f"stations: {len(hs)} KTX/SRT stations: {' '.join(sorted({s['name'] for s in hs}))}", flush=True)
+        nodes += hs
     st = []
     for s in nodes:
         key = re.sub(r"역$", "", s["name"].strip())
         for m in st:
             if m["key"] == key and dist2(m["lat"], m["lon"], s["lat"], s["lon"]) <= 0.25:
                 m["pts"].append((s["lat"], s["lon"]))
+                m["korail"] = m["korail"] or s.get("korail")
+                m["ktx"] = m["ktx"] or s.get("ktx")
                 break
         else:
-            st.append({"key": key, "name": s["name"].strip(), "lat": s["lat"], "lon": s["lon"], "pts": [(s["lat"], s["lon"])], "korail": s.get("korail")})
+            st.append({"key": key, "name": s["name"].strip(), "lat": s["lat"], "lon": s["lon"], "pts": [(s["lat"], s["lon"])],
+                       "korail": s.get("korail"), "ktx": s.get("ktx")})
     for m in st:
         m["lat"] = round(sum(p[0] for p in m["pts"]) / len(m["pts"]), 5)
         m["lon"] = round(sum(p[1] for p in m["pts"]) / len(m["pts"]), 5)
@@ -554,7 +567,7 @@ def write_stations(rows, sidos, sgg_of, tidx):
         reg = near1.most_common(1)[0][0] if near1 else nearest[1]
         if not reg or not re.search("[가-힣]", m["name"]):  # no lodging within 10 km: outside Korea (the query box reaches Kyushu)
             continue
-        if m["korail"] and len(m["pts"]) == 1 and reg[0] not in KORAIL_SIDO:  # a same-named station elsewhere
+        if m["korail"] and not m["ktx"] and len(m["pts"]) == 1 and reg[0] not in KORAIL_SIDO:  # a same-named station elsewhere
             continue
         si = sidos.index(reg[0])
         gi = sgg_of[reg[0]].index(reg[1])
@@ -564,6 +577,11 @@ def write_stations(rows, sidos, sgg_of, tidx):
                 lidx["코레일 광역철도"] = len(lines)
                 lines.append(["코레일 광역철도 (노선 미확인)", "#0052A4"])
             ln = [lidx["코레일 광역철도"]]
+        if m["ktx"]:
+            if "KTX·SRT" not in lidx:
+                lidx["KTX·SRT"] = len(lines)
+                lines.append(["KTX·SRT 정차역", "#1f3a93"])
+            ln = ln + [lidx["KTX·SRT"]]
         out.append([lat, lon, m["name"], si, gi, ln, [[t, *c] for t, c in sorted(cnt.items())]])
     print(f"stations: {len(out)} after merging, {sum(1 for o in out if o[5])} on a known line, {len(lines)} lines", flush=True)
     kym = add_korail(out, lines, sidos)
