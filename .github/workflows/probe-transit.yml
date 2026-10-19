@@ -1,0 +1,44 @@
+# Temporary: sample responses of the transit / airport APIs and their portal specs (data.go.kr is unreachable from the dev sandbox).
+name: Probe transit APIs
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-transit.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, requests
+          K = os.environ["KEY"]
+          A = "https://apis.data.go.kr/"
+          calls = [
+              ("1613000/BusStop/getBusStop", {"opr_ymd": "20250801"}),
+              ("1613000/BusStop/getBusStop", {}),
+              ("1613000/PublicTransportationPassengerCount/getDailyPublicTransportationPassengerCount", {}),
+              ("1613000/PublicTransportationPassengerCount/getMonthlyPublicTransportationPassengerCount", {}),
+              ("B551177/AviationStatsByCountry/getTotalNumberOfFlight", {}),
+              ("B551177/AviationStatsByCountry/getTotalNumberOfPassenger", {}),
+          ]
+          for path, extra in calls:
+              for fmt in ({"dataType": "JSON", "type": "json", "_type": "json", "returnType": "json"},):
+                  p = {"serviceKey": K, "pageNo": 1, "numOfRows": 3, **fmt, **extra}
+                  try:
+                      r = requests.get(A + path, params=p, timeout=90)
+                      print(f"== {path} {extra} [{r.status_code}]\n{r.text[:2500]}\n", flush=True)
+                  except Exception as e:
+                      print(f"== {path} {extra} ERROR {type(e).__name__}", flush=True)
+          # portal specs (swagger) for the datasets found so far
+          for cid in ("15142032", "15142080", "15160910"):
+              for u in (f"https://www.data.go.kr/catalog/{cid}/openapi.json",):
+                  try:
+                      r = requests.get(u, timeout=60)
+                      print(f"== SPEC {cid} [{r.status_code}]\n{r.text[:6000]}\n", flush=True)
+                  except Exception as e:
+                      print(f"== SPEC {cid} ERROR {type(e).__name__}", flush=True)
