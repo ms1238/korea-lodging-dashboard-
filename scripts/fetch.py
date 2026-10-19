@@ -14,6 +14,7 @@ it must never be written into the repository.
 import json
 import math
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -38,6 +39,9 @@ DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
 DATALAB_FROM = 2018  # first year the service has data for
 ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntTourismStatsList"
+ICN = "https://apis.data.go.kr/B551177/AviationStatsByCountry/getTotalNumberOfPassenger"  # 인천공항 국가별 여객
+KORAIL_WIDE = "https://apis.data.go.kr/B551457/issueStatistics/wideRailloadStationPer"  # 코레일 광역철도 역별 승하차
+KAC_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1"  # 한국공항공사 공항별 여객실적 (odcloud)
 OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
 # a bounding box of South Korea instead of an area lookup: some mirrors have no area index and answer 500
@@ -55,7 +59,8 @@ STATIONS_QUERY = """[out:json][timeout:180];
  nwr["railway"="station"]["subway"="yes"](33.0,124.5,38.7,131.0);
  nwr["railway"="station"]["light_rail"="yes"](33.0,124.5,38.7,131.0););
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations"}  # the page works without these, so a failed first fetch does not stop the deploy
+OPTIONAL = {"subway", "parks_osm", "stations", "icn", "korail_wide", "kac"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"subway", "parks_osm", "stations", "korail_wide", "kac"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -210,14 +215,15 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations"]:
-        files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in OPTIONAL else [f"{ep}.jsonl"]
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "icn", "korail_wide", "kac"]:
+        files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
             continue
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
-             "parks_osm": fetch_parks_osm, "stations": fetch_stations}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "parks_osm": fetch_parks_osm, "stations": fetch_stations, "icn": fetch_icn, "korail_wide": fetch_korail_wide,
+             "kac": fetch_kac}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -296,6 +302,78 @@ def fetch_arrivals(key):
         new += [{"ym": str(it["ym"]), "nat": it["natCd"], "name": " ".join(str(it["natKorNm"]).split()), "n": it["num"]} for it in items_of(body)]
     check(f"arrivals ({len(months)} months)", len(new), total)
     write_rows("arrivals", sorted(kept + new, key=lambda r: r["ym"]))
+
+
+def num(v):
+    return int(str(v or 0).replace(",", "") or 0)
+
+
+def fetch_icn(key):
+    """인천공항 passengers per country of the route, one request per month (from_month = to_month).
+    Months not published yet come back empty or as an error and are skipped. Months already fetched are reused."""
+    months, kept = months_to_fetch("icn")
+
+    def month(ym):
+        y, m = ym
+        params = {"serviceKey": key, "from_month": f"{y}{m:02d}", "to_month": f"{y}{m:02d}", "type": "json"}
+        for attempt in range(4):  # retry network errors only; an answer without data means the month is not out yet
+            try:
+                d = requests.get(ICN, params=params, timeout=90).json()
+                return ym, items_of(d["response"]["body"]) if d.get("response", {}).get("header", {}).get("resultCode") == "00" else None
+            except Exception as e:  # noqa: BLE001
+                last = e
+                time.sleep(3 + attempt * 3)
+        print(f"  icn {y}-{m:02d}: {last}", flush=True)
+        return ym, None
+    with ThreadPoolExecutor(WORKERS) as pool:
+        got = list(pool.map(month, months))
+    if months and all(items is None for _, items in got):
+        raise RuntimeError("every month failed")
+    new = [{"ym": f"{y}{m:02d}", "region": it["region"], "country": it["country"], "arr": num(it.get("arrPassenger")), "dep": num(it.get("depPassenger"))}
+           for (y, m), items in got for it in items or [] if num(it.get("arrPassenger")) or num(it.get("depPassenger"))]
+    print(f"icn: {len(months)} months requested, {len({r['ym'] for r in new})} with data, {len(new)} rows", flush=True)
+    write_rows("icn", sorted(kept + new, key=lambda r: r["ym"]))
+
+
+def fetch_korail_wide(key):
+    """코레일 광역철도 boardings / alightings per station and month (the whole table, a few thousand rows;
+    the service asks for at most 50 rows per page)."""
+    def page(p):
+        return get_body(KORAIL_WIDE, {"serviceKey": key, "pageNo": p, "numOfRows": 50, "returnType": "json"}, f"korail_wide page {p}")
+    first = page(1)
+    total, size = int(first.get("totalCount") or 0), max(1, len(items_of(first)))
+    with ThreadPoolExecutor(WORKERS) as pool:
+        rest = list(pool.map(page, range(2, math.ceil(total / size) + 1)))
+    rows = [{"ym": it["run_ym"], "cd": it["stn_cd"], "name": it["stn_nm"], "ride": num(it["ride_nope"]), "goff": num(it["goff_nope"])}
+            for body in [first] + rest for it in items_of(body)]
+    check("korail_wide", len(rows), total)
+    if not rows:
+        raise RuntimeError("no rows returned")
+    save_json("korail_wide.json", rows)
+
+
+def fetch_kac(key):
+    """한국공항공사 공항별 여객실적: the odcloud dataset is one table per publication; take the latest one.
+    The column names are printed so the build can be written against them."""
+    spec = requests.get(KAC_SPEC, timeout=60).json()
+    paths = [(re.findall(r"\d{8}", v["get"].get("summary", "")) or ["0"])[0] + "|" + p + "|" + v["get"].get("summary", "")
+             for p, v in spec["paths"].items()]
+    print("kac tables:", [x.split("|", 2)[2] for x in sorted(paths)], flush=True)
+    _, path, title = sorted(paths)[-1].split("|", 2)
+    rows, p = [], 1
+    while True:
+        r = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": p, "perPage": 1000, "returnType": "JSON"}, timeout=90)
+        d = r.json()
+        if "data" not in d:
+            raise RuntimeError(f"HTTP {r.status_code}: {str(d)[:200]}")
+        rows += d["data"]
+        if not d["data"] or len(rows) >= int(d.get("totalCount") or 0):
+            break
+        p += 1
+    print(f"kac: {title}: {len(rows)} rows; columns {list(rows[0]) if rows else []}; first {rows[:2]}", flush=True)
+    if not rows:
+        raise RuntimeError("no rows returned")
+    save_json("kac.json", {"title": title, "rows": rows})
 
 
 if __name__ == "__main__":

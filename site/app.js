@@ -765,6 +765,12 @@
     $('stn-lines').innerHTML = s[5].map(li => `<span class="chip" style="padding-right:10px"><span class="sw" style="background:${STN.lines[li][1] || '#7f8c8d'}"></span>${esc(STN.lines[li][0])}</span>`).join(' ')
       + (place ? ` <small style="color:var(--muted)">${esc(place)}</small>` : '');
     $('stn-kpis').innerHTML = R.map((km, k) => `<div class="kpi"><b>${fmt(stnCount(s, k))}</b><span>반경 ${kmLabel(km)} 안 영업 숙소</span></div>`).join('');
+    const kr = s[7], ym = k => `${k.slice(0, 4)}.${k.slice(4)}`, K = STN.kym || [];
+    if (kr) {
+      const ride = kr[0].reduce((a, b) => a + b, 0), goff = kr[1].reduce((a, b) => a + b, 0), nm = kr[0].filter((v, i) => v || kr[1][i]).length || 1;
+      $('stn-rail').innerHTML = `<b>코레일 광역철도 승하차</b> ${ym(K[0])}~${ym(K[K.length - 1])}: 승차 ${fmt(ride)}명 · 하차 ${fmt(goff)}명 · 월평균 ${fmt(Math.round((ride + goff) / nm))}명`
+        + ` (${ym(K[K.length - 1])} ${fmt(kr[0][kr[0].length - 1] + kr[1][kr[1].length - 1])}명). 서울교통공사 등 다른 운영기관 노선 이용객은 들어 있지 않습니다.`;
+    } else $('stn-rail').textContent = K.length ? '코레일 광역철도 승하차 자료가 없는 역입니다(코레일이 운영하지 않는 노선이거나 역 이름이 맞지 않음).' : '';
     const rows = s[6].filter(c => state.types.has(c[0])).sort((a, b) => b[R.length] - a[R.length]);
     $('stn-table-title').textContent = `${s[2]} 업종별 숙소 수`;
     $('stn-table').innerHTML = `<thead><tr><th>업종</th>${R.map(km => `<th>${kmLabel(km)}</th>`).join('')}</tr></thead><tbody>`
@@ -791,6 +797,19 @@
   getJSON('data/stations.json', null).then(d => { STN = d; renderStations(); });
 
   /* ---------- 방한 외래관광객 (전국, 월별·국적별) ---------- */
+  // 월별 값(YYYYMM)을 분기·연도로 합산. 마지막 기간에 달이 덜 찼으면 진행 중(점선·*)으로 표시
+  const PER_NAME = { m: '월별', q: '분기별', y: '연도별' };
+  function perAgg(months, series, per) {
+    const keyOf = k => per === 'y' ? k.slice(0, 4) : per === 'q' ? `${k.slice(2, 4)}.${Math.ceil(+k.slice(4) / 3)}Q` : `${k.slice(2, 4)}.${k.slice(4)}`;
+    const labels = [], cnt = [], vals = series.map(() => []);
+    months.forEach((k, i) => {
+      const key = keyOf(k);
+      if (labels[labels.length - 1] !== key) { labels.push(key); cnt.push(0); vals.forEach(v => v.push(0)); }
+      cnt[cnt.length - 1]++; series.forEach((s, j) => { vals[j][vals[j].length - 1] += s[i]; });
+    });
+    const full = { m: 1, q: 3, y: 12 }[per];
+    return { labels, vals, partial: cnt.map(c => c < full) };
+  }
   let arrPer = 'm';
   $('arr-per').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { arrPer = x.dataset.v; renderArrivals(); } });
   function renderArrivals() {
@@ -808,25 +827,44 @@
       [y19 ? (l12 / y19 * 100).toFixed(0) + '%' : '-', '2019년 연간 대비 (최근 12개월)'],
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
     $('arr-sub').textContent = `${ym(months[0])}~${ym(months[n - 1])} 입국자 수입니다. 지역별 숙소 수요의 배경으로 보세요.`;
-    // 분기·연도는 월을 합산. 마지막 기간에 달이 덜 찼으면 진행 중(점선·*)으로 표시
-    const keyOf = k => arrPer === 'y' ? k.slice(0, 4) : arrPer === 'q' ? `${k.slice(2, 4)}.${Math.ceil(+k.slice(4) / 3)}Q` : `${k.slice(2, 4)}.${k.slice(4)}`;
-    const labels = [], vals = [], cnt = [];
-    months.forEach((k, i) => {
-      const key = keyOf(k);
-      if (labels[labels.length - 1] !== key) { labels.push(key); vals.push(0); cnt.push(0); }
-      vals[vals.length - 1] += total[i]; cnt[cnt.length - 1]++;
-    });
-    const full = { m: 1, q: 3, y: 12 }[arrPer];
+    const P = perAgg(months, [total], arrPer);
     document.querySelectorAll('#arr-per button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === arrPer)));
-    $('arr-title').textContent = { m: '월별', q: '분기별', y: '연도별' }[arrPer] + ' 방한 외래관광객' + (cnt[cnt.length - 1] < full ? ' (* 진행 중)' : '');
-    lineChart($('arr'), $('arr-tip'), labels, [{ name: '방한 외래관광객', color: 'var(--c0)', vals }],
-      { div: 1e4, partial: cnt.map(c => c < full), unit: v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(v) + '명' });
+    $('arr-title').textContent = PER_NAME[arrPer] + ' 방한 외래관광객' + (P.partial[P.partial.length - 1] ? ' (* 진행 중)' : '');
+    lineChart($('arr'), $('arr-tip'), P.labels, [{ name: '방한 외래관광객', color: 'var(--c0)', vals: P.vals[0] }],
+      { div: 1e4, partial: P.partial, unit: v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(v) + '명' });
     const rows = top.map(t => ({ name: t.name, v: sum(t.n, n - 12, n), p: sum(t.n, n - 24, n - 12) }));
     $('arr-top-title').textContent = `국적별 상위 10 · 최근 12개월 (괄호는 직전 12개월 대비)`;
     $('arr-top').innerHTML = rowsHTML(rows.map(r => ({ name: r.name, value: r.v, label: man(r.v), extra: `${pc1(r.v / l12)} · ${yoy(r.v, r.p)}` })), {});
     csvSet('arr-top', ['국적', '최근 12개월', '직전 12개월', '증감률(%)', '비중(%)'], rows.map(r => [r.name, r.v, r.p, r.p ? ((r.v / r.p - 1) * 100).toFixed(2) : '', (r.v / l12 * 100).toFixed(2)]));
   }
   const pc1 = x => (x * 100).toFixed(1) + '%';
+
+  /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
+  let icn = null, icnPer = 'm';
+  function renderIcn() {
+    $('icn-sec').hidden = !icn;
+    if (!icn) return;
+    const { months, arr, dep, top } = icn, n = months.length, sum = (v, a, b) => v.slice(Math.max(0, a), b).reduce((p, q) => p + q, 0);
+    const ym = k => `${k.slice(0, 4)}.${k.slice(4)}`, yoy = (a, b) => b ? (a >= b ? '+' : '') + ((a / b - 1) * 100).toFixed(1) + '%' : '-';
+    const man = v => fmt(Math.round(v / 1e4)) + '만', a12 = sum(arr, n - 12, n), p12 = sum(arr, n - 24, n - 12);
+    $('icn-kpis').innerHTML = [
+      [man(a12), `도착 여객 · 최근 12개월 (${ym(months[Math.max(0, n - 12)])}~${ym(months[n - 1])})`],
+      [yoy(a12, p12), '직전 12개월 대비'],
+      [man(arr[n - 1]), `${ym(months[n - 1])} 도착 (전년 동월 ${yoy(arr[n - 1], arr[n - 13])})`],
+      [man(sum(dep, n - 12, n)), '출발 여객 · 최근 12개월'],
+    ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
+    const P = perAgg(months, [arr, dep], icnPer);
+    document.querySelectorAll('#icn-per button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === icnPer)));
+    $('icn-title').textContent = PER_NAME[icnPer] + ' 인천공항 여객' + (P.partial[P.partial.length - 1] ? ' (* 진행 중)' : '');
+    lineChart($('icn'), $('icn-tip'), P.labels, [{ name: '도착', color: 'var(--c0)', vals: P.vals[0] }, { name: '출발', color: 'var(--c1)', vals: P.vals[1] }],
+      { div: 1e4, partial: P.partial, unit: v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(v) + '명' });
+    const rows = top.map(t => ({ name: t.name, region: t.region, v: sum(t.arr, n - 12, n), p: sum(t.arr, n - 24, n - 12) }));
+    $('icn-top').innerHTML = rowsHTML(rows.map(r => ({ name: `${r.name} (${r.region})`, value: r.v, label: man(r.v), extra: `${pc1(r.v / a12)} · ${yoy(r.v, r.p)}` })), {});
+    csvSet('icn-top', ['국가(노선)', '지역', '최근 12개월 도착', '직전 12개월 도착', '증감률(%)', '비중(%)'],
+      rows.map(r => [r.name, r.region, r.v, r.p, r.p ? ((r.v / r.p - 1) * 100).toFixed(2) : '', (r.v / a12 * 100).toFixed(2)]));
+  }
+  $('icn-per').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { icnPer = x.dataset.v; renderIcn(); } });
+  getJSON('data/icn.json', null).then(d => { icn = d; renderIcn(); });
 
   /* ---------- 외지인·외국인 방문객 추이 (지금 고른 지역, 누적 막대 + 외국인 비중) ---------- */
   let dvPer = 'y', dvMode = 'bar';

@@ -122,6 +122,7 @@
     <div class="card">
       <div class="tlrow" style="margin-bottom:10px"><label for="stn-sel" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">지하철·도시철도역<select id="stn-sel"></select></label><span id="stn-lines"></span></div>
       <div class="kpis" id="stn-kpis"></div>
+      <p class="note" id="stn-rail" style="margin-top:10px"></p>
     </div>
     <div class="card"><button class="btn csv" data-csv="stn-table" data-name="역세권_업종별">CSV</button><h3 style="margin-bottom:10px" id="stn-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="stn-table"></table></div>
       <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 역 위치에서 잰 직선거리입니다. 역 위치와 노선: OpenStreetMap. 역의 시·군·구는 반경 1km 안 숙소 주소로 정했습니다.</p></div>
@@ -175,6 +176,17 @@
       <div class="chartwrap"><svg id="arr" viewBox="0 0 900 260" role="img" aria-label="방한 외래관광객 추이"></svg><div class="tip" id="arr-tip" hidden></div></div></div>
     <div class="card"><button class="btn csv" data-csv="arr-top" data-name="방한객_국적별">CSV</button><h3 style="margin-bottom:10px" id="arr-top-title"></h3><div class="sharelist" id="arr-top"></div>
       <p class="note">출처: 한국문화관광연구원 출입국관광통계(공공데이터포털). 국적별 입국자 수로 전국 단위만 있습니다. 지역별 외국인 방문객은 위 "외지인·외국인 방문객 추이"에서 보세요(데이터랩, 국적 구분 없음).</p></div>
+  </section>
+
+  <section data-tab="demand" id="icn-sec" hidden>
+    <div class="sechead"><h2>인천공항 여객 (국가별 노선)</h2><p class="sub">인천공항에 도착·출발한 여객 수입니다. 국가는 노선 기준이고 내국인도 포함됩니다.</p></div>
+    <div class="kpis" id="icn-kpis"></div>
+    <div class="card"><div class="tlrow" style="margin-bottom:10px"><h3 style="margin:0" id="icn-title">월별 인천공항 여객</h3>
+        <div class="seg" id="icn-per" role="group" aria-label="기간"><button data-v="m" aria-pressed="true">월별</button><button data-v="q" aria-pressed="false">분기별</button><button data-v="y" aria-pressed="false">연도별</button></div>
+        <div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>도착</span><span><i style="background:var(--c1)"></i>출발</span></div></div>
+      <div class="chartwrap"><svg id="icn" viewBox="0 0 900 260" role="img" aria-label="인천공항 여객 추이"></svg><div class="tip" id="icn-tip" hidden></div></div></div>
+    <div class="card"><button class="btn csv" data-csv="icn-top" data-name="인천공항_국가별_도착">CSV</button><h3 style="margin-bottom:10px">국가별 도착 여객 상위 12 · 최근 12개월 (비중 · 직전 12개월 대비)</h3><div class="sharelist" id="icn-top"></div>
+      <p class="note">출처: 인천국제공항공사 국가별 항공 통계(공공데이터포털). 국가는 출발 공항이 있는 나라라서 국적과 다르고, 귀국하는 내국인도 들어 있습니다. 외국인 국적별 입국자는 위 "방한 외래관광객"에서 보세요.</p></div>
   </section>
 
   <section data-tab="trend">

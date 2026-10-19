@@ -21,7 +21,9 @@ Steps
 14. park_areas.json: national-park boundaries (OpenStreetMap) as simplified polygons with their map area;
     금정산 falls back to the boundary traced from the designation map (scripts/static/geumjeongsan.json).
 15. stations.json: subway / light-rail stations (OpenStreetMap) with their lines, 시도/시군구 and the number of
-    operating lodgings per type within 0.5 / 1 / 3 / 5 km (records with an exact position only).
+    operating lodgings per type within 0.5 / 1 / 3 / 5 km (records with an exact position only), plus the monthly
+    boardings / alightings of 코레일 광역철도 stations matched by name (latest 12 months).
+16. icn.json: 인천공항 arriving / departing passengers per month and the top countries of the route.
 """
 import difflib
 import glob
@@ -546,8 +548,68 @@ def write_stations(rows, sidos, sgg_of, tidx):
         gi = sgg_of[reg[0]].index(reg[1]) if reg else -1
         out.append([lat, lon, m["name"], si, gi, lines_near(lat, lon), [[t, *c] for t, c in sorted(cnt.items())]])
     print(f"stations: {len(out)} after merging, {sum(1 for o in out if o[5])} on a known line, {len(lines)} lines", flush=True)
+    kym = add_korail(out, lines, sidos)
     with open(os.path.join(OUT, "stations.json"), "w", encoding="utf-8") as f:
-        json.dump({"r": RADII, "lines": lines, "st": out}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"r": RADII, "lines": lines, "st": out, "kym": kym}, f, ensure_ascii=False, separators=(",", ":"))
+
+
+KORAIL_SIDO = ("서울특별시", "경기도", "인천광역시", "강원특별자치도", "충청남도")  # where 코레일 광역철도 runs
+KORAIL_LINE = re.compile(r"경의|중앙|수인|분당|경춘|경강|1호선|3호선|4호선|서해|경부|경원|경인|안산|과천|일산|장항")
+
+
+def add_korail(out, lines, sidos):
+    """Append [[boardings], [alightings]] for the latest 12 months to each station row (0 when unmatched).
+    Names are matched within the regions 광역철도 serves; when two stations share a name there (e.g. 양평, on
+    경의중앙선 and on 5호선), the one on a Korail-run line wins."""
+    path = os.path.join(RAW, "korail_wide.json")
+    for o in out:
+        o.append(0)
+    if not os.path.exists(path):
+        return []
+    norm = lambda n: re.sub(r"역$", "", re.sub(r"\(.*?\)|\s", "", n))
+    data = json.load(open(path, encoding="utf-8"))
+    kym = sorted({r["ym"] for r in data})[-12:]
+    by = defaultdict(dict)
+    for r in data:
+        if r["ym"] in kym:
+            by[norm(r["name"])][r["ym"]] = (r["ride"], r["goff"])
+    cand = defaultdict(list)
+    for i, o in enumerate(out):
+        if o[3] >= 0 and sidos[o[3]] in KORAIL_SIDO:
+            cand[norm(o[2])].append(i)
+    hit = amb = 0
+    for name, series in by.items():
+        ids = cand.get(name, [])
+        if len(ids) > 1:
+            ids = [i for i in ids if any(KORAIL_LINE.search(lines[li][0]) for li in out[i][5])]
+        if len(ids) != 1:
+            amb += bool(cand.get(name))
+            continue
+        out[ids[0]][-1] = [[series.get(m, (0, 0))[0] for m in kym], [series.get(m, (0, 0))[1] for m in kym]]
+        hit += 1
+    print(f"korail_wide: {len(by)} stations, {hit} matched to a map station, {amb} ambiguous, months {kym[:1]}~{kym[-1:]}", flush=True)
+    return kym
+
+
+def write_icn():
+    path = os.path.join(RAW, "icn.jsonl")
+    if not os.path.exists(path):
+        return
+    rows = [json.loads(l) for l in open(path, encoding="utf-8")]
+    months = sorted({r["ym"] for r in rows})
+    mi = {m: i for i, m in enumerate(months)}
+    arr, dep, by = [0] * len(months), [0] * len(months), defaultdict(lambda: [0] * len(months))
+    region = {}
+    for r in rows:
+        arr[mi[r["ym"]]] += r["arr"]
+        dep[mi[r["ym"]]] += r["dep"]
+        by[r["country"]][mi[r["ym"]]] += r["arr"]
+        region[r["country"]] = r["region"]
+    last12 = range(max(0, len(months) - 12), len(months))
+    top = sorted(by, key=lambda k: -sum(by[k][i] for i in last12))[:12]
+    with open(os.path.join(OUT, "icn.json"), "w", encoding="utf-8") as f:
+        json.dump({"months": months, "arr": arr, "dep": dep, "top": [{"name": k, "region": region[k], "arr": by[k]} for k in top]},
+                  f, ensure_ascii=False, separators=(",", ":"))
 
 
 def write_arrivals():
@@ -739,6 +801,7 @@ def main():
         sm["tour"] = cnt
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     write_arrivals()
+    write_icn()
     write_parks()
     write_subway()
     write_park_areas()
