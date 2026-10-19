@@ -40,7 +40,7 @@ jobs:
                         "\n   fields:", list(dict.fromkeys(re.findall(r'"(\w+)":\{"type":"(?:string|number|integer)","description":"([^"]*)"', part))), flush=True)
               return ops
           hits = {}
-          for cid in range(15151340, 15151400):
+          for cid in [15151868, 15152138, *range(15151360, 15151372), *range(15151860, 15151875)]:
               t = get(f"https://www.data.go.kr/data/{cid}/openapi.do")
               for svc in re.findall(r"apis\.data\.go\.kr/B551011/(\w+)", t):
                   hits.setdefault(svc, cid)
