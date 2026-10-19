@@ -1,0 +1,33 @@
+# Temporary: 간선열차 역별 승하차 data window, and the 도시광역철도 역사정보 standard dataset's download / API paths.
+name: Probe rail data
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-rail.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, re, requests
+          K = os.environ["KEY"]
+          H = {"User-Agent": "Mozilla/5.0"}
+          M = "https://apis.data.go.kr/B551457/issueStatistics/mainLineStationPer"
+          for extra in ({}, {"cond[opr_ymd::GTE]": "20261001"}, {"cond[opr_ymd::EQ]": "20261015"}, {"cond[opr_ymd::EQ]": "2026-10-15"},
+                        {"cond[opr_ymd::LTE]": "20250101"}, {"cond[stn_nm::EQ]": "오송"}):
+              r = requests.get(M, params={"serviceKey": K, "pageNo": 1, "numOfRows": 3, "returnType": "json", **extra}, timeout=90)
+              print(f"== mainLineStationPer {extra} [{r.status_code}] {r.text[:700]}\n", flush=True)
+          t = requests.get("https://www.data.go.kr/data/15013205/standard.do", headers=H, timeout=90).text
+          print("== title:", re.findall(r"<title>(.*?)</title>", t, re.S)[:1])
+          print("== api urls:", sorted(set(re.findall(r"https?://api\.data\.go\.kr/openapi/[A-Za-z0-9_]+", t))))
+          print("== downloads:", sorted(set(re.findall(r"fileDownload\.do\?[^\"' <>]+", t)))[:10])
+          print("== fn calls:", sorted(set(re.findall(r"fn_fileDataDown\([^)]*\)|fileDetailSn[^,;]{0,60}|atchFileId[^,;]{0,60}", t)))[:20], flush=True)
+          for u in sorted(set(re.findall(r"https?://api\.data\.go\.kr/openapi/[A-Za-z0-9_]+", t))):
+              r = requests.get(u, params={"serviceKey": K, "pageNo": 1, "numOfRows": 3, "type": "json"}, timeout=90)
+              print(f"== call {u} [{r.status_code}] {r.text[:1500]}\n", flush=True)
