@@ -417,6 +417,11 @@ def _km2(ring):
     return abs(sum(ring[i][0] * kx * ring[i + 1][1] * ky - ring[i + 1][0] * kx * ring[i][1] * ky for i in range(len(ring) - 1))) / 2
 
 
+# the 24 national parks; the OSM query box also reaches Kyushu (아소쿠주국립공원)
+KOREAN_PARKS = {"지리산", "경주", "계룡산", "한려해상", "설악산", "속리산", "한라산", "내장산", "가야산", "덕유산", "오대산", "주왕산",
+                "태안해안", "다도해해상", "북한산", "치악산", "월악산", "소백산", "변산반도", "월출산", "무등산", "태백산", "팔공산", "금정산"}
+
+
 def write_park_areas():
     """One polygon set per park; when several OSM objects describe the same park, the largest is kept."""
     best = {}
@@ -426,6 +431,8 @@ def write_park_areas():
         if "국립공원" not in name:
             continue
         park = re.sub(r"국립공원.*", "국립공원", name)
+        if park.removesuffix("국립공원") not in KOREAN_PARKS:
+            continue
         outer, lost = _rings([w for role, w in el["ways"] if role != "inner"])
         inner, _ = _rings([w for role, w in el["ways"] if role == "inner"])
         print(f"  park_areas {el['id']} {park}: {len(el['ways'])} ways -> {len(outer)} rings, {lost} open chains dropped", flush=True)

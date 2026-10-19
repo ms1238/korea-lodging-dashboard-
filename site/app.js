@@ -204,10 +204,10 @@
       const font = (map.getStyle().layers.find(l => l.layout && l.layout['text-font']) || {}).layout?.['text-font'] || ['Noto Sans Regular'];
       map.addSource('park-areas', { type: 'geojson', data: empty });
       getJSON('data/park_areas.json', null).then(g => { if (g) map.getSource('park-areas').setData(g); });
-      map.addLayer({ id: 'park-fill', type: 'fill', source: 'park-areas', paint: { 'fill-color': '#2e7d32', 'fill-opacity': .16 } }, firstSymbol);
-      map.addLayer({ id: 'park-line', type: 'line', source: 'park-areas', paint: { 'line-color': '#2e7d32', 'line-opacity': .7,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, 1.8] } }, firstSymbol);
-      map.addLayer({ id: 'park-label', type: 'symbol', source: 'park-areas', minzoom: 8, layout: { 'text-field': ['get', 'park'], 'text-font': font, 'text-size': 12 },
+      map.addLayer({ id: 'park-fill', type: 'fill', source: 'park-areas', paint: { 'fill-color': '#2e7d32', 'fill-opacity': .3 } }, firstSymbol);
+      map.addLayer({ id: 'park-line', type: 'line', source: 'park-areas', paint: { 'line-color': '#1b5e20', 'line-opacity': .9,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.6] } }, firstSymbol);
+      map.addLayer({ id: 'park-label', type: 'symbol', source: 'park-areas', minzoom: 7, layout: { 'text-field': ['get', 'park'], 'text-font': font, 'text-size': 12 },
         paint: { 'text-color': '#1b5e20', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
       // 교통시설 아이콘: 네모(철도역 = 보라, 공항 = 남색)
       const square = (fill, px) => {
