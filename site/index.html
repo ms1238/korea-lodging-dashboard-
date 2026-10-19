@@ -29,6 +29,7 @@
         <button role="tab" data-t="now" aria-selected="true">현황</button>
         <button role="tab" data-t="demand" aria-selected="false">관광 수요</button>
         <button role="tab" data-t="festival" aria-selected="false">축제</button>
+        <button role="tab" data-t="park" aria-selected="false">국립공원</button>
         <button role="tab" data-t="trend" aria-selected="false">동향</button>
         <button role="tab" data-t="minbak" aria-selected="false">도시민박</button>
         <button role="tab" data-t="compare" aria-selected="false">지역 비교</button>
@@ -153,6 +154,20 @@
       <p class="note" id="fest-vis-note"></p></div>
     <div class="card"><button class="btn csv" data-csv="fest-list" data-name="지역_축제목록">CSV</button><h3 style="margin-bottom:10px" id="fest-list-title">지역 축제 목록</h3><div class="tablewrap" style="max-height:440px;overflow:auto"><table id="fest-list"></table></div>
       <p class="note">줄을 누르면 그 축제를 고릅니다. 출처: 한국관광공사 TourAPI(행사·축제). 관광공사 자료는 축제마다 가장 최근 회차 일정만 담고 있어, 이 사이트가 매일 모으며 지난 회차를 쌓아 갑니다. 지도에는 축제 탭에서만 축제 위치가 별로 나옵니다(빨강 = 진행 중, 주황 = 예정, 회색 = 끝남).</p></div>
+  </section>
+
+  <section data-tab="park" id="park-sec">
+    <div class="sechead"><h2>국립공원 주변 숙소</h2><p class="sub" id="park-sub"></p></div>
+    <div class="card">
+      <div class="tlrow" style="margin-bottom:10px"><label for="park-q" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">공원<span class="suggwrap"><input type="search" id="park-q" placeholder="공원 이름 검색" autocomplete="off" role="combobox" aria-controls="park-sugg"><span class="sugg" id="park-sugg" role="listbox" hidden></span></span></label><select id="park-sel" aria-label="국립공원 선택"></select><small id="park-meta" style="color:var(--muted)"></small></div>
+      <div class="kpis" id="park-kpis"></div>
+    </div>
+    <div class="card"><div class="tlrow" style="margin-bottom:8px"><div class="seg" id="park-band" role="group" aria-label="범위"><button data-v="0" aria-pressed="false">공원 안</button><button data-v="1" aria-pressed="true">경계 1km 이내</button><button data-v="2" aria-pressed="false">3km 이내</button><button data-v="3" aria-pressed="false">5km 이내</button></div><h3 id="park-chart-title">운영 중 숙소 추이</h3></div>
+      <div class="legend"><span><i style="background:#2e7d32"></i>운영 중 숙소(월말, 왼쪽 축)</span><span><i style="background:var(--c0);border-radius:1px"></i>그 달 신규 인허가(오른쪽 축)</span></div>
+      <div class="chartwrap"><svg id="park-chart" viewBox="0 0 900 280" role="img" aria-label="국립공원 주변 운영 중 숙소 추이"></svg><div class="tip" id="park-tip" hidden></div></div>
+      <p class="note" id="park-note"></p></div>
+    <div class="card"><button class="btn csv" data-csv="park-table" data-name="국립공원주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="park-table-title">업종별 영업 숙소 수</h3><div class="tablewrap"><table id="park-table"></table></div>
+      <p class="note">좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 거리는 공원 경계선에서 잰 직선거리이고, 'n km 이내'는 공원 안 숙소를 포함합니다. 공원 경계: OpenStreetMap(금정산은 지정 도면 기반 근사). 국립공원공단 탐방객 통계는 공개 데이터가 설악산 한 곳뿐이라 넣지 않았습니다.</p></div>
   </section>
 
   <section data-tab="compare" id="cmp-sec">

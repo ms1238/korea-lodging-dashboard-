@@ -27,6 +27,8 @@ Steps
 18. kto_index.json: 관광수요지수 세부 지표 (체류·소비 강도, 다양성) per 시도 / 시군구 and month (한국관광데이터랩, indices).
 19. festivals.json: TourAPI festivals with every edition collected so far and the operating lodgings per type within
     0.5 / 1 / 3 / 5 km, as for stations.
+20. park_lodging.json: per national park, lodgings inside it or within 1 / 3 / 5 km of its boundary (every status,
+    exact positions) with permit and closing month, for the stock over time.
 """
 import calendar
 import difflib
@@ -452,6 +454,71 @@ def write_park_areas():
                       "geometry": {"type": "Point", "coordinates": [round(sum(x for x, _ in ring) / len(ring), 5), round(sum(y for _, y in ring) / len(ring), 5)]}})
     with open(os.path.join(OUT, "park_areas.json"), "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
+    return best
+
+
+PARK_BANDS = (1, 3, 5)  # km from a national park's boundary
+
+
+def write_park_lodging(rows, parks, sidos, sgg_of, tidx):
+    """Lodgings with an exact position (every status) inside each national park or within PARK_BANDS km of its
+    boundary, with permit and closing month, so the park tab can draw the operating stock over time.
+    band 0 = inside, 1..3 = within 1 / 3 / 5 km outside. Holes of the polygons are ignored (they were dropped)."""
+    km_lat = 110.95
+    grid = defaultdict(list)  # lodgings on a 0.1° grid
+    for r in rows:
+        if r["ll"] and not r.get("approx"):
+            grid[(int(r["ll"][0] * 10), int(r["ll"][1] * 10))].append(r)
+    ym = lambda d: int(d[:4] + d[5:7]) if re.match(r"\d{4}-\d{2}", d or "") else 0
+    gi_of = {s: {g: i for i, g in enumerate(sgg_of[s])} for s in sidos}
+    out = []
+    for park, (area, polys, _) in sorted(parks.items()):
+        rings = [p[0] for p in polys]
+        pts = [pt for ring in rings for pt in ring]
+        lat0 = sum(y for _, y in pts) / len(pts)
+        kx = 111.32 * math.cos(math.radians(lat0))
+        segs, strips = defaultdict(list), defaultdict(list)  # 0.02° cells for distances, 0.01° latitude strips for inside
+        for ring in rings:
+            for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+                sg = (x1, y1, x2, y2)
+                for i in range(int(min(y1, y2) * 50), int(max(y1, y2) * 50) + 1):
+                    for j in range(int(min(x1, x2) * 50), int(max(x1, x2) * 50) + 1):
+                        segs[(i, j)].append(sg)
+                for k in range(int(min(y1, y2) * 100), int(max(y1, y2) * 100) + 1):
+                    strips[k].append(sg)
+        x0, x1_, y0, y1_ = min(x for x, _ in pts), max(x for x, _ in pts), min(y for _, y in pts), max(y for _, y in pts)
+        pad_y, pad_x = PARK_BANDS[-1] / km_lat, PARK_BANDS[-1] / kx
+        res, regs, near = [], Counter(), Counter()
+        for i in range(int((y0 - pad_y) * 10), int((y1_ + pad_y) * 10) + 1):
+            for j in range(int((x0 - pad_x) * 10), int((x1_ + pad_x) * 10) + 1):
+                for r in grid.get((i, j), ()):
+                    lat, lon = r["ll"]
+                    if not (y0 - pad_y <= lat <= y1_ + pad_y and x0 - pad_x <= lon <= x1_ + pad_x):
+                        continue
+                    inside = sum(1 for xa, ya, xb, yb in strips.get(int(lat * 100), ())
+                                 if (ya > lat) != (yb > lat) and xa + (lat - ya) / (yb - ya) * (xb - xa) > lon) % 2
+                    if inside:
+                        band = 0
+                    else:
+                        d2 = 99.0
+                        ci, cj = int(lat * 50), int(lon * 50)
+                        for a in range(ci - 3, ci + 4):
+                            for b in range(cj - 3, cj + 4):
+                                for xa, ya, xb, yb in segs.get((a, b), ()):
+                                    ax, ay, bx, by = (xa - lon) * kx, (ya - lat) * km_lat, (xb - lon) * kx, (yb - lat) * km_lat
+                                    dx, dy = bx - ax, by - ay
+                                    t = max(0.0, min(1.0, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) if dx or dy else 0.0
+                                    d2 = min(d2, (ax + t * dx) ** 2 + (ay + t * dy) ** 2)
+                        band = next((k + 1 for k, km in enumerate(PARK_BANDS) if d2 <= km * km), None)
+                        if band is None:
+                            continue
+                    res.append([tidx[r["type"]], band, ym(r["date"]), ym(r["closed"]) if r["status"] == 2 else 0, r["status"]])
+                    (regs if band <= 1 else near)[(sidos.index(r["sido"]), gi_of[r["sido"]][r["sgg"]])] += 1
+        out.append({"name": park, "km2": round(area, 1), "bbox": [round(x0, 4), round(y0, 4), round(x1_, 4), round(y1_, 4)],
+                    "regs": [list(k) for k, _ in (regs or near).most_common()], "rows": res})  # 시군구 of the lodgings within 1 km (else 5 km)
+        print(f"  park_lodging {park}: {len(res)} lodgings ({sum(1 for x in res if x[1] == 0)} inside), regions {len(regs)}", flush=True)
+    with open(os.path.join(OUT, "park_lodging.json"), "w", encoding="utf-8") as f:
+        json.dump({"bands": PARK_BANDS, "parks": out}, f, ensure_ascii=False, separators=(",", ":"))
 
 
 RADII = (0.5, 1, 3, 5)  # km, station catchment rings
@@ -1067,9 +1134,10 @@ def main():
     write_kto_index(sidos, sgg_of)
     write_kac()
     write_subway()
-    write_park_areas()
+    parks = write_park_areas()
     write_stations(rows, sidos, sgg_of, tidx)
     write_festivals(rows, sidos, sgg_of, tidx, merged)
+    write_park_lodging(rows, parks, sidos, sgg_of, tidx)
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))

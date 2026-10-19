@@ -214,6 +214,8 @@
       map.addLayer({ id: 'park-fill', type: 'fill', source: 'park-areas', paint: { 'fill-color': '#2e7d32', 'fill-opacity': .3 } }, firstSymbol);
       map.addLayer({ id: 'park-line', type: 'line', source: 'park-areas', paint: { 'line-color': '#1b5e20', 'line-opacity': .9,
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.6] } }, firstSymbol);
+      map.addLayer({ id: 'park-sel', type: 'line', source: 'park-areas', filter: ['==', ['get', 'park'], ''], layout: { visibility: 'none' },
+        paint: { 'line-color': '#0b3d0b', 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2.5, 12, 4.5] } }, firstSymbol);  // 국립공원 탭에서 고른 공원
       map.addLayer({ id: 'park-label', type: 'symbol', source: 'park-areas', minzoom: 7, filter: ['==', ['geometry-type'], 'Point'], layout: { 'text-field': ['get', 'park'], 'text-font': font, 'text-size': 12 },
         paint: { 'text-color': '#1b5e20', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
       // 교통시설 아이콘: 네모(철도역 = 보라, 공항 = 남색)
@@ -512,6 +514,7 @@
     renderMinbak(names);
     renderStations();
     renderFest();
+    renderPark();
     writeHash();
     drawTimeline();
     drawMap(fly);
@@ -1015,6 +1018,97 @@
       geometry: { type: 'Point', coordinates: [FEST.f[i][1], FEST.f[i][0]] } })) });
   }
   getJSON('data/festivals.json', null).then(d => { FEST = d || { r: [], f: [] }; renderFest(); if (tab === 'festival') drawRings(FEST.f[fSel], true, 'festival'); });
+
+  /* ---------- 국립공원: 공원 안·경계 1/3/5km 숙소와 월별 운영 중 숙소 추이 (build.py → park_lodging.json) ---------- */
+  // PARK.parks[i] = {name, km2, bbox, regs:[[si, gi]…], rows:[[업종, 범위(0 안·1~3 경계 1/3/5km), 인허가 YYYYMM, 폐업 YYYYMM, 상태]…]}
+  let PARK = null, pSel = -1, pBand = 1, parkLoading = false;
+  const PBAND = ['공원 안', '경계 1km 이내', '3km 이내', '5km 이내'];
+  const parkName = p => p.name.replace(/국립공원$/, '');
+  function parkInReg() {
+    const regs = U ? U.regs : [curReg()];
+    return PARK.parks.map((_, i) => i).filter(i => regs.some(r => r.si < 0 || PARK.parks[i].regs.some(([si, gi]) => inReg(r, si, gi))));
+  }
+  function loadPark() {
+    if (PARK || parkLoading) return;
+    parkLoading = true;
+    getJSON('data/park_lodging.json', null).then(d => { PARK = d || { bands: [], parks: [] }; renderPark(); if (tab === 'park') showPark(true); });
+  }
+  function renderPark() {
+    if (!PARK) return;
+    if (!PARK.parks.length) { $('park-sub').textContent = '국립공원 자료가 아직 없습니다. 다음 데이터 갱신 후 표시됩니다.'; $('park-sel').disabled = true; return; }
+    const ids = parkInReg().sort((a, b) => PARK.parks[a].name.localeCompare(PARK.parks[b].name, 'ko'));
+    if (!ids.includes(pSel)) pSel = ids.length ? ids[0] : -1;
+    $('park-sel').innerHTML = ids.map(i => `<option value="${i}">${esc(PARK.parks[i].name)}</option>`).join('');
+    $('park-sel').disabled = !ids.length;
+    if (pSel >= 0) $('park-sel').value = String(pSel);
+    $('park-sub').textContent = ids.length ? `${regionName()}에 걸친 국립공원 ${ids.length}곳 · 선택 업종 기준` : `${regionName()}에는 국립공원이 없습니다(경계 1km 안 숙소의 주소 기준).`;
+    renderParkOne();
+  }
+  function renderParkOne() {
+    const p = PARK.parks[pSel];
+    if (!p) { ['park-kpis', 'park-table', 'park-chart', 'park-note', 'park-meta'].forEach(id => { $(id).innerHTML = ''; }); showPark(false); return; }
+    const rows = p.rows.filter(r => state.types.has(r[0])), live = rows.filter(r => r[4] === 0);
+    const within = (b, xs) => xs.filter(r => r[1] <= b).length;
+    $('park-meta').textContent = `지도상 면적 약 ${fmt(p.km2)}㎢ · ${p.regs.slice(0, 4).map(([si, gi]) => `${short(S[si].name)} ${S[si].sgg[gi]}`).join(', ')}${p.regs.length > 4 ? ` 외 ${p.regs.length - 4}곳` : ''}`;
+    $('park-kpis').innerHTML = PBAND.map((n, b) => `<div class="kpi"><b>${fmt(within(b, live))}</b><span>${b ? `공원 ${n}` : n} 영업 숙소</span></div>`).join('');
+    const byT = new Map();
+    for (const r of live) (byT.get(r[0]) || byT.set(r[0], [0, 0, 0, 0]).get(r[0])).forEach((_, b, a) => { if (r[1] <= b) a[b]++; });
+    const tr = [...byT].sort((a, b) => b[1][3] - a[1][3]);
+    $('park-table-title').textContent = `${p.name} 업종별 영업 숙소 수`;
+    $('park-table').innerHTML = `<thead><tr><th>업종</th>${PBAND.map(n => `<th>${n}</th>`).join('')}</tr></thead><tbody>`
+      + tr.map(([t, c]) => `<tr><td><span class="sw" style="background:var(--c${catOf[t]})"></span>${esc(T[t].name)}</td>${c.map(v => `<td>${fmt(v)}</td>`).join('')}</tr>`).join('')
+      + `<tr><td><b>합계</b></td>${PBAND.map((_, b) => `<td><b>${fmt(within(b, live))}</b></td>`).join('')}</tr></tbody>`;
+    csvSet('park-table', ['국립공원', '업종', ...PBAND], tr.map(([t, c]) => [p.name, T[t].name, ...c]));
+    drawParkChart(p, rows.filter(r => r[1] <= pBand));
+    showPark(false);
+  }
+  // 운영 중 = 인허가 달부터 폐업한 달 전까지(휴업 포함). 폐업일이 없는 폐업 시설은 언제까지 있었는지 몰라 뺍니다
+  function drawParkChart(p, rows) {
+    document.querySelectorAll('#park-band button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === pBand)));
+    const now = new Date(), Y0 = now.getFullYear() - 10, n = (now.getFullYear() - Y0) * 12 + now.getMonth() + 1;
+    const mi = v => (Math.floor(v / 100) - Y0) * 12 + v % 100 - 1, lab = i => `${Y0 + Math.floor(i / 12)}.${String(i % 12 + 1).padStart(2, '0')}`;
+    const diff = new Array(n + 1).fill(0), nw = new Array(n).fill(0);
+    for (const r of rows) {
+      if (!r[2] || r[4] === 2 && !r[3]) continue;
+      const a = mi(r[2]), e = r[4] === 2 ? mi(r[3]) : n;
+      if (a >= 0 && a < n) nw[a]++;
+      if (e > 0 && a < e) { diff[Math.max(0, a)]++; diff[Math.min(n, e)]--; }
+    }
+    const stock = []; let acc = 0; for (let i = 0; i < n; i++) { acc += diff[i]; stock.push(acc); }
+    const W = 900, H = 280, L = 52, R = 40, Tp = 14, B = 26, iw = W - L - R, ih = H - Tp - B, bw = iw / n;
+    const mx = Math.max(1, ...stock), st = niceStep(mx), top = Math.ceil(mx / st) * st, nmx = Math.max(1, ...nw), nst = niceStep(nmx), ntop = Math.ceil(nmx / nst) * nst;
+    const Y = v => Tp + ih - v / top * ih, Yn = v => Tp + ih - v / ntop * ih, X = i => L + i * bw + bw / 2;
+    let svg = '';
+    for (let v = 0; v <= top; v += st) svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
+    for (let v = 0; v <= ntop; v += nst) svg += `<text x="${W - R + 6}" y="${Yn(v) + 4}" style="fill:var(--c0)">${fmt(v)}</text>`;
+    nw.forEach((v, i) => { if (v) svg += `<rect x="${L + i * bw + bw * .15}" y="${Yn(v)}" width="${bw * .7}" height="${Tp + ih - Yn(v)}" fill="var(--c0)" opacity="${i === n - 1 ? .25 : .45}"/>`; });
+    svg += `<path d="${stock.map((v, i) => `${i ? 'L' : 'M'}${X(i)},${Y(v)}`).join('')}" fill="none" stroke="#2e7d32" stroke-width="2.4"/>`;
+    for (let i = 0; i < n; i++) {
+      if (i % 12 === 0) svg += `<text x="${X(i)}" y="${H - 8}" text-anchor="middle">${Y0 + i / 12}</text>`;
+      svg += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
+    }
+    $('park-chart').innerHTML = svg;
+    attachTip($('park-chart'), $('park-tip'), i => `<b>${lab(i)}${i === n - 1 ? ' (진행 중)' : ''}</b><br>운영 중 ${fmt(stock[i])}곳<br>신규 인허가 ${fmt(nw[i])}곳`);
+    $('park-chart-title').textContent = `${p.name} ${PBAND[pBand]} 운영 중 숙소 추이 (월말)`;
+    const chg = k => { const a = stock[n - 1 - k], b = stock[n - 1]; return a == null ? '' : `${k / 12}년 전보다 ${b - a >= 0 ? '+' : ''}${fmt(b - a)}곳(${a ? (b - a >= 0 ? '+' : '') + ((b - a) / a * 100).toFixed(1) + '%' : '-'})`; };
+    $('park-note').textContent = `지금 ${fmt(stock[n - 1])}곳: ${[chg(12), chg(60)].filter(Boolean).join(', ')}. 운영 중은 인허가 달부터 폐업한 달 전까지로 셌고 휴업 시설도 들어갑니다. 폐업일이 없는 폐업 시설은 뺐습니다. 마지막 달은 진행 중입니다.`;
+  }
+  function showPark(fly) {
+    if (!mapReady || !map.getLayer('park-sel')) return;
+    const p = PARK && tab === 'park' ? PARK.parks[pSel] : null;
+    map.setFilter('park-sel', ['==', ['get', 'park'], p ? p.name : '']);
+    map.setLayoutProperty('park-sel', 'visibility', p ? 'visible' : 'none');
+    if (p && fly) map.fitBounds([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], { padding: 40, duration: 800 });
+  }
+  const pickPark = i => { pSel = i; $('park-sel').value = String(i); renderParkOne(); showPark(true); };
+  $('park-sel').onchange = e => pickPark(+e.target.value);
+  $('park-band').addEventListener('click', e => { const b = e.target.closest('button'); if (b && PARK) { pBand = +b.dataset.v; renderParkOne(); } });
+  searchBox($('park-q'), $('park-sugg'), q => {
+    if (!PARK || !q) return null;
+    const nm = i => parkName(PARK.parks[i]);
+    return suggList(parkInReg().filter(i => nm(i).includes(q)), nm, q, i => `<b>${esc(PARK.parks[i].name)}</b><small>${PARK.parks[i].regs.slice(0, 3).map(([si, gi]) => `${short(S[si].name)} ${S[si].sgg[gi]}`).join(', ')}</small>`,
+      '국립공원이', () => PARK.parks.filter(p => parkName(p).includes(q)).length);
+  }, i => { pSel = i; renderPark(); showPark(true); });
 
   /* ---------- 방한 외래관광객 (전국, 월별·국적별) ---------- */
   // 월별 값(YYYYMM)을 분기·연도로 합산. 마지막 기간에 달이 덜 찼으면 진행 중(점선·*)으로 표시
@@ -1598,7 +1692,7 @@
   });
 
   /* ---------- 탭 ---------- */
-  const TABS = ['summary', 'now', 'demand', 'festival', 'trend', 'minbak', 'compare', 'transit'];
+  const TABS = ['summary', 'now', 'demand', 'festival', 'park', 'trend', 'minbak', 'compare', 'transit'];
   let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'now';
   function setTab(t) {
     tab = t;
@@ -1607,6 +1701,8 @@
     if (t === 'now' && mapReady) map.resize();
     drawRings(t === 'transit' && STN ? STN.st[stnSel] : t === 'festival' && FEST ? FEST.f[fSel] : null, true, t);
     if (mapReady) map.setLayoutProperty('fest', 'visibility', t === 'festival' ? 'visible' : 'none');
+    if (t === 'park') loadPark();
+    if (PARK) showPark(t === 'park');
     if (t === 'summary') renderOverview();
     writeHash();
   }
