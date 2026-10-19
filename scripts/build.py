@@ -24,6 +24,7 @@ Steps
     boardings / alightings of 코레일 광역철도 and 간선열차 stations matched by name (latest 12 months).
 16. icn.json: 인천공항 arriving / departing passengers per month and the top countries of the route.
 17. kac.json: passengers per airport and year, domestic / international (한국공항공사 공항별 여객실적).
+18. kto_index.json: 관광수요지수 세부 지표 (체류·소비 강도, 다양성) per 시도 / 시군구 and month (한국관광데이터랩, indices).
 """
 import difflib
 import glob
@@ -690,6 +691,49 @@ def write_kac():
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
 
+KTO_IX = [("21", "관광 체류 강도"), ("2101", "타권역 방문자 비중"), ("2102", "숙박 비중"), ("2103", "1박 방문자"), ("2104", "2박 방문자"),
+          ("2105", "3박 방문자"), ("22", "관광 소비 강도"), ("31", "관광객 다양성"), ("32", "관광 소비 다양성"), ("33", "국제적 다양성")]
+
+
+def write_kto_index(sidos, sgg_of):
+    """관광수요지수 세부 지표 (한국관광데이터랩) per 시도 / 시군구 and month: {"months", "ix", "v": {"si" or "si:gi": [[value per month] per indicator]}}.
+    Old 광주광역시/전라남도 rows go to 전남광주통합특별시 when it exists (its own 시도 row wins)."""
+    path = os.path.join(RAW, "kto_index.jsonl")
+    if not os.path.exists(path):
+        return
+    rows = [r for r in (json.loads(l) for l in open(path, encoding="utf-8")) if not r.get("empty")]
+    months = sorted({r["ym"] for r in rows})
+    mi, xi = {m: i for i, m in enumerate(months)}, {c: i for i, (c, _) in enumerate(KTO_IX)}
+    merged = MERGED_GWANGJU_JEONNAM in sidos
+    by_name = defaultdict(list)
+    for sd in sidos:
+        for g in sgg_of[sd]:
+            by_name[g].append(sd)
+    out, unmatched = {}, set()
+    for r in sorted(rows, key=lambda r: r["sido"] == MERGED_GWANGJU_JEONNAM):  # the merged 시도's own rows last, so they win
+        old = r["sido"] in ("광주광역시", "전라남도")
+        sido = MERGED_GWANGJU_JEONNAM if old and merged else SIDO_ALIASES.get(r["sido"], r["sido"])
+        if sido not in sidos or r["ix"] not in xi:
+            unmatched.add(r["sido"])
+            continue
+        si = sidos.index(sido)
+        if not r["sgg"]:
+            if old and merged:  # 광주 or 전남 alone is not the merged 시도
+                continue
+            key = str(si)
+        else:
+            g = r["sgg"] if r["sgg"] in sgg_of[sido] else (r["sgg"] if len(by_name.get(r["sgg"], [])) == 1 else None)
+            if g is None:
+                unmatched.add(f"{r['sido']} {r['sgg']}")
+                continue
+            sd = by_name[g][0] if g not in sgg_of[sido] else sido
+            key = f"{sidos.index(sd)}:{sgg_of[sd].index(g)}"
+        out.setdefault(key, [[None] * len(months) for _ in KTO_IX])[xi[r["ix"]]][mi[r["ym"]]] = r["v"]
+    print(f"kto_index: {len(months)} months {months[:1]}~{months[-1:]}, {len(out)} areas; unmatched: {' '.join(sorted(unmatched))}", flush=True)
+    with open(os.path.join(OUT, "kto_index.json"), "w", encoding="utf-8") as f:
+        json.dump({"months": months, "ix": KTO_IX, "v": out}, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def write_icn():
     path = os.path.join(RAW, "icn.jsonl")
     if not os.path.exists(path):
@@ -901,6 +945,7 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     write_arrivals()
     write_icn()
+    write_kto_index(sidos, sgg_of)
     write_kac()
     write_subway()
     write_park_areas()

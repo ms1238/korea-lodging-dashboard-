@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import time
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
@@ -44,6 +45,16 @@ ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntT
 ICN = "https://apis.data.go.kr/B551177/AviationStatsByCountry/getTotalNumberOfPassenger"  # 인천공항 국가별 여객
 KORAIL_WIDE = "https://apis.data.go.kr/B551457/issueStatistics/wideRailloadStationPer"  # 코레일 광역철도 역별 승하차
 KAC_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1"  # 한국공항공사 공항별 여객실적 (odcloud)
+# 관광수요지수 구성 지표 (한국관광데이터랩): (operation, indicator parameter, indicator codes). Values are indices, not counts.
+KTO_INDEX = [
+    ("AreaTarDemDsService/areaTarSjrnDsList", "tarSjrnDsIxCd", ("21", "2101", "2102", "2103", "2104", "2105")),
+    ("AreaTarDemDsService/areaTarExpDsList", "tarExpDsIxCd", ("22",)),
+    ("AreaTarDivService/areaTouDivList", "touDivIxCd", ("31",)),
+    ("AreaTarDivService/areaExpDivList", "expDivIxCd", ("32",)),
+    ("AreaTarDivService/areaIntlDivList", "intlDivIxCd", ("33",)),
+]
+KTO_INDEX_AREAS = ("11", "26", "27", "28", "29", "30", "31", "36", "41", "43", "44", "46", "47", "48", "50", "51", "52", "12")  # DataLab 시도 codes
+KTO_INDEX_BUDGET = 800  # requests per service and run (the development quota is 1,000 a day); the rest waits for the next run
 KORAIL_MAIN = "https://apis.data.go.kr/B551457/issueStatistics/mainLineStationPer"  # 코레일 간선열차 역별 승하차 (daily, about a year)
 METRO_STD = "https://www.data.go.kr/data/15013205/standard.do"  # 전국도시철도역사정보표준데이터 (국가철도공단, yearly file)
 OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
@@ -68,7 +79,7 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years"}  # the page works without these, so a failed first fetch does not stop the deploy
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index"}  # the page works without these, so a failed first fetch does not stop the deploy
 JSON_FILES = {"subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
@@ -225,7 +236,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
@@ -233,7 +244,7 @@ def main():
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
-             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std,
+             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index,
              "kac_years": fetch_kac}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
@@ -421,6 +432,58 @@ def fetch_metro_std(_key):
     if not rows:
         raise RuntimeError("empty file")
     save_json("metro_std.json", rows)
+
+
+def fetch_kto_index(key):
+    """관광 수요 강도 / 관광 다양성 indicators per 시도 (with its 시군구) and month, latest 13 months, newest first.
+    One request per (month, indicator, 시도). Months already fetched are reused except the latest REFRESH_MONTHS;
+    an empty answer is remembered too, so it is not asked again until it falls in the refresh window."""
+    today = date.today()
+    months = ["%d%02d" % (today.year - (today.month - k <= 0), (today.month - k - 1) % 12 + 1) for k in range(13)]
+    path, cut = os.path.join(RAW_DIR, "kto_index.jsonl"), months[REFRESH_MONTHS - 1]
+    kept = [json.loads(l) for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
+    kept = [r for r in kept if months[-1] <= r["ym"] < cut]
+    have = {(r["ym"], r["ix"], r["area"]) for r in kept}
+    todo, used = [], defaultdict(int)
+    for ym in months:
+        for op, param, codes in KTO_INDEX:
+            svc = op.split("/")[0]
+            for ix in codes:
+                for area in KTO_INDEX_AREAS:
+                    if (ym, ix, area) not in have and used[svc] < KTO_INDEX_BUDGET:
+                        used[svc] += 1
+                        todo.append((ym, op, param, ix, area))
+    fields = ("tarSjrnDsIx", "tarExpDsIx", "touDivIx", "expDivIx", "intlDivIx")
+
+    def one(t):
+        ym, op, param, ix, area = t
+        params = {"serviceKey": key, "pageNo": 1, "numOfRows": 100, "MobileOS": "ETC", "MobileApp": "korea-lodging-dashboard",
+                  "_type": "json", "baseYm": ym, "areaCd": area, param: ix}
+        last = None
+        for attempt in range(3):
+            try:
+                d = requests.get("https://apis.data.go.kr/B551011/" + op, params=params, timeout=60).json()
+                if d.get("response", {}).get("header", {}).get("resultCode") != "0000":
+                    raise RuntimeError(str(d)[:200])
+                items = items_of(d["response"]["body"])
+                f = next((f for f in fields if items and f + "Val" in items[0]), None)
+                return [{"ym": ym, "ix": ix, "area": area, "sido": it["areaNm"], "sgg": "" if str(it["signguCd"]) == "0" else it["signguNm"],
+                         "name": it.get(f + "Nm", ""), "v": float(it[f + "Val"])} for it in items] or [{"ym": ym, "ix": ix, "area": area, "empty": 1}]
+            except Exception as e:  # noqa: BLE001
+                last = e
+                time.sleep(3 + attempt * 3)
+        print(f"  kto_index {ym} {ix} {area}: {last}", flush=True)
+        return None
+    with ThreadPoolExecutor(4) as pool:
+        got = list(pool.map(one, todo))
+    failed = sum(g is None for g in got)
+    rows = kept + [r for g in got if g for r in g]
+    total = len(months) * sum(len(c) for _, _, c in KTO_INDEX) * len(KTO_INDEX_AREAS)
+    print(f"kto_index: {len(todo)} requests {dict(used)}, {failed} failed, {sum(1 for r in rows if not r.get('empty'))} values; "
+          f"{total - len({(r['ym'], r['ix'], r['area']) for r in rows})} of {total} (month, indicator, 시도) still to fetch", flush=True)
+    if todo and failed == len(todo):
+        raise RuntimeError("every request failed")
+    write_rows("kto_index", sorted(rows, key=lambda r: (r["ym"], r["ix"], r["area"])))
 
 
 def fetch_kac(key):

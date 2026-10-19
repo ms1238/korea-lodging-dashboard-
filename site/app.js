@@ -489,6 +489,7 @@
     renderStatus(a, names);
     renderCompare();
     renderDemandVis();
+    renderKix();
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
@@ -896,6 +897,40 @@
     csvSet('arr-top', ['국적', '최근 12개월', '직전 12개월', '증감률(%)', '비중(%)'], rows.map(r => [r.name, r.v, r.p, r.p ? ((r.v / r.p - 1) * 100).toFixed(2) : '', (r.v / l12 * 100).toFixed(2)]));
   }
   const pc1 = x => (x * 100).toFixed(1) + '%';
+
+  /* ---------- 관광수요지수 세부 지표 (한국관광데이터랩, build.py → kto_index.json) ---------- */
+  let kix = null;
+  const KIX_SHOW = ['21', '2102', '2103', '2104', '2105', '22', '31', '33'];  // 카드·표에 보이는 지표 (나머지는 CSV)
+  function renderKix() {
+    $('kix-sec').hidden = !kix || !kix.months.length;
+    if (!kix || !kix.months.length) return;
+    const M = kix.months, n = M.length, ym = k => `${k.slice(0, 4)}.${k.slice(4)}`, ixi = c => kix.ix.findIndex(x => x[0] === c);
+    const keyOf = r => r.si < 0 ? null : r.gi >= 0 ? `${r.si}:${r.gi}` : String(r.si);
+    const cur = U ? null : curReg(), ck = cur && cur.grp == null ? keyOf(cur) : null, row = k => k && kix.v[k];
+    // 가장 최근 달: 고른 지역에 값이 있는 마지막 달 (없으면 전체의 마지막 달)
+    const lastOf = v => { for (let i = n - 1; i >= 0; i--) if (v && v[0][i] != null) return i; return n - 1; };
+    const li = lastOf(row(ck)), yo = M.indexOf(String(+M[li] - 100));  // 작년 같은 달
+    const chg = (v, i) => v && v[i] != null && yo >= 0 && v[yo] != null ? v[i] - v[yo] : null;
+    const sign = d => d == null ? '' : ` (전년 동월 ${d >= 0 ? '+' : ''}${d.toFixed(1)})`;
+    const vr = row(ck);
+    $('kix-kpis').innerHTML = vr ? KIX_SHOW.map(c => { const v = vr[ixi(c)];
+      return `<div class="kpi"><b>${v[li] == null ? '-' : v[li].toFixed(1)}</b><span>${esc(kix.ix[ixi(c)][1])}${sign(chg(v, li))}</span></div>`; }).join('') : '';
+    $('kix-sub').textContent = `${ck ? regionName() : '광역'} · ${ym(M[li])} 기준. 숙박 비중과 1·2·3박 방문자는 숙박 수요와 직접 이어지는 지표입니다.`;
+    // 표: 전국이면 광역, 광역·기초를 골랐으면 그 광역의 시군구, 합쳐 보기면 그 지역들
+    let rows;
+    if (U) rows = U.regs.map(r => [regLabel(r), keyOf(r)]);
+    else if (!cur || cur.si < 0) rows = S.map((sd, si) => [sd.name, String(si)]);
+    else rows = S[cur.si].sgg.map((g, gi) => [g, `${cur.si}:${gi}`]);
+    rows = rows.filter(([, k]) => row(k));
+    const cols = KIX_SHOW.map(ixi), val = (k, j) => (row(k) || [])[j]?.[li];
+    const range = cols.map(j => { const xs = rows.map(([, k]) => val(k, j)).filter(x => x != null); return [Math.min(...xs), Math.max(...xs)]; });
+    const heat = (x, [a, b]) => x == null || b <= a ? '' : `style="background:color-mix(in srgb,var(--c0) ${Math.round(6 + (x - a) / (b - a) * 56)}%,transparent)"`;
+    $('kix-title').textContent = `${U ? '선택 지역' : !cur || cur.si < 0 ? '광역' : S[cur.si].name + ' 시군구'}별 지표 · ${ym(M[li])}`;
+    $('kix-table').innerHTML = `<thead><tr><th>지역</th>${cols.map(j => `<th>${esc(kix.ix[j][1])}</th>`).join('')}</tr></thead><tbody>`
+      + rows.map(([nm, k]) => `<tr${k === ck ? ' class="sum"' : ''}><td>${esc(nm)}</td>${cols.map((j, c) => { const x = val(k, j); return `<td ${heat(x, range[c])}>${x == null ? '·' : x.toFixed(1)}</td>`; }).join('')}</tr>`).join('') + '</tbody>';
+    csvSet('kix-table', ['지역', '기준월', ...kix.ix.map(x => x[1])], rows.flatMap(([nm, k]) => M.map((m, i) => [nm, m, ...kix.ix.map((_, j) => row(k)[j][i] ?? '')])));
+  }
+  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); });
 
   /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
   let icn = null, icnPer = 'm';
