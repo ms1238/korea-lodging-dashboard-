@@ -195,9 +195,9 @@ def fetch_stations(_key, query=STATIONS_QUERY, name="stations"):
     out = []
     for el in overpass(query):
         tags, c = el.get("tags", {}), el.get("center") or el
-        name = tags.get("name:ko") or tags.get("name") or ""
-        if name and "lat" in c:
-            out.append({"id": f"{el['type']}/{el['id']}", "name": name, "lat": round(c["lat"], 5), "lon": round(c["lon"], 5)})
+        label = tags.get("name:ko") or tags.get("name") or ""
+        if label and "lat" in c:
+            out.append({"id": f"{el['type']}/{el['id']}", "name": label, "lat": round(c["lat"], 5), "lon": round(c["lon"], 5)})
     print(f"{name}: {len(out)} stations", flush=True)
     if not out:
         raise RuntimeError("no stations returned")
