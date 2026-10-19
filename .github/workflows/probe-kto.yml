@@ -1,4 +1,4 @@
-# Temporary: AreaTarDemDsService spec and sample values of the 관광 다양성 / 체류 APIs; 표준데이터 download path.
+# Temporary: which baseYm / indicator / area codes return data from the 관광 다양성 and 관광 수요 강도 APIs.
 name: Probe KTO data
 on:
   workflow_dispatch:
@@ -15,43 +15,25 @@ jobs:
           KEY: ${{ secrets.DATA_GO_KR_KEY }}
         shell: python
         run: |
-          import os, re, time, requests
+          import os, requests
           K = os.environ["KEY"]
-          H = {"User-Agent": "Mozilla/5.0"}
-          def get(u, **kw):
-              for a in range(4):
-                  try:
-                      return requests.get(u, headers=H, timeout=60, **kw).text
-                  except Exception as e:
-                      print("  retry", u, type(e).__name__, flush=True); time.sleep(10)
-              return ""
-          def spec(cid, svc):
-              t = get(f"https://www.data.go.kr/data/{cid}/openapi.do")
-              m = re.search(r"swaggerJson\s*=\s*`(.*?)`", t, re.S)
-              sw = m.group(1) if m else ""
-              print("== FOUND", svc, cid, re.findall(r"<title>(.*?)</title>", t, re.S)[:1])
-              print("== description:", re.findall(r'"description":"(.{0,900}?)"', sw)[:1])
-              ops = re.findall(r'"(/\w+)":\{"get"', sw)
-              for i, op in enumerate(ops):
-                  j, k = sw.find(f'"{op}"'), (sw.find(f'"{ops[i + 1]}"') if i + 1 < len(ops) else len(sw))
-                  part = sw[j:k]
-                  print("== OP", op, re.findall(r'"summary":"([^"]*)"', part)[:1],
-                        "\n   params:", list(dict.fromkeys(re.findall(r'"name":"([^"]+)","description":"([^"]*)"', part))),
-                        "\n   fields:", list(dict.fromkeys(re.findall(r'"(\w+)":\{"type":"(?:string|number|integer)","description":"([^"]*)"', part))), flush=True)
-              return ops
-          hits = {}
-          for cid in [15151868, 15152138, *range(15151360, 15151372), *range(15151860, 15151875)]:
-              t = get(f"https://www.data.go.kr/data/{cid}/openapi.do")
-              for svc in re.findall(r"apis\.data\.go\.kr/B551011/(\w+)", t):
-                  hits.setdefault(svc, cid)
-          print("== B551011 services by dataset id:", hits, flush=True)
-          base = {"serviceKey": K, "pageNo": 1, "numOfRows": 5, "MobileOS": "ETC", "MobileApp": "test", "_type": "json", "areaCd": "11", "baseYm": "202608"}
-          for svc in ("AreaTarDemDsService", "AreaTarDivService"):
-              ops = spec(hits[svc], svc) if svc in hits else []
-              for op in ops:
-                  for extra in ({}, {"signguCd": "11110"}):
-                      r = get(f"https://apis.data.go.kr/B551011/{svc}{op}", params={**base, **extra})
-                      print(f"== CALL {svc}{op} {extra} {r[:1500]}\n", flush=True)
-          t = get("https://www.data.go.kr/data/15013205/standard.do")
-          for k in ("limitAtchFileId", "fileDownload", "atchFileId", "url:", "ajax"):
-              print(f"== STD {k}:", [re.sub(r"\s+", " ", x) for x in re.findall(r".{0,160}%s.{0,160}" % re.escape(k), t)][:6], flush=True)
+          B = "https://apis.data.go.kr/B551011/"
+          base = {"serviceKey": K, "pageNo": 1, "numOfRows": 20, "MobileOS": "ETC", "MobileApp": "test", "_type": "json"}
+          def call(path, **p):
+              try:
+                  t = requests.get(B + path, params={**base, **p}, timeout=60).text
+              except Exception as e:
+                  t = type(e).__name__
+              n = t.split('"totalCount":')[1].split("}")[0] if '"totalCount":' in t else "?"
+              print(f"== {path} {p} total={n} {t[:900] if n not in ('0', '?') else t[:200]}\n", flush=True)
+              return n
+          for ym in ("202608", "202606", "202512", "202506", "202412", "202312"):
+              call("AreaTarDemDsService/areaTarSjrnDsList", areaCd="11", baseYm=ym)
+              call("AreaTarDemDsService/areaTarSjrnDsList", areaCd="11", baseYm=ym, tarSjrnDsIxCd="21")
+          for p in ({"areaCd": "11"}, {"areaCd": "11", "signguCd": "11110", "baseYm": "202506"}, {"areaCd": "26", "baseYm": "202506"},
+                    {"areaCd": "11", "baseYm": "202506", "tarSjrnDsIxCd": "2103"}, {"areaCd": "1", "baseYm": "202506"}):
+              call("AreaTarDemDsService/areaTarSjrnDsList", **p)
+          for ym in ("202608", "202506", "202412"):
+              call("AreaTarDivService/areaTouDivList", areaCd="11", baseYm=ym, touDivIxCd="31")
+              call("AreaTarDivService/areaIntlDivList", areaCd="11", baseYm=ym, intlDivIxCd="33")
+          call("AreaTarDemDsService/areaTarExpDsList", areaCd="11", baseYm="202506", tarExpDsIxCd="22")
