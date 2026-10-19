@@ -34,7 +34,15 @@ jobs:
                   i = t.find("요청변수")
                   print(f"== SPEC {cid}: no swagger; text near 요청변수:", re.sub(r"<[^>]+>|\s+", " ", t[i:i + 6000])[:3000] if i >= 0 else None, flush=True)
                   return
-              sw = json.loads(m.group(1))
+              try:
+                  sw = json.loads(m.group(1).replace("\\\\", "\\"))  # JS template literal: \\ → \
+              except Exception as e:
+                  print(f"== SPEC {cid}: parse failed {e}; ops:", re.findall(r'"(/\w+)":\{"get"', m.group(1)), flush=True)
+                  for op in re.findall(r'"(/\w+)":\{"get"', m.group(1)):
+                      j = m.group(1).find(f'"{op}"')
+                      print("  ", op, re.findall(r'"summary":"([^"]*)"', m.group(1)[j:j + 20000])[:1],
+                            re.findall(r'"name":"([^"]+)","description":"([^"]*)"', m.group(1)[j:j + 30000])[:16], flush=True)
+                  return
               for path, v in sw["paths"].items():
                   g = v.get("get", {})
                   if ops and path.strip("/") not in ops:
