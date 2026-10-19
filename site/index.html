@@ -25,6 +25,7 @@
     <span class="cmpbar"><button class="btn" id="cmp-add" title="지금 고른 광역·기초를 비교 목록에 넣습니다">＋ 비교에 추가</button><span id="cmp-chips" class="chips"></span><label id="union-wrap" class="unionsw" hidden><input type="checkbox" id="cmp-union"> 숙박업 현황에 합쳐 보기<small>켜면 위 드롭다운 대신 담은 지역을 합산해 보여줍니다</small></label></span>
     <div class="tabbar">
       <nav class="tabs" id="tabs" role="tablist" aria-label="보기">
+        <button role="tab" data-t="summary" aria-selected="false">종합</button>
         <button role="tab" data-t="now" aria-selected="true">현황</button>
         <button role="tab" data-t="demand" aria-selected="false">관광 수요</button>
         <button role="tab" data-t="trend" aria-selected="false">동향</button>
@@ -74,6 +75,14 @@
         <div class="chk"><input type="checkbox" id="ck-3d"><label for="ck-3d">3D 지형 (기울여 보기)</label><span></span></div>
       </div>
     </div>
+  </section>
+
+  <section data-tab="summary" id="sum-sec">
+    <div class="sechead"><h2 id="sum-title">종합</h2><p class="sub" id="sum-sub"></p></div>
+    <div class="card"><button class="btn csv" id="sum-print" type="button">인쇄 · PDF</button><h3 style="margin-bottom:8px">한눈에 보기</h3><ul class="sumlist" id="sum-text"></ul></div>
+    <div class="sumgrid" id="sum-grid"></div>
+    <div class="card"><button class="btn csv" data-csv="sum-table" data-name="종합_지표">CSV</button><h3 style="margin-bottom:10px">지표 정의와 근거</h3><div class="tablewrap"><table id="sum-table"></table></div>
+      <p class="note" id="sum-note"></p></div>
   </section>
 
   <section data-tab="now">

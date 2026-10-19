@@ -134,3 +134,12 @@ th:first-child,td:first-child{text-align:left}
 .sugg button small .sw{width:8px;height:8px;margin-right:3px}
 .sugg button[aria-selected=true],.sugg button:hover{background:color-mix(in srgb,var(--fg) 7%,transparent)}
 .sugg .note{padding:6px 8px;margin:0}
+.sumlist{margin:0;padding-left:20px;line-height:1.75;font-size:14px}
+.sumgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.sumcard{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;min-width:0}
+.sumcard h4{margin:0 0 4px;font-size:12.5px;font-weight:500;color:var(--muted)}
+.sumcard b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.sumcard .pbar{position:relative;height:6px;border-radius:3px;background:color-mix(in srgb,var(--fg) 8%,transparent);margin:10px 0 4px}
+.sumcard .pbar i{position:absolute;top:-3px;width:3px;height:12px;border-radius:2px;background:var(--c0)}
+.sumcard small{color:var(--muted);font-size:12px;line-height:1.5;display:block}
+@media print{header,.controls,.mapgrid,section:not(#sum-sec),#sum-print,.btn.csv,footer,.tabs{display:none!important}#sum-sec{display:block!important}body{background:#fff}}

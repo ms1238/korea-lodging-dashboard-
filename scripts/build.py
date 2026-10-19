@@ -26,6 +26,7 @@ Steps
 17. kac.json: passengers per airport and year, domestic / international (한국공항공사 공항별 여객실적).
 18. kto_index.json: 관광수요지수 세부 지표 (체류·소비 강도, 다양성) per 시도 / 시군구 and month (한국관광데이터랩, indices).
 """
+import calendar
 import difflib
 import glob
 import json
@@ -281,6 +282,9 @@ def add_visitors(sidos, sgg_of, sido_meta):
     qi = {q: i for i, q in enumerate(quarters)}
     year_sum, year_days = defaultdict(lambda: [0, 0]), defaultdict(lambda: defaultdict(int))
     series = defaultdict(lambda: [[None] * len(quarters), [None] * len(quarters)])
+    mlist = months[-24:]  # monthly 외지인 for the seasonality index; months reported for fewer days than the month has are flagged
+    mix = {m: i for i, m in enumerate(mlist)}
+    mseries = defaultdict(lambda: [None] * len(mlist))
     for level, rows in (("sido", sido_rows), ("sgg", sgg_rows)):
         for r in rows:
             if r["kind"] not in ("2", "3"):
@@ -292,6 +296,8 @@ def add_visitors(sidos, sgg_of, sido_meta):
             arr = series[k][j]
             q = qi[f"{r['ym'][:4]}Q{(int(r['ym'][4:]) - 1) // 3 + 1}"]
             arr[q] = (arr[q] or 0) + r["n"]
+            if j == 0 and r["ym"] in mix:
+                mseries[k][mix[r["ym"]]] = (mseries[k][mix[r["ym"]]] or 0) + r["n"]
             if r["ym"] in window:
                 year_sum[k][j] += r["n"]
                 year_days[k][r["ym"]] = max(year_days[k][r["ym"]], r["days"])
@@ -313,7 +319,10 @@ def add_visitors(sidos, sgg_of, sido_meta):
     for ym in months:
         days = max(r["days"] for r in sido_rows if r["ym"] == ym)
         qdays[qi[f"{ym[:4]}Q{(int(ym[4:]) - 1) // 3 + 1}"]] += days
+    mfull = [max(r["days"] for r in sido_rows if r["ym"] == m) >= calendar.monthrange(int(m[:4]), int(m[4:]))[1] for m in mlist]
     visits = {"q": quarters, "qdays": qdays, "last": last,
+              "m": mlist, "mfull": mfull, "msido": [mseries.get((s, None)) for s in sidos],
+              "msgg": [[mseries.get((s, g)) for g in sgg_of[s]] for s in sidos],
               "sido": [series.get((s, None)) for s in sidos],
               "sgg": [[series.get((s, g)) for g in sgg_of[s]] for s in sidos]}
     first_month = min(window)
@@ -589,10 +598,26 @@ def write_stations(rows, sidos, sgg_of, tidx):
         out.append([lat, lon, m["name"], si, gi, ln, [[t, *c] for t, c in sorted(cnt.items())]])
         srcs.append(m["src"])
     print(f"stations: {len(out)} after merging, {sum(1 for o in out if o[5])} on a known line, {len(lines)} lines", flush=True)
+    # operating lodgings (exact positions) within 0.5 / 1 km of any station, per 시군구, for the summary tab
+    sgrid = defaultdict(list)
+    for o in out:
+        sgrid[(int(o[0] * 100), int(o[1] * 100))].append((o[0], o[1]))
+    near = defaultdict(lambda: [0, 0, 0])
+    gi_of = {s: {g: i for i, g in enumerate(sgg_of[s])} for s in sidos}
+    for r in rows:
+        if r["status"] != 0 or not r["ll"] or r.get("approx"):
+            continue
+        lat, lon = r["ll"]
+        d2 = min((dist2(lat, lon, *p) for i in (-1, 0, 1) for j in (-2, -1, 0, 1, 2)  # a 0.01° cell is ~0.9 km wide
+                  for p in sgrid.get((int(lat * 100) + i, int(lon * 100) + j), ())), default=99)
+        c = near[f"{sidos.index(r['sido'])}:{gi_of[r['sido']][r['sgg']]}"]
+        c[0] += 1
+        c[1] += d2 <= 0.25
+        c[2] += d2 <= 1
     kym = add_korail(out, lines, sidos)
     mym = add_main(out, srcs)
     with open(os.path.join(OUT, "stations.json"), "w", encoding="utf-8") as f:
-        json.dump({"r": RADII, "lines": lines, "st": out, "kym": kym, "mym": mym}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"r": RADII, "lines": lines, "st": out, "kym": kym, "mym": mym, "near": near}, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def add_main(out, srcs):

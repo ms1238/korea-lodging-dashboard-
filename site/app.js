@@ -490,6 +490,7 @@
     renderCompare();
     renderDemandVis();
     renderKix();
+    renderOverview();
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
@@ -858,7 +859,7 @@
   $('stn-q').onblur = () => setTimeout(closeSugg, 150);
   $('stn-q').onfocus = showSugg;
   $('stn-sel').onchange = e => { stnSel = +e.target.value; renderStation(); drawRings(STN.st[stnSel], true); };
-  getJSON('data/stations.json', null).then(d => { STN = d; renderStations(); });
+  getJSON('data/stations.json', null).then(d => { STN = d; renderStations(); renderOverview(); });
 
   /* ---------- 방한 외래관광객 (전국, 월별·국적별) ---------- */
   // 월별 값(YYYYMM)을 분기·연도로 합산. 마지막 기간에 달이 덜 찼으면 진행 중(점선·*)으로 표시
@@ -903,6 +904,116 @@
   }
   const pc1 = x => (x * 100).toFixed(1) + '%';
 
+  /* ---------- 종합: 한 지역의 요약과 연구에서 쓰는 지표 ----------
+     입지계수(LQ), 업종 균등도(Pielou J), 3년 생존율, 계절 편중(Gini), 역세권 비율, 방문객 대비 숙소 밀도.
+     비교 대상(전국 시군구 또는 광역)에서의 백분위를 함께 보여줌. 상태는 '영업', 업종은 업종 필터를 따름 */
+  let ovCache = null;
+  function areaTable() {  // 시군구별 [업종별 영업 수, 3년 코호트, 그중 3년 안 폐업, 최근 3년 신규, 최근 3년 폐업, 3년 전 기준 재고]
+    const sig = [...state.types].join(',');
+    if (ovCache && ovCache.sig === sig) return ovCache.t;
+    const t = {}, Y3 = yNow - 3, C0 = yNow - 6, C1 = yNow - 4, at = (si, gi) => (t[si + ':' + gi] ||= { a: T.map(() => 0), co: 0, c3: 0, nw: 0, cl: 0, base: 0 });
+    for (const c of cube) {
+      if (!state.types.has(c[2])) continue;
+      const x = at(c[0], c[1]);
+      if (c[3] === 0) x.a[c[2]] += c[5];
+      if (c[4] >= C0 && c[4] <= C1) x.co += c[5];
+      if (c[4] > Y3) x.nw += c[5];
+      if (c[3] < 2 && c[4] && c[4] <= Y3) x.base += c[5];
+    }
+    for (const c of close) {
+      if (!state.types.has(c[2])) continue;
+      const x = at(c[0], c[1]);
+      if (c[4] >= C0 && c[4] <= C1 && c[3] - c[4] <= 3) x.c3 += c[5];
+      if (c[3] > Y3) x.cl += c[5];
+      if (c[4] && c[4] <= Y3 && c[3] > Y3) x.base += c[5];
+    }
+    ovCache = { sig, t };
+    return t;
+  }
+  const gini = xs => { const n = xs.length, m = xs.reduce((a, b) => a + b, 0) / n; let d = 0; for (const a of xs) for (const b of xs) d += Math.abs(a - b); return m ? d / (2 * n * n * m) : null; };
+  function ovStats(keys, natA, sidoMon) {  // keys: ['si:gi', …] → 지표 묶음. sidoMon: 광역 단위 월별 방문객(있으면 그것으로 계절 편중)
+    const t = areaTable(), a = T.map(() => 0); let co = 0, c3 = 0, nw = 0, cl = 0, base = 0, v0 = 0, v1 = 0, nv = 0, ne = 0, n1 = 0, nn = 0;
+    const mon = visits && visits.m ? visits.m.map(() => 0) : null; let monOK = !!mon;
+    for (const k of keys) {
+      const x = t[k]; const [si, gi] = k.split(':').map(Number);
+      if (x) { x.a.forEach((v, i) => { a[i] += v; }); co += x.co; c3 += x.c3; nw += x.nw; cl += x.cl; base += x.base; }
+      const v = (S[si].visg || [])[gi]; if (v) { v0 += v[0]; v1 += v[1]; nv++; }
+      const ms = visits && visits.msgg ? visits.msgg[si][gi] : null;
+      if (mon && ms) ms.forEach((m, i) => { if (m == null) monOK = false; else mon[i] += m; }); else if (mon) monOK = false;
+      const nr = STN && STN.near ? STN.near[k] : null; if (nr) { ne += nr[0]; n1 += nr[2]; nn++; }
+    }
+    const n = a.reduce((p, q) => p + q, 0), N = natA.reduce((p, q) => p + q, 0);
+    const lq = a.map((v, i) => v >= 10 && natA[i] ? (v / n) / (natA[i] / N) : null);
+    const ps = a.filter(v => v > 0).map(v => v / n), K = natA.filter(v => v > 0).length;
+    const H = -ps.reduce((p, q) => p + q * Math.log(q), 0);
+    let g = null;
+    if (sidoMon) { const full = visits.m.map((_, i) => i).filter(i => visits.mfull[i]).slice(-12); if (full.length === 12 && full.every(i => sidoMon[i] != null)) g = gini(full.map(i => sidoMon[i])); }
+    else if (monOK && mon) { const full = visits.m.map((_, i) => i).filter(i => visits.mfull[i]).slice(-12); if (full.length === 12) g = gini(full.map(i => mon[i])); }
+    return { n, a, lq, v0: nv ? v0 : null, v1: nv ? v1 : null,
+      dens: nv && v0 ? n / (v0 / 1e6) : null, fshare: nv && v0 + v1 ? v1 / (v0 + v1) : null,
+      growth: base ? (nw - cl) / base : null, surv: co >= 20 ? 1 - c3 / co : null, even: n && K > 1 ? H / Math.log(K) : null,
+      gini: g, station: ne >= 20 ? n1 / ne : null };
+  }
+  const OV = [  // [키, 이름, 표시, 높을수록 뜻, 산식, 근거]
+    ['dens', '외지인 100만 명당 숙소', v => v.toFixed(1) + '곳', '방문객에 비해 숙소가 많음(공급 과잉 쪽)', '영업 숙소 ÷ (연간 외지인 방문객 ÷ 100만)', 'Defert(1967) 관광기능지수의 변형: 원식은 병상÷주민 수이나, 인구·병상 자료 대신 방문객과 시설 수를 씀'],
+    ['growth', '최근 3년 순증률', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', '숙소가 빠르게 늘어남', '(최근 3년 신규 − 최근 3년 폐업) ÷ 3년 전 영업 숙소', '순증가율(공급 증가 속도)'],
+    ['surv', '3년 생존율', v => (v * 100).toFixed(1) + '%', '새로 연 숙소가 오래 버팀', `${yNow - 6}~${yNow - 4}년 인허가 중 허가 후 3년 안에 폐업하지 않은 비율`, '통계청 기업생멸행정통계의 생존율 개념(연 단위 근사)'],
+    ['even', '업종 균등도', v => v.toFixed(2), '여러 업종이 고르게 섞임', 'Pielou J = −Σpᵢ ln pᵢ ÷ ln K (pᵢ 업종 비중, K 전국 업종 수)', 'Shannon 다양도 지수, Pielou(1966) 균등도'],
+    ['gini', '계절 편중', v => v.toFixed(3), '방문객이 특정 달에 몰림', '최근 12개월 외지인 방문객의 지니계수', 'Lundtorp(2001) 관광 계절성 지니계수'],
+    ['station', '역세권 숙소 비율', v => (v * 100).toFixed(1) + '%', '숙소가 역 가까이 있음', '역(지하철·광역·간선) 1km 안 영업 숙소 ÷ 위치가 정확한 영업 숙소', '대중교통 도보권(반경 1km) 접근성 지표'],
+    ['fshare', '외국인 방문객 비중', v => (v * 100).toFixed(1) + '%', '외국인 수요 비중이 큼', '연간 외국인 ÷ (외지인 + 외국인)', '한국관광데이터랩 방문객(이동통신)'],
+    ['k21', '관광 체류 강도', v => v.toFixed(1), '체류형 방문이 많음', '한국관광데이터랩 관광수요지수 세부 지표, 최근 12개월 평균', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
+    ['k2102', '숙박 비중 지수', v => v.toFixed(1), '숙박하는 방문객 비중이 큼', '위와 같음', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
+  ];
+  function renderOverview() {
+    if (tab !== 'summary') return;  // 시군구 전체를 계산하므로 탭을 열었을 때만
+    const r = U ? null : curReg();  // 읍·면·동을 골랐으면 그 시군구
+    const natA = T.map(() => 0); for (const x of Object.values(areaTable())) x.a.forEach((v, i) => { natA[i] += v; });
+    if (!r) { $('sum-title').textContent = '종합'; $('sum-sub').textContent = '합쳐 보기 중에는 종합을 낼 수 없습니다. 상단에서 지역 하나를 고르세요.'; ['sum-text', 'sum-grid', 'sum-table'].forEach(id => { $(id).innerHTML = ''; }); return; }
+    const keysOf = q => q.si < 0 ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => `${si}:${gi}`)) : (gisOf(q) || S[q.si].sgg.map((_, gi) => gi)).map(gi => `${q.si}:${gi}`);
+    const msido = si => visits && visits.msido ? visits.msido[si] : null;
+    const natMon = visits && visits.msido ? visits.m.map((_, i) => S.reduce((a, _s, si) => a == null || msido(si)?.[i] == null ? null : a + msido(si)[i], 0)) : null;
+    const me = ovStats(keysOf(r), natA, r.si < 0 ? natMon : r.gi < 0 && r.grp == null ? msido(r.si) : null);
+    me.k21 = kixAvg(r, '21'); me.k2102 = kixAvg(r, '2102');
+    // 비교 대상: 기초(또는 묶음)는 전국 시군구, 광역은 광역끼리, 전국은 없음
+    const peerLevel = r.si < 0 ? null : r.gi >= 0 || r.grp != null ? 'sgg' : 'sido';
+    const peers = !peerLevel ? [] : peerLevel === 'sgg'
+      ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => { const p = ovStats([`${si}:${gi}`], natA); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); return p; }))
+      : S.map((_, si) => { const p = ovStats(keysOf({ si, gi: -1 }), natA, msido(si)); p.k21 = kixAvg({ si, gi: -1 }, '21'); p.k2102 = kixAvg({ si, gi: -1 }, '2102'); return p; });
+    const pctile = (key, v) => { const xs = peers.map(p => p[key]).filter(x => x != null); return v == null || xs.length < 5 ? null : xs.filter(x => x <= v).length / xs.length; };
+    const peerName = peerLevel === 'sgg' ? '전국 시군구' : '광역';
+    const P = {}; for (const [k] of OV) P[k] = pctile(k, me[k]);
+    $('sum-title').textContent = `종합 · ${regLabel(r)}`;
+    $('sum-sub').textContent = `${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 기준. 막대의 표시는 ${peerLevel ? peerName + ' 중 위치(오른쪽일수록 값이 큼)' : '전국이라 비교 대상 없음'}입니다. 매일 새벽 갱신된 자료로 즉시 계산합니다.`;
+    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small></div>`]
+      .concat(OV.map(([k, nm, f, hi]) => { const v = me[k], p = P[k];
+        return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}% · 높을수록 ${esc(hi)}</small>` : `<small>${v == null ? '자료 없음' : '높을수록 ' + esc(hi)}</small>`}</div>`; })).join('');
+    // 특화 업종(LQ ≥ 1.2, 10곳 이상)
+    const spec = me.lq.map((q, i) => [q, i]).filter(([q]) => q != null && q >= 1.2).sort((x, y) => y[0] - x[0]).slice(0, 3);
+    $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>특화 업종 (입지계수 LQ)</h4>${spec.length ? spec.map(([q, i]) => `<div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(T[i].name)}</span><b style="font-size:16px;display:inline">${q.toFixed(2)}</b></div>`).join('') : '<b>-</b>'}<small>LQ = (지역 업종 비중) ÷ (전국 업종 비중). 1.2 이상·10곳 이상만. Isard(1960) 지역분석의 입지계수</small></div>`);
+    // 한눈에 보기 문장
+    const hiP = k => P[k] != null && P[k] >= .8, loP = k => P[k] != null && P[k] <= .2, top = k => `${peerName} 상위 ${Math.max(1, Math.round((1 - P[k]) * 100))}%`;
+    const L = [`영업 숙소 ${fmt(me.n)}곳${me.dens != null ? `, 외지인 100만 명당 ${me.dens.toFixed(1)}곳${P.dens != null ? `(${top('dens')})` : ''}` : ''}.`];
+    if (spec.length) L.push(`${spec.map(([q, i]) => `${T[i].name}(${q.toFixed(1)}배)`).join(', ')} 비중이 전국보다 높아 이 업종에 특화돼 있습니다.`);
+    if (hiP('growth')) L.push(`최근 3년 숙소가 빠르게 늘었습니다(순증 ${OV[1][2](me.growth)}, ${top('growth')}).`);
+    else if (loP('growth')) L.push(`최근 3년 숙소 증가가 더딘 편입니다(순증 ${OV[1][2](me.growth)}).`);
+    if (loP('surv')) L.push(`새로 연 숙소의 3년 생존율이 낮습니다(${OV[2][2](me.surv)}): 진입과 이탈이 잦은 시장입니다.`);
+    else if (hiP('surv')) L.push(`새로 연 숙소의 3년 생존율이 높습니다(${OV[2][2](me.surv)}).`);
+    if (hiP('gini')) L.push(`방문객이 특정 달에 몰리는 편이라(계절 편중 ${top('gini')}) 성수기·비수기 차이가 큽니다.`);
+    else if (loP('gini')) L.push('방문객이 연중 고르게 오는 편입니다.');
+    if (hiP('station')) L.push(`숙소 ${OV[5][2](me.station)}가 역 1km 안에 있어 대중교통 접근이 좋습니다.`);
+    else if (loP('station') || me.station === 0) L.push(`역에서 1km 안에 있는 숙소가 ${OV[5][2](me.station || 0)}로 자동차 의존이 큰 지역입니다.`);
+    if (hiP('k2102')) L.push(`숙박 비중 지수가 높아(${me.k2102.toFixed(1)}) 머무는 방문객이 많은 지역입니다.`);
+    if (hiP('fshare')) L.push(`외국인 방문객 비중이 ${OV[6][2](me.fshare)}로 높습니다.`);
+    $('sum-text').innerHTML = L.map(x => `<li>${esc(x)}</li>`).join('');
+    $('sum-table').innerHTML = '<thead><tr><th>지표</th><th>값</th><th>' + (peerLevel ? esc(peerName) + ' 중 백분위' : '백분위') + '</th><th style="text-align:left">산식</th><th style="text-align:left">근거</th></tr></thead><tbody>'
+      + OV.map(([k, nm, f, , formula, src]) => `<tr><td>${esc(nm)}</td><td>${me[k] == null ? '-' : f(me[k])}</td><td>${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td style="text-align:left;white-space:normal">${esc(formula)}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(src)}</td></tr>`).join('') + '</tbody>';
+    $('sum-note').textContent = '백분위는 비교 대상 중 이 값보다 작거나 같은 곳의 비율입니다(100에 가까울수록 값이 큼). 값이 크다고 좋은 것은 아니며, 정책 목적에 따라 해석하세요. '
+      + '인구 기반 지표(관광기능지수 원식, 관광 침투도 TPI 등)는 주민등록 인구 자료가 연동되면 추가할 수 있습니다.';
+    csvSet('sum-table', ['지역', '지표', '값', '백분위', '산식', '근거'], OV.map(([k, nm, , , formula, src]) => [regLabel(r), nm, me[k] == null ? '' : +me[k].toFixed(4), P[k] == null ? '' : Math.round(P[k] * 100), formula, src]));
+  }
+  $('sum-print').onclick = () => print();
+
   /* ---------- 관광수요지수 세부 지표 (한국관광데이터랩, build.py → kto_index.json) ---------- */
   let kix = null;
   const KIX_SHOW = ['21', '2102', '2103', '2104', '2105', '22', '31', '33'];  // 카드·표에 보이는 지표 (나머지는 CSV)
@@ -942,7 +1053,7 @@
     const xs = v ? v[j].slice(-12).filter(x => x != null) : [];
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   }
-  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); renderCompare(); });
+  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); renderCompare(); renderOverview(); });
 
   /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
   let icn = null, icnPer = 'm';
@@ -1266,7 +1377,7 @@
   });
 
   /* ---------- 탭 ---------- */
-  const TABS = ['now', 'demand', 'trend', 'minbak', 'compare', 'transit'];
+  const TABS = ['summary', 'now', 'demand', 'trend', 'minbak', 'compare', 'transit'];
   let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'now';
   function setTab(t) {
     tab = t;
@@ -1274,6 +1385,7 @@
     document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
     if (t === 'now' && mapReady) map.resize();
     if (STN) drawRings(STN.st[stnSel], t === 'transit');
+    if (t === 'summary') renderOverview();
     writeHash();
   }
   $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-t]'); if (b) { setTab(b.dataset.t); scrollTo({ top: 0, behavior: 'smooth' }); } });
