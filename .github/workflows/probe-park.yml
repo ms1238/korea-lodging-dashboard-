@@ -15,36 +15,36 @@ jobs:
           KEY: ${{ secrets.DATA_GO_KR_KEY }}
         shell: python
         run: |
-          import os, json, time, requests
-          sp = None
-          for a in range(4):
+          import os, re, json, time, requests
+          H = {"User-Agent": "Mozilla/5.0"}
+          def get(u, **kw):
+              for a in range(4):
+                  try:
+                      return requests.get(u, headers=H, timeout=60, **kw)
+                  except Exception as e:
+                      print("  retry", type(e).__name__, flush=True); time.sleep(10)
+          seen = {}
+          for kw in ("국립공원 탐방객", "국립공원공단 탐방객", "국립공원 탐방객 현황", "국립공원 월별 탐방객"):
+              for dt in ("FILE", "API"):
+                  t = get("https://www.data.go.kr/tcs/dss/selectDataSetList.do", params={"keyword": kw, "dType": dt, "perPage": 40}).text
+                  for cid, kind in re.findall(r"/data/(\d{8})/(fileData|openapi)\.do", t):
+                      seen.setdefault(cid, kind)
+          print("== ids", seen, flush=True)
+          for cid, kind in seen.items():
+              t = get(f"https://www.data.go.kr/data/{cid}/{kind}.do").text
+              title = re.findall(r"<title>(.*?)</title>", t, re.S)[:1]
+              if "탐방" not in t: continue
+              print("== DATASET", cid, kind, title, flush=True)
+              sp = get(f"https://infuser.odcloud.kr/oas/docs?namespace={cid}/v1")
               try:
-                  sp = requests.get("https://infuser.odcloud.kr/oas/docs?namespace=15107577/v1", timeout=60).json(); break
-              except Exception as e:
-                  print("retry", e, flush=True); time.sleep(10)
-          print("== info", json.dumps(sp.get("info"), ensure_ascii=False)[:800])
-          for path, v in sp["paths"].items():
-              g = v["get"]
-              print("== PATH", path, "|", g.get("summary"), "|", g.get("description", "")[:300])
-              print("   params:", [p.get("name") for p in g.get("parameters", [])])
-          for name, s in (sp.get("components", {}).get("schemas", {}) or sp.get("definitions", {})).items():
-              props = s.get("properties", {})
-              print("== SCHEMA", name, {k: (p.get("type"), p.get("description", "")[:60]) for k, p in props.items()})
-          from collections import Counter, defaultdict
-          for path in sp["paths"]:
-              rows, pg = [], 1
-              while True:
-                  d = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": os.environ["KEY"], "page": pg, "perPage": 5000, "returnType": "JSON"}, timeout=120).json()
-                  rows += d["data"]
-                  if not d["data"] or len(rows) >= d["totalCount"]: break
-                  pg += 1
-              ds = sorted({r["일자"] for r in rows})
-              print("== TABLE", path, len(rows), "rows; dates", len(ds), ds[:5], ds[-5:], flush=True)
-              print("   months:", sorted(Counter(x[:7] for x in ds).items())[:200])
-              print("   parks:", Counter(r["국립공원"] for r in rows).most_common())
-              print("   offices:", Counter(r["사무소"] for r in rows).most_common(60))
-              m = defaultdict(int)
-              for r in rows: m[(r["국립공원"], r["일자"][:7])] += r["전체 탐방객수"] or 0
-              print("   설악산 by month:", sorted((k[1], v) for k, v in m.items() if k[0] == "설악산")[:120])
-              print("   areas 설악산:", sorted({(r["관리지구"], r["탐방지역"]) for r in rows if r["국립공원"] == "설악산"}))
-              print("   keys:", list(rows[0]), flush=True)
+                  sp = sp.json()
+              except Exception:
+                  print("   no odcloud spec"); continue
+              for path, v in sp.get("paths", {}).items():
+                  print("   PATH", path, v["get"].get("summary"))
+              for name, sc in sp.get("components", {}).get("schemas", {}).items():
+                  if name.endswith("_model"): print("   COLS", name[:40], list(sc.get("properties", {})))
+              path = list(sp.get("paths", {}))[:1]
+              if path:
+                  r = get("https://api.odcloud.kr/api" + path[0], params={"serviceKey": os.environ["KEY"], "page": 1, "perPage": 3, "returnType": "JSON"})
+                  print("   CALL", r.status_code, r.text[:700], flush=True)
