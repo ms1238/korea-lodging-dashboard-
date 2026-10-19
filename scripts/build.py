@@ -395,9 +395,13 @@ def _rings(ways, tol=2e-4, gap=0.02):
 
 
 def _simplify(pts, tol=0.0003):
-    """Douglas-Peucker in degrees (~30 m)."""
+    """Douglas-Peucker in degrees (~30 m). A closed ring (first point = last) is split at its farthest point first:
+    measured against a zero-length chord every point has distance 0 and the ring would collapse to two points."""
     if len(pts) < 5:
         return pts
+    if pts[0] == pts[-1]:
+        far = max(range(len(pts)), key=lambda i: (pts[i][0] - pts[0][0]) ** 2 + (pts[i][1] - pts[0][1]) ** 2)
+        return _simplify(pts[:far + 1], tol)[:-1] + _simplify(pts[far:], tol)
     keep, stack = [0, len(pts) - 1], [(0, len(pts) - 1)]
     while stack:
         a, b = stack.pop()
@@ -449,7 +453,7 @@ def write_park_areas():
         f = json.load(open(os.path.join(ROOT, "scripts", "static", "geumjeongsan.json"), encoding="utf-8"))
         polys = f["geometry"]["coordinates"]
         best["금정산국립공원"] = (sum(_km2(p[0]) for p in polys), polys, "traced")
-    print(f"park_areas: {len(best)} parks: " + ", ".join(f"{k} {a:.0f}㎢" for k, (a, _, _) in sorted(best.items())), flush=True)
+    print(f"park_areas: {len(best)} parks: " + ", ".join(f"{k} {a:.0f}㎢ ({sum(len(p[0]) for p in polys)} pts)" for k, (a, polys, _) in sorted(best.items())), flush=True)
     feats = [{"type": "Feature", "properties": {"park": k, "km2": round(a, 1), "src": src},
               "geometry": {"type": "MultiPolygon", "coordinates": polys}} for k, (a, polys, src) in sorted(best.items())]
     with open(os.path.join(OUT, "park_areas.json"), "w", encoding="utf-8") as f:
