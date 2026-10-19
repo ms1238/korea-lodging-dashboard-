@@ -1,0 +1,38 @@
+# Temporary: 모범음식점 (1741000/excellent_restaurant_info) and 백년가게 (odcloud 15132695) layouts.
+name: Probe restaurant APIs
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-food.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, json, time, requests
+          K = os.environ["KEY"]
+          def get(u, **kw):
+              for a in range(4):
+                  try:
+                      return requests.get(u, timeout=90, **kw)
+                  except Exception as e:
+                      print("  retry", type(e).__name__, flush=True); time.sleep(10)
+          for u in ("https://apis.data.go.kr/1741000/excellent_restaurant_info/info", "https://apis.data.go.kr/1741000/excellent_restaurant_info"):
+              for extra in ({"returnType": "json"}, {"type": "json"}):
+                  r = get(u, params={"serviceKey": K, "pageNo": 1, "numOfRows": 2, **extra})
+                  print("== EXC", u, extra, r.status_code, r.text[:2500], flush=True)
+          sp = get("https://infuser.odcloud.kr/oas/docs?namespace=15132695/v1").json()
+          print("== info", json.dumps(sp.get("info"), ensure_ascii=False)[:400])
+          for path, v in sp["paths"].items():
+              print("== PATH", path, v["get"].get("summary"))
+          for name, sc in sp.get("components", {}).get("schemas", {}).items():
+              if name.endswith("_model"): print("== COLS", name[-50:], list(sc.get("properties", {})))
+          for path in sp["paths"]:
+              r = get("https://api.odcloud.kr/api" + path, params={"serviceKey": K, "page": 1, "perPage": 2, "returnType": "JSON"})
+              print("== CALL", path, r.status_code, r.text[:1500], flush=True)
