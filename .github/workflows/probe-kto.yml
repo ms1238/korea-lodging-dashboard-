@@ -1,4 +1,4 @@
-# Temporary: what AreaTarDivService offers, and which 관광특구 datasets exist on the portal.
+# Temporary: AreaTarDemDsService spec and sample values of the 관광 다양성 / 체류 APIs; 표준데이터 download path.
 name: Probe KTO data
 on:
   workflow_dispatch:
@@ -15,43 +15,43 @@ jobs:
           KEY: ${{ secrets.DATA_GO_KR_KEY }}
         shell: python
         run: |
-          import json, os, re, requests
+          import os, re, time, requests
           K = os.environ["KEY"]
           H = {"User-Agent": "Mozilla/5.0"}
-          def search(kw, dtype):
-              t = requests.get("https://www.data.go.kr/tcs/dss/selectDataSetList.do", params={"keyword": kw, "dType": dtype, "perPage": 40}, headers=H, timeout=90).text
-              ids = list(dict.fromkeys(re.findall(r"/data/(\d{8})/(?:openapi|fileData|standard)\.do", t)))
-              titles = [re.sub(r"<[^>]+>|\s+", " ", x).strip() for x in re.findall(r'<span class="title">(.*?)</span>', t, re.S)]
-              print(f"== SEARCH {kw} {dtype}: {list(zip(ids, titles))[:25]}", flush=True)
-              return ids
-          for svc, kws in (("AreaTarDivService", ("AreaTarDivService", "한국관광공사 다양성", "한국관광공사 지역별 관광")),
-                           ("AreaTarDemDsService", ("AreaTarDemDsService", "한국관광공사 체류", "한국관광공사 수요"))):
-              found = None
-              for kw in kws:
-                  for cid in search(kw, "API")[:15]:
-                      t = requests.get(f"https://www.data.go.kr/data/{cid}/openapi.do", headers=H, timeout=90).text
-                      if svc in t:
-                          found = (cid, t); break
-                  if found: break
-              if not found:
-                  print(f"== {svc} not found in the searched pages", flush=True); continue
-              cid, t = found
-              print("== FOUND", svc, cid, re.findall(r"<title>(.*?)</title>", t, re.S)[:1])
+          def get(u, **kw):
+              for a in range(4):
+                  try:
+                      return requests.get(u, headers=H, timeout=60, **kw).text
+                  except Exception as e:
+                      print("  retry", u, type(e).__name__, flush=True); time.sleep(10)
+              return ""
+          def spec(cid, svc):
+              t = get(f"https://www.data.go.kr/data/{cid}/openapi.do")
               m = re.search(r"swaggerJson\s*=\s*`(.*?)`", t, re.S)
               sw = m.group(1) if m else ""
-              print("== description:", re.findall(r'"description":"(.{0,800}?)"', sw)[:1])
+              print("== FOUND", svc, cid, re.findall(r"<title>(.*?)</title>", t, re.S)[:1])
+              print("== description:", re.findall(r'"description":"(.{0,900}?)"', sw)[:1])
               ops = re.findall(r'"(/\w+)":\{"get"', sw)
+              for i, op in enumerate(ops):
+                  j, k = sw.find(f'"{op}"'), (sw.find(f'"{ops[i + 1]}"') if i + 1 < len(ops) else len(sw))
+                  part = sw[j:k]
+                  print("== OP", op, re.findall(r'"summary":"([^"]*)"', part)[:1],
+                        "\n   params:", list(dict.fromkeys(re.findall(r'"name":"([^"]+)","description":"([^"]*)"', part))),
+                        "\n   fields:", list(dict.fromkeys(re.findall(r'"(\w+)":\{"type":"(?:string|number|integer)","description":"([^"]*)"', part))), flush=True)
+              return ops
+          hits = {}
+          for cid in range(15151340, 15151400):
+              t = get(f"https://www.data.go.kr/data/{cid}/openapi.do")
+              for svc in re.findall(r"apis\.data\.go\.kr/B551011/(\w+)", t):
+                  hits.setdefault(svc, cid)
+          print("== B551011 services by dataset id:", hits, flush=True)
+          base = {"serviceKey": K, "pageNo": 1, "numOfRows": 5, "MobileOS": "ETC", "MobileApp": "test", "_type": "json", "areaCd": "11", "baseYm": "202608"}
+          for svc in ("AreaTarDemDsService", "AreaTarDivService"):
+              ops = spec(hits[svc], svc) if svc in hits else []
               for op in ops:
-                  j = sw.find(f'"{op}"')
-                  print("== OP", op, re.findall(r'"summary":"([^"]*)"', sw[j:j + 30000])[:1],
-                        "\n   desc:", re.findall(r'"description":"([^"]{0,400})"', sw[j:j + 30000])[:1],
-                        "\n   params:", re.findall(r'"name":"([^"]+)","description":"([^"]*)"', sw[j:j + 30000])[:16],
-                        "\n   fields:", re.findall(r'"(\w+)":\{"type":"(?:string|number|integer)","description":"([^"]*)"', sw[j:j + 30000])[:30], flush=True)
-              for op in ops[:6]:
-                  r = requests.get(f"https://apis.data.go.kr/B551011/{svc}" + op, params={"serviceKey": K, "pageNo": 1, "numOfRows": 3, "MobileOS": "ETC", "MobileApp": "test", "_type": "json"}, timeout=90)
-                  print(f"== CALL {svc}{op} [{r.status_code}] {r.text[:1200]}\n", flush=True)
-          t = requests.get("https://www.data.go.kr/data/15013205/standard.do", headers=H, timeout=90).text
-          for k in ("limitAtchFileId", "fileDownload", "atchFileId", ".do'", '.do"', "url:"):
+                  for extra in ({}, {"signguCd": "11110"}):
+                      r = get(f"https://apis.data.go.kr/B551011/{svc}{op}", params={**base, **extra})
+                      print(f"== CALL {svc}{op} {extra} {r[:1500]}\n", flush=True)
+          t = get("https://www.data.go.kr/data/15013205/standard.do")
+          for k in ("limitAtchFileId", "fileDownload", "atchFileId", "url:", "ajax"):
               print(f"== STD {k}:", [re.sub(r"\s+", " ", x) for x in re.findall(r".{0,160}%s.{0,160}" % re.escape(k), t)][:6], flush=True)
-          for kw in ("관광특구", "관광특구 경계", "관광특구 공간"):
-              search(kw, "FILE"); search(kw, "API")
