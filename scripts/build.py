@@ -602,18 +602,23 @@ def write_stations(rows, sidos, sgg_of, tidx):
     sgrid = defaultdict(list)
     for o in out:
         sgrid[(int(o[0] * 100), int(o[1] * 100))].append((o[0], o[1]))
-    near = defaultdict(lambda: [0, 0, 0])
+    # [lodgings, within 0.5 km, within 1 km, Hansen accessibility sum]: Hansen (1959) A = Σ exp(−β·d) over stations within
+    # 3 km, β = 2 per km (assumed walking decay: a station 0.5 km away counts 0.37, 1 km away 0.14)
+    near = defaultdict(lambda: [0, 0, 0, 0.0])
     gi_of = {s: {g: i for i, g in enumerate(sgg_of[s])} for s in sidos}
     for r in rows:
         if r["status"] != 0 or not r["ll"] or r.get("approx"):
             continue
         lat, lon = r["ll"]
-        d2 = min((dist2(lat, lon, *p) for i in (-1, 0, 1) for j in (-2, -1, 0, 1, 2)  # a 0.01° cell is ~0.9 km wide
-                  for p in sgrid.get((int(lat * 100) + i, int(lon * 100) + j), ())), default=99)
+        ds = [dist2(lat, lon, *p) for i in range(-3, 4) for j in range(-4, 5)  # a 0.01° cell is ~1.1 km tall, ~0.9 km wide
+              for p in sgrid.get((int(lat * 100) + i, int(lon * 100) + j), ())]
+        d2 = min(ds, default=99)
         c = near[f"{sidos.index(r['sido'])}:{gi_of[r['sido']][r['sgg']]}"]
         c[0] += 1
         c[1] += d2 <= 0.25
         c[2] += d2 <= 1
+        c[3] += sum(math.exp(-2 * math.sqrt(x)) for x in ds if x <= 9)
+    near = {k: [a, b, c, round(h, 2)] for k, (a, b, c, h) in near.items()}
     kym = add_korail(out, lines, sidos)
     mym = add_main(out, srcs)
     with open(os.path.join(OUT, "stations.json"), "w", encoding="utf-8") as f:
@@ -757,6 +762,33 @@ def write_kto_index(sidos, sgg_of):
     print(f"kto_index: {len(months)} months {months[:1]}~{months[-1:]}, {len(out)} areas; unmatched: {' '.join(sorted(unmatched))}", flush=True)
     with open(os.path.join(OUT, "kto_index.json"), "w", encoding="utf-8") as f:
         json.dump({"months": months, "ix": KTO_IX, "v": out}, f, ensure_ascii=False, separators=(",", ":"))
+
+
+POP_SIDO = {"서울": "서울특별시", "부산": "부산광역시", "대구": "대구광역시", "인천": "인천광역시", "광주": "광주광역시", "대전": "대전광역시",
+            "울산": "울산광역시", "세종": "세종특별자치시", "경기": "경기도", "강원": "강원특별자치도", "충북": "충청북도", "충남": "충청남도",
+            "전북": "전북특별자치도", "전남": "전라남도", "경북": "경상북도", "경남": "경상남도", "제주": "제주특별자치도"}
+
+
+def add_population(sidos, sido_meta):
+    """sido_meta[i]["pop"] = [year, 주민등록인구] from the latest yearbook year (광주+전남 summed for the merged 시도)."""
+    path = os.path.join(RAW, "population.json")
+    if not os.path.exists(path):
+        return None
+    rows = json.load(open(path, encoding="utf-8"))
+    year = max(r["year"] for r in rows)
+    pop = defaultdict(int)
+    for r in rows:
+        if r["year"] != year or r["region"] not in POP_SIDO:
+            continue
+        name = POP_SIDO[r["region"]]
+        if name in ("광주광역시", "전라남도") and MERGED_GWANGJU_JEONNAM in sidos:
+            name = MERGED_GWANGJU_JEONNAM
+        pop[name] += r["pop"]
+    for s, sm in zip(sidos, sido_meta):
+        if s in pop:
+            sm["pop"] = pop[s]
+    print(f"population: {year}, {sum(1 for s in sidos if s in pop)} of {len(sidos)} 시도", flush=True)
+    return year
 
 
 def write_icn():
@@ -968,6 +1000,7 @@ def main():
                 cnt[r[3]][r[2]] += 1
         sm["tour"] = cnt
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
+    pop_year = add_population(sidos, sido_meta)
     write_arrivals()
     write_icn()
     write_kto_index(sidos, sgg_of)
@@ -997,6 +1030,7 @@ def main():
         "tour": {"types": [n for _, n in TOUR_TYPES], "counts": [tour_n[i] for i in range(len(TOUR_TYPES))]},
         "zones": ZONES, "bldgs": BLDGS,
         "visitors": visitors,
+        "pop_year": pop_year,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
