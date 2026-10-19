@@ -20,6 +20,8 @@ Steps
 13. subway.json: subway / light-rail lines (OpenStreetMap) as GeoJSON with each line's colour.
 14. park_areas.json: national-park boundaries (OpenStreetMap) as simplified polygons with their map area;
     금정산 falls back to the boundary traced from the designation map (scripts/static/geumjeongsan.json).
+15. stations.json: subway / light-rail stations (OpenStreetMap) with their lines, 시도/시군구 and the number of
+    operating lodgings per type within 0.5 / 1 / 3 / 5 km (records with an exact position only).
 """
 import difflib
 import glob
@@ -437,6 +439,103 @@ def write_park_areas():
         json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
 
 
+RADII = (0.5, 1, 3, 5)  # km, station catchment rings
+
+
+def write_stations(rows, sidos, sgg_of, tidx):
+    """Stations of the same name within 500 m (one node per line in OSM) become one station. Lines come from the
+    route relations of subway.json passing within 150 m. 시도/시군구: the most common among lodgings within 1 km,
+    else the nearest lodging within 10 km."""
+    path = os.path.join(RAW, "stations.json")
+    if not os.path.exists(path):
+        return
+    km_lat = 110.95
+
+    def dist2(lat, lon, la, lo):
+        kx = 111.32 * math.cos(math.radians(lat))
+        return ((la - lat) * km_lat) ** 2 + ((lo - lon) * kx) ** 2
+
+    # merge same-name nodes
+    st = []
+    for s in json.load(open(path, encoding="utf-8")):
+        key = re.sub(r"역$", "", s["name"].strip())
+        for m in st:
+            if m["key"] == key and dist2(m["lat"], m["lon"], s["lat"], s["lon"]) <= 0.25:
+                m["pts"].append((s["lat"], s["lon"]))
+                break
+        else:
+            st.append({"key": key, "name": s["name"].strip(), "lat": s["lat"], "lon": s["lon"], "pts": [(s["lat"], s["lon"])]})
+    for m in st:
+        m["lat"] = round(sum(p[0] for p in m["pts"]) / len(m["pts"]), 5)
+        m["lon"] = round(sum(p[1] for p in m["pts"]) / len(m["pts"]), 5)
+
+    # lines: route segments on a 0.01° grid
+    lines, lidx, seg = [], {}, defaultdict(list)
+    sub = os.path.join(RAW, "subway.json")
+    for rel in json.load(open(sub, encoding="utf-8")) if os.path.exists(sub) else []:
+        label = (rel["name"] or "").split(":")[0].strip() or f"{rel['network']} {rel['ref']}".strip()
+        if not label:
+            continue
+        colour = rel["colour"] if re.fullmatch(r"#?[0-9A-Fa-f]{6}", rel["colour"] or "") else ""
+        if label not in lidx:
+            lidx[label] = len(lines)
+            lines.append([label, ("#" + colour.lstrip("#")) if colour else ""])
+        elif colour and not lines[lidx[label]][1]:
+            lines[lidx[label]][1] = "#" + colour.lstrip("#")
+        li = lidx[label]
+        for _, coords in rel["ways"]:
+            for (x1, y1), (x2, y2) in zip(coords, coords[1:]):
+                for cell in {(int(y1 * 100), int(x1 * 100)), (int(y2 * 100), int(x2 * 100))}:
+                    seg[cell].append((li, x1, y1, x2, y2))
+
+    def lines_near(lat, lon):
+        kx = 111.32 * math.cos(math.radians(lat))
+        found = set()
+        ci, cj = int(lat * 100), int(lon * 100)
+        for i in range(ci - 1, ci + 2):
+            for j in range(cj - 1, cj + 2):
+                for li, x1, y1, x2, y2 in seg.get((i, j), ()):
+                    if li in found:
+                        continue
+                    ax, ay, bx, by = (x1 - lon) * kx, (y1 - lat) * km_lat, (x2 - lon) * kx, (y2 - lat) * km_lat
+                    dx, dy = bx - ax, by - ay
+                    t = max(0.0, min(1.0, -(ax * dx + ay * dy) / (dx * dx + dy * dy))) if dx or dy else 0.0
+                    if (ax + t * dx) ** 2 + (ay + t * dy) ** 2 <= 0.0225:
+                        found.add(li)
+        return sorted(found)
+
+    grid = defaultdict(list)
+    for r in rows:
+        if r["ll"] and not r.get("approx"):
+            grid[(int(r["ll"][0] * 100), int(r["ll"][1] * 100))].append(r)
+    out = []
+    for m in st:
+        lat, lon = m["lat"], m["lon"]
+        ci, cj = int(lat * 100), int(lon * 100)
+        cnt = defaultdict(lambda: [0] * len(RADII))
+        near1, nearest = Counter(), (101, None)
+        for i in range(ci - 10, ci + 11):
+            for j in range(cj - 12, cj + 13):
+                for r in grid.get((i, j), ()):
+                    d2 = dist2(lat, lon, *r["ll"])
+                    if d2 <= 1:
+                        near1[(r["sido"], r["sgg"])] += 1
+                    if d2 < nearest[0]:
+                        nearest = (d2, (r["sido"], r["sgg"]))
+                    if r["status"] == 0 and d2 <= 25:
+                        c = cnt[tidx[r["type"]]]
+                        for k, rad in enumerate(RADII):
+                            if d2 <= rad * rad:
+                                c[k] += 1
+        reg = near1.most_common(1)[0][0] if near1 else nearest[1]
+        si = sidos.index(reg[0]) if reg else -1
+        gi = sgg_of[reg[0]].index(reg[1]) if reg else -1
+        out.append([lat, lon, m["name"], si, gi, lines_near(lat, lon), [[t, *c] for t, c in sorted(cnt.items())]])
+    print(f"stations: {len(out)} after merging, {sum(1 for o in out if o[5])} on a known line, {len(lines)} lines", flush=True)
+    with open(os.path.join(OUT, "stations.json"), "w", encoding="utf-8") as f:
+        json.dump({"r": RADII, "lines": lines, "st": out}, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def write_arrivals():
     path = os.path.join(RAW, "arrivals.jsonl")
     if not os.path.exists(path):
@@ -629,6 +728,7 @@ def main():
     write_parks()
     write_subway()
     write_park_areas()
+    write_stations(rows, sidos, sgg_of, tidx)
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))

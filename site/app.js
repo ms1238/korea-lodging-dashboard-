@@ -259,6 +259,13 @@
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 2.2, 11, 3.6, 15, 6],
         'circle-color': ['match', ['get', 'c'], ...CATS.flatMap((_, i) => [i, col(i)]), '#888'],
         'circle-opacity': .85, 'circle-stroke-color': '#fff', 'circle-stroke-width': .6 } });
+      // 역세권 반경(대중교통 탭에서 고른 역)
+      map.addSource('stn-ring', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'stn-ring', type: 'line', source: 'stn-ring', filter: ['==', ['geometry-type'], 'LineString'],
+        paint: { 'line-color': '#8e44ad', 'line-width': 1.6, 'line-dasharray': [3, 2] } });
+      map.addLayer({ id: 'stn-ring-label', type: 'symbol', source: 'stn-ring', filter: ['==', ['geometry-type'], 'Point'],
+        layout: { 'text-field': ['get', 'l'], 'text-font': font, 'text-size': 11, 'text-anchor': 'bottom' },
+        paint: { 'text-color': '#5b2c6f', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
       map.addSource('tour', { type: 'geojson', data: empty });
       map.addLayer({ id: 'tour', type: 'circle', source: 'tour', paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 3, 12, 5, 15, 7], 'circle-color': '#ffffff', 'circle-stroke-width': 2,
@@ -458,6 +465,7 @@
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
+    renderStations();
     writeHash();
     drawTimeline();
     drawMap(fly);
@@ -676,6 +684,59 @@
     try { await navigator.clipboard.writeText(text); $('summary-copy').textContent = '복사됨 ✓'; } catch { prompt('복사하세요', text); }
     setTimeout(() => { $('summary-copy').textContent = '요약 복사'; }, 1500);
   };
+
+  /* ---------- 대중교통: 역세권 숙소 (지하철·도시철도역 반경 안 영업 숙소, build.py → stations.json) ---------- */
+  let STN = null, stnSel = -1;
+  const kmLabel = km => km < 1 ? km * 1000 + 'm' : km + 'km';
+  const stnCount = (s, k) => s[6].reduce((a, c) => a + (state.types.has(c[0]) ? c[k + 1] : 0), 0);
+  function renderStations() {
+    if (!STN || !STN.st.length) { $('stn-sub').textContent = '역 자료가 아직 없습니다. 다음 데이터 갱신 후 표시됩니다.'; $('stn-sel').disabled = true; return; }
+    const regs = U ? U.regs : [curReg()];
+    const ids = STN.st.map((_, i) => i).filter(i => regs.some(r => inReg(r, STN.st[i][3], STN.st[i][4])));
+    if (!ids.includes(stnSel)) stnSel = ids.length ? ids.reduce((a, b) => stnCount(STN.st[b], 1) > stnCount(STN.st[a], 1) ? b : a) : -1;
+    // 노선별로 묶은 목록. 여러 노선이 지나는 역은 노선마다 나옵니다
+    const byName = (a, b) => STN.st[a][2].localeCompare(STN.st[b][2], 'ko');
+    const groups = STN.lines.map((l, li) => [l[0], ids.filter(i => STN.st[i][5].includes(li)).sort(byName)])
+      .filter(g => g[1].length).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+    const none = ids.filter(i => !STN.st[i][5].length).sort(byName);
+    if (none.length) groups.push(['노선 미확인', none]);
+    $('stn-sel').innerHTML = groups.map(([name, xs]) => `<optgroup label="${esc(name)}">${xs.map(i => `<option value="${i}">${esc(STN.st[i][2])}</option>`).join('')}</optgroup>`).join('');
+    $('stn-sel').disabled = !ids.length;
+    if (stnSel >= 0) $('stn-sel').value = String(stnSel);
+    $('stn-sub').textContent = ids.length ? `${regionName()} 역 ${fmt(ids.length)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.` : `${regionName()}에는 지하철·도시철도역이 없습니다.`;
+    renderStation();
+  }
+  function renderStation() {
+    const s = STN.st[stnSel];
+    if (!s) { $('stn-kpis').innerHTML = ''; $('stn-table').innerHTML = ''; $('stn-lines').innerHTML = ''; drawRings(null); return; }
+    const R = STN.r, place = s[3] >= 0 ? `${short(S[s[3]].name)} ${S[s[3]].sgg[s[4]]}` : '';
+    $('stn-lines').innerHTML = s[5].map(li => `<span class="chip" style="padding-right:10px"><span class="sw" style="background:${STN.lines[li][1] || '#7f8c8d'}"></span>${esc(STN.lines[li][0])}</span>`).join(' ')
+      + (place ? ` <small style="color:var(--muted)">${esc(place)}</small>` : '');
+    $('stn-kpis').innerHTML = R.map((km, k) => `<div class="kpi"><b>${fmt(stnCount(s, k))}</b><span>반경 ${kmLabel(km)} 안 영업 숙소</span></div>`).join('');
+    const rows = s[6].filter(c => state.types.has(c[0])).sort((a, b) => b[R.length] - a[R.length]);
+    $('stn-table-title').textContent = `${s[2]} 업종별 숙소 수`;
+    $('stn-table').innerHTML = `<thead><tr><th>업종</th>${R.map(km => `<th>${kmLabel(km)}</th>`).join('')}</tr></thead><tbody>`
+      + rows.map(c => `<tr><td><span class="sw" style="background:var(--c${catOf[c[0]]})"></span>${esc(T[c[0]].name)}</td>${c.slice(1).map(v => `<td>${fmt(v)}</td>`).join('')}</tr>`).join('')
+      + `<tr><td><b>합계</b></td>${R.map((_, k) => `<td><b>${fmt(stnCount(s, k))}</b></td>`).join('')}</tr></tbody>`;
+    csvSet('stn-table', ['역', '업종', ...R.map(km => `반경 ${kmLabel(km)}`)], rows.map(c => [s[2], T[c[0]].name, ...c.slice(1)]));
+    drawRings(s);
+  }
+  function drawRings(s, fly) {
+    if (!mapReady) return;
+    const feats = [];
+    if (s && tab === 'transit') {
+      const [lat, lon] = s, kx = 111.32 * Math.cos(lat * Math.PI / 180);
+      for (const km of STN.r) {
+        const g = []; for (let k = 0; k <= 72; k++) { const a = k / 72 * 2 * Math.PI; g.push([lon + km / kx * Math.sin(a), lat + km / 110.95 * Math.cos(a)]); }
+        feats.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: g } },
+          { type: 'Feature', properties: { l: kmLabel(km) }, geometry: { type: 'Point', coordinates: [lon, lat + km / 110.95] } });
+      }
+      if (fly) map.fitBounds([[lon - 1.05 / kx, lat - 1.05 / 110.95], [lon + 1.05 / kx, lat + 1.05 / 110.95]], { padding: 30, duration: 800 });
+    }
+    map.getSource('stn-ring').setData({ type: 'FeatureCollection', features: feats });
+  }
+  $('stn-sel').onchange = e => { stnSel = +e.target.value; renderStation(); drawRings(STN.st[stnSel], true); };
+  getJSON('data/stations.json', null).then(d => { STN = d; renderStations(); });
 
   /* ---------- 방한 외래관광객 (전국, 월별·국적별) ---------- */
   let arrPer = 'm';
@@ -993,13 +1054,14 @@
   });
 
   /* ---------- 탭 ---------- */
-  const TABS = ['now', 'demand', 'trend', 'minbak', 'compare'];
+  const TABS = ['now', 'demand', 'trend', 'minbak', 'compare', 'transit'];
   let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'now';
   function setTab(t) {
     tab = t;
     document.querySelectorAll('[data-tab]').forEach(el => el.classList.toggle('tab-off', el.dataset.tab !== t));
     document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
     if (t === 'now' && mapReady) map.resize();
+    if (STN) drawRings(STN.st[stnSel], t === 'transit');
     writeHash();
   }
   $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-t]'); if (b) { setTab(b.dataset.t); scrollTo({ top: 0, behavior: 'smooth' }); } });

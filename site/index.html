@@ -30,6 +30,7 @@
         <button role="tab" data-t="trend" aria-selected="false">동향</button>
         <button role="tab" data-t="minbak" aria-selected="false">도시민박</button>
         <button role="tab" data-t="compare" aria-selected="false">지역 비교</button>
+        <button role="tab" data-t="transit" aria-selected="false">대중교통</button>
       </nav>
       <button class="btn" id="share-link" title="지금 보고 있는 탭·지역·비교 목록을 담은 주소를 복사합니다">🔗 링크 복사</button>
     </div>
@@ -101,6 +102,16 @@
       <div class="legend"><span><i style="background:var(--ok)"></i>영업</span><span><i style="background:var(--pause)"></i>휴업</span><span><i style="background:var(--closed)"></i>폐업</span></div>
       <div class="sharelist" id="st-type"></div></div>
     <div class="card"><button class="btn csv" data-csv="st-area" data-name="지역별_휴폐업">CSV</button><h3 id="st-area-title" style="margin-bottom:10px"></h3><div class="sharelist" id="st-area"></div></div>
+  </section>
+
+  <section data-tab="transit" id="stn-sec">
+    <div class="sechead"><h2>역세권 숙소</h2><p class="sub" id="stn-sub"></p></div>
+    <div class="card">
+      <div class="tlrow" style="margin-bottom:10px"><label for="stn-sel" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">지하철·도시철도역<select id="stn-sel"></select></label><span id="stn-lines"></span></div>
+      <div class="kpis" id="stn-kpis"></div>
+    </div>
+    <div class="card"><button class="btn csv" data-csv="stn-table" data-name="역세권_업종별">CSV</button><h3 style="margin-bottom:10px" id="stn-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="stn-table"></table></div>
+      <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 역 위치에서 잰 직선거리입니다. 역 위치와 노선: OpenStreetMap. 역의 시·군·구는 반경 1km 안 숙소 주소로 정했습니다.</p></div>
   </section>
 
   <section data-tab="compare" id="cmp-sec">
