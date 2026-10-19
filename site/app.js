@@ -77,6 +77,9 @@
   $('f-dong').onchange = e => setDong(+e.target.value);
   $('f-ri').onchange = e => setRi(+e.target.value);
   $('f-status').onchange = e => { state.status = +e.target.value; update(false); };
+  // 휴대폰에서 접어 둔 필터(읍·면·동, 리, 영업 상태) 중 고른 것이 있으면 버튼에 개수 표시
+  const syncMore = () => { const n = (state.dong >= 0) + (state.ri >= 0) + (state.status !== 0); $('f-more').textContent = `상세 필터${n ? ` (${n})` : ''} ${$('f-more').getAttribute('aria-expanded') === 'true' ? '▴' : '▾'}`; };
+  $('f-more').onclick = () => { const open = document.querySelector('.controls').classList.toggle('more'); $('f-more').setAttribute('aria-expanded', String(open)); syncMore(); };
   fillBelow(1);
 
   function regionName() {
@@ -525,6 +528,7 @@
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
     renderStations();
+    syncMore();
     renderFest();
     renderPark();
     writeHash();

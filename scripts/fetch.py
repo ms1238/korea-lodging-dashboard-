@@ -246,7 +246,7 @@ def main():
     for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
-        if only_missing and have:
+        if only_missing and (have or ep == "geocode"):  # geocoding takes long; the daily run does it
             continue
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
@@ -562,15 +562,22 @@ def fetch_kto_index(key):
                         used[svc] += 1
                         todo.append((ym, op, param, ix, area))
     fields = ("tarSjrnDsIx", "tarExpDsIx", "touDivIx", "expDivIx", "intlDivIx")
+    spent = set()  # services that answered "daily request limit exceeded": the rest of their requests wait for tomorrow
 
     def one(t):
         ym, op, param, ix, area = t
+        if op.split("/")[0] in spent:
+            return None
         params = {"serviceKey": key, "pageNo": 1, "numOfRows": 100, "MobileOS": "ETC", "MobileApp": "korea-lodging-dashboard",
                   "_type": "json", "baseYm": ym, "areaCd": area, param: ix}
         last = None
         for attempt in range(3):
             try:
                 d = requests.get("https://apis.data.go.kr/B551011/" + op, params=params, timeout=60).json()
+                if "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in str(d):
+                    spent.add(op.split("/")[0])
+                    print(f"  kto_index: {op.split('/')[0]} daily limit reached, stopping it for this run", flush=True)
+                    return None
                 if d.get("response", {}).get("header", {}).get("resultCode") != "0000":
                     raise RuntimeError(str(d)[:200])
                 items = items_of(d["response"]["body"])

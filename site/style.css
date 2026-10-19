@@ -100,7 +100,21 @@ th:first-child,td:first-child{text-align:left}
 .unionsw input{accent-color:var(--accent);width:15px;height:15px;margin:0}
 /* tabs */
 .tabbar{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;flex-basis:calc(100% + 32px);border-top:1px solid var(--line);margin:2px -16px -12px;padding:0 16px}
-.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.tabbar{min-width:0}
+#f-more{display:none}
+/* 휴대폰: 탭은 옆으로 밀어 넘기고(오른쪽 끝을 흐리게 해 더 있다는 표시), 광역·기초만 두고 나머지 필터는 '상세 필터'로 접음 */
+@media (max-width:520px){
+  .tabs{mask-image:linear-gradient(90deg,#000 85%,transparent);-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent)}
+  .tabs button{padding:10px 11px}
+  .controls{gap:10px}
+  .controls > label[for=f-sido],.controls > label[for=f-sgg]{flex:1 1 140px;min-width:0}
+  .controls > label[for=f-sido] select,.controls > label[for=f-sgg] select{min-width:0;width:100%}
+  .controls:not(.more) > label[for=f-dong],.controls:not(.more) > label[for=f-ri],.controls:not(.more) > label[for=f-status]{display:none}
+  #f-more{display:inline-block;margin:0}
+  .controls > label,#share-link{white-space:nowrap}
+  .cmpbar{flex-basis:auto}
+}
 .tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);font:inherit;font-size:14px;font-weight:500;padding:10px 14px;cursor:pointer;white-space:nowrap}
 .tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent);font-weight:700}
 .tabs button:hover{color:var(--fg)}
