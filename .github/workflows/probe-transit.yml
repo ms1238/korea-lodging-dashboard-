@@ -15,30 +15,29 @@ jobs:
           KEY: ${{ secrets.DATA_GO_KR_KEY }}
         shell: python
         run: |
-          import os, requests
-          K = os.environ["KEY"]
-          A = "https://apis.data.go.kr/"
-          calls = [
-              ("1613000/BusStop/getBusStop", {"opr_ymd": "20250801"}),
-              ("1613000/BusStop/getBusStop", {}),
-              ("1613000/PublicTransportationPassengerCount/getDailyPublicTransportationPassengerCount", {}),
-              ("1613000/PublicTransportationPassengerCount/getMonthlyPublicTransportationPassengerCount", {}),
-              ("B551177/AviationStatsByCountry/getTotalNumberOfFlight", {}),
-              ("B551177/AviationStatsByCountry/getTotalNumberOfPassenger", {}),
-          ]
-          for path, extra in calls:
-              for fmt in ({"dataType": "JSON", "type": "json", "_type": "json", "returnType": "json"},):
-                  p = {"serviceKey": K, "pageNo": 1, "numOfRows": 3, **fmt, **extra}
-                  try:
-                      r = requests.get(A + path, params=p, timeout=90)
-                      print(f"== {path} {extra} [{r.status_code}]\n{r.text[:2500]}\n", flush=True)
-                  except Exception as e:
-                      print(f"== {path} {extra} ERROR {type(e).__name__}", flush=True)
-          # portal specs (swagger) for the datasets found so far
-          for cid in ("15142032", "15142080", "15160910"):
-              for u in (f"https://www.data.go.kr/catalog/{cid}/openapi.json",):
-                  try:
-                      r = requests.get(u, timeout=60)
-                      print(f"== SPEC {cid} [{r.status_code}]\n{r.text[:6000]}\n", flush=True)
-                  except Exception as e:
-                      print(f"== SPEC {cid} ERROR {type(e).__name__}", flush=True)
+          import os, re, requests
+          H = {"User-Agent": "Mozilla/5.0"}
+          def show(label, u, n=8000, **kw):
+              try:
+                  r = requests.get(u, timeout=90, headers=H, **kw)
+                  print(f"== {label} [{r.status_code}]\n{r.text[:n]}\n", flush=True)
+                  return r.text
+              except Exception as e:
+                  print(f"== {label} ERROR {type(e).__name__}", flush=True)
+                  return ""
+          # dataset ids by keyword (portal search page), then the swagger spec embedded in each openapi.do page
+          ids = {"15142032": "BusStop", "15142080": "PassengerCount"}
+          for kw in ("AviationStatsByCountry", "인천국제공항공사 국가별", "한국철도공사 발권", "issueStatistics"):
+              t = show(f"SEARCH {kw}", "https://www.data.go.kr/tcs/dss/selectDataSetList.do", 0, params={"keyword": kw, "dType": "API"})
+              found = list(dict.fromkeys(re.findall(r"/data/(\d{8})/openapi\.do", t)))[:4]
+              print(f"   ids for {kw}: {found}", flush=True)
+              for x in found:
+                  ids.setdefault(x, kw)
+          for cid, kw in ids.items():
+              t = show(f"PAGE {cid} ({kw})", f"https://www.data.go.kr/data/{cid}/openapi.do", 0)
+              title = re.search(r"<title>(.*?)</title>", t, re.S)
+              print("   title:", title.group(1).strip() if title else None)
+              m = re.search(r"swaggerJson\s*=\s*`(.*?)`", t, re.S) or re.search(r"swaggerJson\s*=\s*'(.*?)';", t, re.S)
+              print("   swagger:", (m.group(1)[:7000] if m else "not found; context: " + " | ".join(re.findall(r".{0,80}swagger.{0,120}", t)[:5])), flush=True)
+          show("ODCLOUD swagger", "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1", 8000)
+          show("ODCLOUD api-docs", "https://infuser.odcloud.kr/api/stages/15002610/api-docs?1", 8000)
