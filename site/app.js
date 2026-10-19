@@ -200,16 +200,40 @@
       const firstSymbol = (map.getStyle().layers.find(l => l.type === 'symbol') || {}).id;
       map.addLayer({ id: 'hillshade', type: 'hillshade', source: 'dem', paint: {
         'hillshade-exaggeration': .5, 'hillshade-shadow-color': '#46525c', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#5b6b5a' } }, firstSymbol);
+      // 국립공원 경계: OpenStreetMap(build.py → park_areas.json). 금정산은 지정 도면을 따라 그린 근사 경계
+      const font = (map.getStyle().layers.find(l => l.layout && l.layout['text-font']) || {}).layout?.['text-font'] || ['Noto Sans Regular'];
+      map.addSource('park-areas', { type: 'geojson', data: empty });
+      getJSON('data/park_areas.json', null).then(g => { if (g) map.getSource('park-areas').setData(g); });
+      map.addLayer({ id: 'park-fill', type: 'fill', source: 'park-areas', paint: { 'fill-color': '#2e7d32', 'fill-opacity': .16 } }, firstSymbol);
+      map.addLayer({ id: 'park-line', type: 'line', source: 'park-areas', paint: { 'line-color': '#2e7d32', 'line-opacity': .7,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, 1.8] } }, firstSymbol);
+      map.addLayer({ id: 'park-label', type: 'symbol', source: 'park-areas', minzoom: 8, layout: { 'text-field': ['get', 'park'], 'text-font': font, 'text-size': 12 },
+        paint: { 'text-color': '#1b5e20', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
+      // 교통시설 아이콘: 네모(철도역 = 보라, 공항 = 남색)
+      const square = (fill, px) => {
+        const c = document.createElement('canvas'); c.width = c.height = px; const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, px, px); g.fillStyle = fill; g.fillRect(2, 2, px - 4, px - 4);
+        return g.getImageData(0, 0, px, px);
+      };
+      map.addImage('sq-rail', square('#8e44ad', 20), { pixelRatio: 2 });
+      map.addImage('sq-air', square('#1f3a93', 28), { pixelRatio: 2 });
+      const nm = ['coalesce', ['get', 'name:ko'], ['get', 'name']];
       // 교통·자연: 배경지도 벡터 타일(OpenMapTiles 스키마)의 공항·철도, TourAPI의 국립공원
       const vec = Object.entries(map.getStyle().sources).find(([, v]) => v.type === 'vector')?.[0];
       if (vec) {
         map.addLayer({ id: 'rail-line', type: 'line', source: vec, 'source-layer': 'transportation',
           filter: ['all', ['match', ['get', 'class'], ['rail', 'transit'], true, false], ['!', ['has', 'service']]],
           paint: { 'line-color': '#5d6d7e', 'line-opacity': .55, 'line-width': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, 2] } }, firstSymbol);
-        map.addLayer({ id: 'rail-st', type: 'circle', source: vec, 'source-layer': 'poi', minzoom: 9, filter: ['==', ['get', 'class'], 'railway'],
-          paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.5, 14, 5], 'circle-color': '#8e44ad', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 } });
-        map.addLayer({ id: 'airports', type: 'circle', source: vec, 'source-layer': 'aerodrome_label', filter: ['has', 'iata'],
-          paint: { 'circle-radius': 6, 'circle-color': '#1f3a93', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+        // 역 이름은 11레벨부터(그 아래는 네모만). 출입구는 제외
+        map.addLayer({ id: 'rail-st', type: 'symbol', source: vec, 'source-layer': 'poi', minzoom: 9,
+          filter: ['all', ['==', ['get', 'class'], 'railway'], ['!', ['match', ['get', 'subclass'], ['subway_entrance', 'train_station_entrance'], true, false]]],
+          layout: { 'icon-image': 'sq-rail', 'icon-size': ['interpolate', ['linear'], ['zoom'], 9, .8, 14, 1.2], 'icon-allow-overlap': true,
+            'text-field': ['step', ['zoom'], '', 11, nm], 'text-font': font, 'text-size': 11, 'text-offset': [0, .9], 'text-anchor': 'top', 'text-optional': true },
+          paint: { 'text-color': '#5b2c6f', 'text-halo-color': '#fff', 'text-halo-width': 1.4 } });
+        map.addLayer({ id: 'airports', type: 'symbol', source: vec, 'source-layer': 'aerodrome_label', filter: ['has', 'iata'],
+          layout: { 'icon-image': 'sq-air', 'icon-allow-overlap': true, 'text-field': nm, 'text-font': font, 'text-size': 12,
+            'text-offset': [0, 1], 'text-anchor': 'top', 'text-optional': true },
+          paint: { 'text-color': '#1f3a93', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
       }
       // 지하철·경전철: OpenStreetMap 노선 관계의 공식 색(build.py → subway.json). 있으면 배경지도의 도시철도 선은 숨김
       map.addSource('subway', { type: 'geojson', data: empty });
@@ -254,12 +278,17 @@
       map.on('click', 'parks', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.park)}</b><br>${esc(p.title)}<br><small>출처: 한국관광공사 TourAPI</small>`); });
       map.on('click', 'airports', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name)}</b>${p.iata ? ` (${esc(p.iata)})` : ''}<br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'subway', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
+      map.on('click', 'park-fill', e => {
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'areas', 'parks', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
+        const p = e.features[0].properties;
+        pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
+      });
       map.on('click', 'rail-st', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['parks']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']]]) {
+      for (const [ck, ls] of [['ck-park', ['parks', 'park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
-      for (const l of ['pts', 'areas', 'tour', 'parks', 'airports', 'rail-st', 'subway']) {
+      for (const l of ['pts', 'areas', 'tour', 'parks', 'airports', 'rail-st', 'subway', 'park-fill']) {
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
@@ -649,6 +678,8 @@
   };
 
   /* ---------- 방한 외래관광객 (전국, 월별·국적별) ---------- */
+  let arrPer = 'm';
+  $('arr-per').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { arrPer = x.dataset.v; renderArrivals(); } });
   function renderArrivals() {
     $('arr-sec').hidden = !arrivals;
     if (!arrivals) return;
@@ -663,9 +694,20 @@
       [man(total[n - 1]), `${ym(months[n - 1])} (전년 동월 ${yoy(total[n - 1], total[n - 13])})`],
       [y19 ? (l12 / y19 * 100).toFixed(0) + '%' : '-', '2019년 연간 대비 (최근 12개월)'],
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
-    $('arr-sub').textContent = `${ym(months[0])}~${ym(months[n - 1])} 월별 입국자 수입니다. 지역별 숙소 수요의 배경으로 보세요.`;
-    lineChart($('arr'), $('arr-tip'), months.map(k => `${k.slice(2, 4)}.${k.slice(4)}`), [{ name: '방한 외래관광객', color: 'var(--c0)', vals: total }],
-      { div: 1e4, unit: v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(v) + '명' });
+    $('arr-sub').textContent = `${ym(months[0])}~${ym(months[n - 1])} 입국자 수입니다. 지역별 숙소 수요의 배경으로 보세요.`;
+    // 분기·연도는 월을 합산. 마지막 기간에 달이 덜 찼으면 진행 중(점선·*)으로 표시
+    const keyOf = k => arrPer === 'y' ? k.slice(0, 4) : arrPer === 'q' ? `${k.slice(2, 4)}.${Math.ceil(+k.slice(4) / 3)}Q` : `${k.slice(2, 4)}.${k.slice(4)}`;
+    const labels = [], vals = [], cnt = [];
+    months.forEach((k, i) => {
+      const key = keyOf(k);
+      if (labels[labels.length - 1] !== key) { labels.push(key); vals.push(0); cnt.push(0); }
+      vals[vals.length - 1] += total[i]; cnt[cnt.length - 1]++;
+    });
+    const full = { m: 1, q: 3, y: 12 }[arrPer];
+    document.querySelectorAll('#arr-per button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === arrPer)));
+    $('arr-title').textContent = { m: '월별', q: '분기별', y: '연도별' }[arrPer] + ' 방한 외래관광객' + (cnt[cnt.length - 1] < full ? ' (* 진행 중)' : '');
+    lineChart($('arr'), $('arr-tip'), labels, [{ name: '방한 외래관광객', color: 'var(--c0)', vals }],
+      { div: 1e4, partial: cnt.map(c => c < full), unit: v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(v) + '명' });
     const rows = top.map(t => ({ name: t.name, v: sum(t.n, n - 12, n), p: sum(t.n, n - 24, n - 12) }));
     $('arr-top-title').textContent = `국적별 상위 10 · 최근 12개월 (괄호는 직전 12개월 대비)`;
     $('arr-top').innerHTML = rowsHTML(rows.map(r => ({ name: r.name, value: r.v, label: man(r.v), extra: `${pc1(r.v / l12)} · ${yoy(r.v, r.p)}` })), {});

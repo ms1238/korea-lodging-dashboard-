@@ -18,6 +18,8 @@ Steps
 11. National parks: TourAPI attractions named "…국립공원" (plus 한라산·금정산, listed without the word) for the map (parks.json).
 12. cubeq.json / closeq.json: the last six years by quarter (year*10 + quarter) for the quarterly charts.
 13. subway.json: subway / light-rail lines (OpenStreetMap) as GeoJSON with each line's colour.
+14. park_areas.json: national-park boundaries (OpenStreetMap) as simplified polygons with their map area;
+    금정산 falls back to the boundary traced from the designation map (scripts/static/geumjeongsan.json).
 """
 import difflib
 import glob
@@ -356,6 +358,85 @@ def write_subway():
         json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
 
 
+def _rings(ways):
+    """Join member ways end to end into closed rings (OSM multipolygons split their outline into many ways)."""
+    pending, rings = [list(w) for w in ways if len(w) > 1], []
+    while pending:
+        ring = pending.pop()
+        while ring[0] != ring[-1]:
+            for i, w in enumerate(pending):
+                if w[0] == ring[-1]:
+                    ring += w[1:]
+                elif w[-1] == ring[-1]:
+                    ring += w[::-1][1:]
+                elif w[-1] == ring[0]:
+                    ring = w[:-1] + ring
+                elif w[0] == ring[0]:
+                    ring = w[::-1][:-1] + ring
+                else:
+                    continue
+                pending.pop(i)
+                break
+            else:
+                break  # open ring: leave it out
+        if ring[0] == ring[-1] and len(ring) >= 4:
+            rings.append(ring)
+    return rings
+
+
+def _simplify(pts, tol=0.0003):
+    """Douglas-Peucker in degrees (~30 m)."""
+    if len(pts) < 5:
+        return pts
+    keep, stack = [0, len(pts) - 1], [(0, len(pts) - 1)]
+    while stack:
+        a, b = stack.pop()
+        (x1, y1), (x2, y2) = pts[a], pts[b]
+        dx, dy, best, idx = x2 - x1, y2 - y1, 0, None
+        norm = math.hypot(dx, dy) or 1e-12
+        for i in range(a + 1, b):
+            d = abs(dy * (pts[i][0] - x1) - dx * (pts[i][1] - y1)) / norm
+            if d > best:
+                best, idx = d, i
+        if idx is not None and best > tol:
+            keep.append(idx)
+            stack += [(a, idx), (idx, b)]
+    return [pts[i] for i in sorted(set(keep))]
+
+
+def _km2(ring):
+    lat0 = sum(p[1] for p in ring) / len(ring)
+    kx, ky = 111.32 * math.cos(math.radians(lat0)), 110.57
+    return abs(sum(ring[i][0] * kx * ring[i + 1][1] * ky - ring[i + 1][0] * kx * ring[i][1] * ky for i in range(len(ring) - 1))) / 2
+
+
+def write_park_areas():
+    """One polygon set per park; when several OSM objects describe the same park, the largest is kept."""
+    best = {}
+    path = os.path.join(RAW, "parks_osm.json")
+    for el in json.load(open(path, encoding="utf-8")) if os.path.exists(path) else []:
+        name = el["name"].replace(" ", "")
+        if "국립공원" not in name:
+            continue
+        park = re.sub(r"국립공원.*", "국립공원", name)
+        outer = _rings([w for role, w in el["ways"] if role != "inner"])
+        inner = _rings([w for role, w in el["ways"] if role == "inner"])
+        if not outer:
+            continue
+        area = sum(_km2(r) for r in outer) - sum(_km2(r) for r in inner)
+        polys = [[_simplify(r)] for r in outer]  # holes are dropped for drawing; the area above subtracts them
+        if park not in best or area > best[park][0]:
+            best[park] = (area, polys, "osm")
+    if not any("금정산" in k for k in best):
+        f = json.load(open(os.path.join(ROOT, "scripts", "static", "geumjeongsan.json"), encoding="utf-8"))
+        polys = f["geometry"]["coordinates"]
+        best["금정산국립공원"] = (sum(_km2(p[0]) for p in polys), polys, "traced")
+    feats = [{"type": "Feature", "properties": {"park": k, "km2": round(a, 1), "src": src},
+              "geometry": {"type": "MultiPolygon", "coordinates": polys}} for k, (a, polys, src) in sorted(best.items())]
+    with open(os.path.join(OUT, "park_areas.json"), "w", encoding="utf-8") as f:
+        json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def write_arrivals():
     path = os.path.join(RAW, "arrivals.jsonl")
     if not os.path.exists(path):
@@ -547,6 +628,7 @@ def main():
     write_arrivals()
     write_parks()
     write_subway()
+    write_park_areas()
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))

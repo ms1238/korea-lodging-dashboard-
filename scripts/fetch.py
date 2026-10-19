@@ -2,7 +2,8 @@
 plus tourist attractions from the Korea Tourism Organization TourAPI (KorService2) into raw/tour_<type>.jsonl,
 plus visitor counts from the KTO DataLabService (daily since 2018, summed per month) into raw/datalab_sido.jsonl / datalab_sgg.jsonl,
 plus monthly foreign arrivals by nationality (한국문화관광연구원 출입국관광통계, since 2018) into raw/arrivals.jsonl,
-plus subway / light-rail routes with their line colours from OpenStreetMap (Overpass API, no key) into raw/subway.json.
+plus subway / light-rail routes with their line colours from OpenStreetMap (Overpass API, no key) into raw/subway.json,
+plus national-park boundaries from OpenStreetMap into raw/parks_osm.json.
 
 `--only-missing` fetches only sources that have no file in raw/ yet (used on code pushes, which reuse cached data).
 
@@ -43,7 +44,12 @@ OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private
 SUBWAY_QUERY = """[out:json][timeout:240];
 relation["route"~"^(subway|light_rail)$"](33.0,124.5,38.7,131.0);
 out geom;"""
-OPTIONAL = {"subway"}  # the page works without these, so a failed first fetch does not stop the deploy
+PARKS_QUERY = """[out:json][timeout:240];
+(relation["boundary"="national_park"](33.0,124.5,38.7,131.0);
+ relation["boundary"="protected_area"]["protect_class"="2"](33.0,124.5,38.7,131.0);
+ way["boundary"="national_park"](33.0,124.5,38.7,131.0););
+out geom;"""
+OPTIONAL = {"subway", "parks_osm"}  # the page works without these, so a failed first fetch does not stop the deploy
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -114,13 +120,13 @@ def fetch_permits(key, ep):
     write_rows(ep, rows)
 
 
-def fetch_subway(_key):
-    """Route relations with member way geometry; kept small: name/ref/colour/network and rounded coordinates."""
+def overpass(query):
+    """Run an Overpass query on the first mirror that answers; returns the elements."""
     rels = None
     for url in OVERPASS:
         for attempt in range(2):
             try:
-                r = requests.post(url, data={"data": SUBWAY_QUERY}, timeout=300,
+                r = requests.post(url, data={"data": query}, timeout=300,
                                   headers={"User-Agent": "korea-lodging-dashboard (github.com/ms1238/korea-lodging-dashboard-)"})
                 if r.status_code != 200:
                     raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]!r}")
@@ -133,6 +139,37 @@ def fetch_subway(_key):
             break
     if not rels:
         raise RuntimeError("all Overpass mirrors failed")
+    return rels
+
+
+def save_json(name, data):
+    path = os.path.join(RAW_DIR, name)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    os.replace(path + ".tmp", path)
+
+
+def fetch_parks_osm(_key):
+    """National-park boundaries: relations (outer/inner member ways) and closed ways, with name tags."""
+    out = []
+    for el in overpass(PARKS_QUERY):
+        tags = el.get("tags", {})
+        name = tags.get("name:ko") or tags.get("name") or ""
+        if el["type"] == "way" and el.get("geometry"):
+            ways = [["outer", [[round(p["lon"], 5), round(p["lat"], 5)] for p in el["geometry"]]]]
+        else:
+            ways = [[m.get("role") or "outer", [[round(p["lon"], 5), round(p["lat"], 5)] for p in m["geometry"]]]
+                    for m in el.get("members", []) if m.get("type") == "way" and m.get("geometry")]
+        out.append({"id": f"{el['type']}/{el['id']}", "name": name, "ways": ways})
+    print(f"parks_osm: {len(out)} boundaries ({sum('국립공원' in p['name'] for p in out)} named …국립공원)", flush=True)
+    if not out:
+        raise RuntimeError("no boundaries returned")
+    save_json("parks_osm.json", out)
+
+
+def fetch_subway(_key):
+    """Route relations with member way geometry; kept small: name/ref/colour/network and rounded coordinates."""
+    rels = overpass(SUBWAY_QUERY)
     out = [{"id": rel["id"], **{k: rel.get("tags", {}).get(k, "") for k in ("route", "name", "ref", "colour", "network")},
             "ways": [[m["ref"], [[round(p["lon"], 5), round(p["lat"], 5)] for p in m["geometry"]]]
                      for m in rel.get("members", []) if m.get("type") == "way" and m.get("geometry")]}
@@ -140,10 +177,7 @@ def fetch_subway(_key):
     print(f"subway: {len(out)} routes, {sum(len(r['ways']) for r in out)} ways", flush=True)
     if not out:
         raise RuntimeError("no routes returned")
-    path = os.path.join(RAW_DIR, "subway.json")
-    with open(path + ".tmp", "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
-    os.replace(path + ".tmp", path)
+    save_json("subway.json", out)
 
 
 def main():
@@ -156,13 +190,14 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway"]:
-        files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else ["subway.json"] if ep == "subway" else [f"{ep}.jsonl"]
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm"]:
+        files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in OPTIONAL else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
             continue
         try:
-            {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway}.get(ep, lambda k: fetch_permits(k, ep))(key)
+            {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
+             "parks_osm": fetch_parks_osm}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
