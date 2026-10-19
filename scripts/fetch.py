@@ -40,7 +40,8 @@ TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2/areaBasedList2"
 TOUR_TYPES = {"12": "관광지", "14": "문화시설", "28": "레포츠"}  # TourAPI contentTypeId
 FESTIVALS = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"  # TourAPI 행사·축제
 CENTURY_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15132695/v1"  # 소상공인시장진흥공단 백년가게 (odcloud, one table per publication)
-KAKAO_ADDR = "https://dapi.kakao.com/v2/local/search/address.json"  # address → coordinates (needs KAKAO_REST_KEY)
+VWORLD_GEOCODER = "https://api.vworld.kr/req/address"  # 브이월드 지오코더: address → coordinates (needs VWORLD_KEY)
+GEOCODE_BUDGET = 30000  # requests per run (the free key allows about 40,000 a day); the rest waits for the next run
 FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
@@ -394,32 +395,43 @@ def geo_query(addr):
 
 
 def fetch_geocode(_key):
-    """Coordinates of the restaurant addresses via the Kakao address search, cached in raw/geocode.json
-    ({query: [lat, lon] or null}) so each address is looked up once."""
-    kakao = os.environ.get("KAKAO_REST_KEY")
-    if not kakao:
-        raise RuntimeError("KAKAO_REST_KEY is not set")
+    """Coordinates of the restaurant addresses via the 브이월드 geocoder (road address first, then 지번), cached in
+    raw/geocode.json ({query: [lat, lon] or null}) so each address is looked up once."""
+    vkey = os.environ.get("VWORLD_KEY")
+    if not vkey:
+        raise RuntimeError("VWORLD_KEY is not set")
     path = os.path.join(RAW_DIR, "geocode.json")
     cache = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
-    todo = sorted({geo_query(a) for a in restaurant_addrs() if a.strip()} - set(cache))
+    todo = sorted({geo_query(a) for a in restaurant_addrs() if a.strip()} - set(cache))[:GEOCODE_BUDGET // 2]
 
     def one(q):
-        for attempt in range(4):
-            try:
-                r = requests.get(KAKAO_ADDR, params={"query": q}, headers={"Authorization": f"KakaoAK {kakao}"}, timeout=30)
-                if r.status_code in (401, 403):
-                    raise RuntimeError(f"Kakao refused the key: {r.text[:200]}")
-                docs = r.json().get("documents") or []
-                return q, [round(float(docs[0]["y"]), 5), round(float(docs[0]["x"]), 5)] if docs else None
-            except (requests.RequestException, ValueError):
-                time.sleep(2 + attempt * 2)
-        return q, "retry"
-    with ThreadPoolExecutor(WORKERS) as pool:
-        got = list(pool.map(one, todo))
-    cache.update({q: v for q, v in got if v != "retry"})
-    print(f"geocode: {len(todo)} new addresses, {sum(1 for _, v in got if v and v != 'retry')} found, "
-          f"{sum(1 for _, v in got if v is None)} not found, {sum(1 for _, v in got if v == 'retry')} failed (next run)", flush=True)
-    save_json("geocode.json", cache)
+        for kind in ("road", "parcel"):
+            for attempt in range(4):
+                try:
+                    res = requests.get(VWORLD_GEOCODER, params={"service": "address", "request": "getcoord", "version": "2.0", "crs": "epsg:4326",
+                                                               "address": q, "refine": "true", "simple": "false", "format": "json", "type": kind, "key": vkey},
+                                       timeout=30).json()["response"]
+                    break
+                except (requests.RequestException, ValueError, KeyError):
+                    time.sleep(2 + attempt * 2)
+            else:
+                return q, "retry"
+            if res.get("status") == "OK":
+                pt = res["result"]["point"]
+                return q, [round(float(pt["y"]), 5), round(float(pt["x"]), 5)]
+            if res.get("status") == "ERROR":  # a bad key or the daily limit: stop, the cache keeps what was found
+                raise RuntimeError(f"브이월드: {json.dumps(res.get('error'), ensure_ascii=False)[:200]}")
+        return q, None
+    got = []
+    try:
+        with ThreadPoolExecutor(WORKERS) as pool:
+            for item in pool.map(one, todo):
+                got.append(item)
+    finally:  # save what was found even when the key stops working midway
+        cache.update({q: v for q, v in got if v != "retry"})
+        print(f"geocode: {len(got)} of {len(todo)} new addresses, {sum(1 for _, v in got if v and v != 'retry')} found, "
+              f"{sum(1 for _, v in got if v is None)} not found, {sum(1 for _, v in got if v == 'retry')} failed (next run)", flush=True)
+        save_json("geocode.json", cache)
 
 
 def fetch_icn(key):

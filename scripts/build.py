@@ -29,7 +29,7 @@ Steps
     0.5 / 1 / 3 / 5 km, as for stations.
 20. park_lodging.json: per national park, lodgings inside it or within 1 / 3 / 5 km of its boundary (every status,
     exact positions) with permit and closing month, for the stock over time.
-21. food.json: 모범음식점 (designated, open) and 백년가게 placed by the Kakao address search (raw/geocode.json).
+21. food.json: 모범음식점 (designated, open) and 백년가게 placed by the 브이월드 geocoder (raw/geocode.json).
 """
 import calendar
 import difflib
