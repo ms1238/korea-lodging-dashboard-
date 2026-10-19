@@ -360,30 +360,35 @@ def write_subway():
         json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def _rings(ways):
-    """Join member ways end to end into closed rings (OSM multipolygons split their outline into many ways)."""
-    pending, rings = [list(w) for w in ways if len(w) > 1], []
+def _rings(ways, tol=2e-4, gap=0.02):
+    """Join member ways end to end into closed rings (OSM multipolygons split their outline into many ways).
+    Endpoints within tol degrees (~20 m) count as the same node; a chain left open with its ends less than
+    gap degrees (~2 km) apart, e.g. where a coastal park's outline is cut, is closed. Returns (rings, dropped)."""
+    near = lambda p, q: abs(p[0] - q[0]) <= tol and abs(p[1] - q[1]) <= tol
+    pending, rings, dropped = [list(w) for w in ways if len(w) > 1], [], 0
     while pending:
         ring = pending.pop()
-        while ring[0] != ring[-1]:
+        while not near(ring[0], ring[-1]) or len(ring) < 4:
             for i, w in enumerate(pending):
-                if w[0] == ring[-1]:
+                if near(w[0], ring[-1]):
                     ring += w[1:]
-                elif w[-1] == ring[-1]:
+                elif near(w[-1], ring[-1]):
                     ring += w[::-1][1:]
-                elif w[-1] == ring[0]:
+                elif near(w[-1], ring[0]):
                     ring = w[:-1] + ring
-                elif w[0] == ring[0]:
+                elif near(w[0], ring[0]):
                     ring = w[::-1][:-1] + ring
                 else:
                     continue
                 pending.pop(i)
                 break
             else:
-                break  # open ring: leave it out
-        if ring[0] == ring[-1] and len(ring) >= 4:
-            rings.append(ring)
-    return rings
+                break
+        if len(ring) >= 4 and (near(ring[0], ring[-1]) or math.dist(ring[0], ring[-1]) < gap):
+            rings.append(ring if ring[0] == ring[-1] else ring + [ring[0]])
+        else:
+            dropped += 1
+    return rings, dropped
 
 
 def _simplify(pts, tol=0.0003):
@@ -421,8 +426,9 @@ def write_park_areas():
         if "국립공원" not in name:
             continue
         park = re.sub(r"국립공원.*", "국립공원", name)
-        outer = _rings([w for role, w in el["ways"] if role != "inner"])
-        inner = _rings([w for role, w in el["ways"] if role == "inner"])
+        outer, lost = _rings([w for role, w in el["ways"] if role != "inner"])
+        inner, _ = _rings([w for role, w in el["ways"] if role == "inner"])
+        print(f"  park_areas {el['id']} {park}: {len(el['ways'])} ways -> {len(outer)} rings, {lost} open chains dropped", flush=True)
         if not outer:
             continue
         area = sum(_km2(r) for r in outer) - sum(_km2(r) for r in inner)
@@ -433,6 +439,7 @@ def write_park_areas():
         f = json.load(open(os.path.join(ROOT, "scripts", "static", "geumjeongsan.json"), encoding="utf-8"))
         polys = f["geometry"]["coordinates"]
         best["금정산국립공원"] = (sum(_km2(p[0]) for p in polys), polys, "traced")
+    print(f"park_areas: {len(best)} parks: " + ", ".join(f"{k} {a:.0f}㎢" for k, (a, _, _) in sorted(best.items())), flush=True)
     feats = [{"type": "Feature", "properties": {"park": k, "km2": round(a, 1), "src": src},
               "geometry": {"type": "MultiPolygon", "coordinates": polys}} for k, (a, polys, src) in sorted(best.items())]
     with open(os.path.join(OUT, "park_areas.json"), "w", encoding="utf-8") as f:
