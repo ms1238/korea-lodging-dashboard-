@@ -149,3 +149,7 @@ th:first-child,td:first-child{text-align:left}
 .festinfo img{width:120px;height:80px;object-fit:cover;border-radius:6px;flex:none}
 #fest-list tbody tr{cursor:pointer}
 #fest-list tbody tr:hover,#fest-list tbody tr[aria-selected=true]{background:color-mix(in srgb,var(--fg) 7%,transparent)}
+.mix{display:grid;grid-template-columns:minmax(80px,max-content) minmax(0,1fr) max-content;gap:6px 10px;align-items:center;font-size:13px}
+.mix .bar{display:flex;height:22px;border-radius:3px;overflow:hidden;background:color-mix(in srgb,var(--fg) 6%,transparent)}
+.mix .bar i{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-style:normal;overflow:hidden;white-space:nowrap}
+.mix .n{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}

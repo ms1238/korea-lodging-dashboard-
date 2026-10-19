@@ -732,7 +732,30 @@
     $('cp-legend').innerHTML = legend;
     lineChart($('cp'), $('cp-tip'), years.map(P.label), R.map((r, i) => ({ name: regLabel(r), color: cols[i], vals: years.map(y => stats[i].py[y] || 0) })),
       { partial: years.map(P.partial), div: 1, unit: fmt, tip: v => fmt(v) + '곳' });
+    renderMix();
   }
+  // 지역별 숙박업 구성: 지역마다 한 줄, 같은 축의 100% 누적 막대(업종 대분류 또는 영업·휴업·폐업). 비교 목록이 비면 고른 광역의 시군구(전국이면 광역)별
+  let mixMode = 'cat';
+  function renderMix() {
+    const auto = !state.cmp.length;
+    const R = !auto ? state.cmp : state.sido < 0 ? S.map((_, si) => ({ si, gi: -1 }))
+      : (gisOf(curReg()) || S[state.sido].sgg.map((_, gi) => gi)).map(gi => ({ si: state.sido, gi }));
+    const st = mixMode === 'st', parts = st ? ST.map((n, i) => [n, ['var(--ok)', 'var(--pause)', 'var(--closed)'][i]]) : CATS.map((n, i) => [n, `var(--c${i})`]);
+    const rows = R.map(r => { const v = parts.map(() => 0);
+      for (const c of cube) if (state.types.has(c[2]) && inReg(r, c[0], c[1]) && (st || state.status < 0 || c[3] === state.status)) v[st ? c[3] : catOf[c[2]]] += c[5];
+      return { r, v, n: v.reduce((a, b) => a + b, 0) }; });
+    if (auto) rows.sort((a, b) => b.n - a.n);
+    document.querySelectorAll('#mix-mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === mixMode)));
+    const used = parts.map((_, k) => rows.some(x => x.v[k]));
+    $('mix-legend').innerHTML = parts.map(([n, c], k) => used[k] ? `<span><i style="background:${c}"></i>${esc(n)}</span>` : '').join('');
+    const name = x => auto && state.sido >= 0 ? S[x.r.si].sgg[x.r.gi] : regLabel(x.r);
+    $('cmp-mix').innerHTML = rows.map(x => `<span>${esc(name(x))}</span><span class="bar">${x.v.map((v, k) => v ? `<i style="width:${v / x.n * 100}%;background:${parts[k][1]}" title="${esc(parts[k][0])} ${fmt(v)}곳 (${pct(v, x.n)})">${v / x.n >= .08 ? (v / x.n * 100).toFixed(0) + '%' : ''}</i>` : '').join('')}</span><span class="n">${fmt(x.n)}곳</span>`).join('');
+    $('mix-title').textContent = `${auto ? (state.sido < 0 ? '광역별' : `${regionName()} 시군구별`) : '비교 지역별'} 숙박업 ${st ? '영업 상태' : '업종 구성'}`;
+    $('mix-note').textContent = (st ? '선택 업종의 영업·휴업·폐업 시설 비율입니다(폐업에는 취소·말소 포함). ' : `선택 업종 중 ${state.status < 0 ? '모든 상태' : ST[state.status]} 시설의 업종 대분류 비율입니다. `)
+      + (auto ? '비교 목록에 지역을 담으면 그 지역들만 나란히 봅니다. ' : '') + '막대에 마우스를 올리면 시설 수가 나옵니다.';
+    csvSet('cmp-mix', ['지역', ...parts.map(p => p[0]), '합계'], rows.map(x => [name(x), ...x.v, x.n]));
+  }
+  $('mix-mode').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { mixMode = b.dataset.v; renderMix(); } });
   $('vt-per').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.vt.per = b.dataset.v; renderCompare(); } });
   $('vt-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { state.vt.kind = b.dataset.v; renderCompare(); } });
 
