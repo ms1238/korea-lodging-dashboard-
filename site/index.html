@@ -88,8 +88,21 @@
   </section>
 
   <section data-tab="now">
-    <div class="sechead"><h2 id="rank-title">지역별 시설 수</h2></div>
-    <div class="card"><button class="btn csv" data-csv="rank" data-name="지역별_시설수">CSV</button><div class="ranklist" id="rank"></div></div>
+    <div class="sechead"><h2 id="rank-title">지역별 시설 수</h2><p class="sub" id="rank-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="rank" data-name="지역별_시설수">CSV</button><div class="legend" id="rank-legend"></div><div class="ranklist" id="rank"></div><p class="note">지역을 누르면 그 지역으로 들어갑니다.</p></div>
+  </section>
+
+  <section data-tab="now" id="ay-sec">
+    <div class="sechead"><h2 id="ay-title">연도별 신규 인허가</h2><p class="sub" id="ay-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="ay-table" data-name="지역별_연도별_인허가">CSV</button>
+      <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="ay-mode" role="group" aria-label="표시 방식"><button data-v="n" aria-pressed="true">건수</button><button data-v="s" aria-pressed="false">그 해 비중</button></div></div>
+      <div class="tablewrap"><table class="heat" id="ay-table"></table></div>
+      <p class="note">영업 상태 필터가 함께 적용됩니다(기본: 영업 중인 시설만이라 폐업한 시설은 빠집니다).</p></div>
+  </section>
+
+  <section data-tab="now" id="at-sec">
+    <div class="sechead"><h2 id="at-title">지역과 업종 교차표</h2><p class="sub" id="at-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="at-table" data-name="지역별_업종별">CSV</button><div class="tablewrap"><table class="heat" id="at-table"></table></div></div>
   </section>
 
   <section data-tab="trend">

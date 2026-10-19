@@ -157,7 +157,7 @@
   }
   function agg() {
     const a = { total: 0, byType: T.map(() => 0), allType: T.map(() => 0), byYear: {}, byArea: {}, st: [0, 0, 0],
-      stType: T.map(() => [0, 0, 0]), stArea: {}, openY: {}, closeY: {} };
+      stType: T.map(() => [0, 0, 0]), stArea: {}, openY: {}, closeY: {}, areaType: {}, areaYear: {} };
     scanOpen((t, s, y, ch, w) => {
       const okS = state.status < 0 || s === state.status;
       if (okS) a.allType[t] += w;
@@ -167,7 +167,11 @@
       if (y) a.openY[y] = (a.openY[y] || 0) + w;
       if (!okS) return;
       a.total += w; a.byType[t] += w;
-      if (ch != null && ch >= 0) a.byArea[ch] = (a.byArea[ch] || 0) + w;
+      if (ch != null && ch >= 0) {
+        a.byArea[ch] = (a.byArea[ch] || 0) + w;
+        (a.areaType[ch] ||= T.map(() => 0))[t] += w;
+        if (y) { const ay = a.areaYear[ch] ||= {}; ay[y] = (ay[y] || 0) + w; }
+      }
       if (y) (a.byYear[y] ||= CATS.map(() => 0))[catOf[t]] += w;
     });
     scanClose((t, cy, ch, w) => { if (state.types.has(t)) a.closeY[cy] = (a.closeY[cy] || 0) + w; });
@@ -452,12 +456,23 @@
 
     drawYears(a.byP);
 
-    // ranking of child areas
+    // ranking of child areas: 막대는 업종 구성(상위 8개 업종 + 기타)
     const ranks = Object.entries(a.byArea).sort((x, y) => y[1] - x[1]);
+    const G = typeGroups(a, order), nm = k => names[k] ?? '(미상)', gN = (k, g) => g.ts.reduce((p, t) => p + ((a.areaType[k] || [])[t] || 0), 0);
     $('rank-title').textContent = level() >= 4 ? '하위 지역 없음' : `${regionName()} ${childLabel()}별 시설 수`;
-    $('rank').innerHTML = rowsHTML(ranks.map(([k, v]) => ({ k, name: names[k] ?? '(미상)', value: v, label: fmt(v), extra: pct(v, a.total) })), { button: true })
-      || '<p class="note">더 작은 지역 단위가 없습니다.</p>';
-    csvSet('rank', [childLabel() || '지역', '시설 수', '비중(%)'], ranks.map(([k, v]) => [names[k] ?? '(미상)', v, a.total ? (v / a.total * 100).toFixed(2) : '']));
+    const top3 = ranks.slice(0, 3), top3n = top3.reduce((p, r) => p + r[1], 0);
+    $('rank-sub').textContent = ranks.length > 3 ? `상위 3개 ${areaWord()}(${top3.map(r => nm(r[0])).join('·')})에 ${fmt(top3n)}곳, 전체의 ${pct(top3n, a.total)}가 모여 있습니다. 막대는 업종별 구성입니다.` : '';
+    $('rank-legend').innerHTML = ranks.length ? G.map(g => `<span><i style="background:${g.col}"></i>${esc(g.name)}</span>`).join('') : '';
+    const mxA = ranks.length ? ranks[0][1] : 1;
+    $('rank').innerHTML = ranks.map(([k, v]) => {
+      let acc = 0, segs = '';
+      for (const g of G) { const n = gN(k, g); if (!n) continue;
+        segs += `<i style="left:${acc / mxA * 100}%;width:${n / mxA * 100}%;background:${g.col};border-radius:0;box-shadow:inset -1.5px 0 var(--panel)"></i>`; acc += n; }
+      return `<button class="row" data-k="${k}"><span class="nm"><span>${esc(nm(k))}</span></span><span class="track">${segs}</span><span class="val">${fmt(v)}<em>${pct(v, a.total)}</em></span></button>`;
+    }).join('') || '<p class="note">더 작은 지역 단위가 없습니다.</p>';
+    csvSet('rank', [childLabel() || '지역', '시설 수', '비중(%)', ...G.map(g => g.name)],
+      ranks.map(([k, v]) => [nm(k), v, a.total ? (v / a.total * 100).toFixed(2) : '', ...G.map(g => gN(k, g))]));
+    renderAreaTables(a, ranks, G, nm, gN);
 
     renderStatus(a, names);
     renderCompare();
@@ -470,6 +485,43 @@
     drawTimeline();
     drawMap(fly);
   }
+  // 상위 8개 업종은 각자 색, 나머지는 '기타'로 묶음 (지역별 막대·교차표 공용)
+  const TYPE_PAL = ['var(--c0)', 'var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)', '#e04f5f'];
+  function typeGroups(a, order) {
+    const used = order.filter(t => a.byType[t] > 0), top = used.slice(0, 8), rest = used.slice(8);
+    const G = top.map((t, i) => ({ name: T[t].name, ts: [t], col: TYPE_PAL[i] }));
+    if (rest.length) G.push({ name: `기타 (${rest.slice(0, 4).map(t => T[t].name).join('·')}${rest.length > 4 ? ' 등' : ''})`, short: '기타', ts: rest, col: '#959ca6' });
+    return G;
+  }
+  // 지역 × 연도 신규 인허가, 지역 × 업종 교차표 (상위 20개 지역)
+  const areaWord = () => ({ 기초: '시군구', '': '지역' })[childLabel()] ?? childLabel();
+  let ayMode = 'n';
+  function renderAreaTables(a, ranks, G, nm, gN) {
+    const rows = ranks.slice(0, 20), lbl = areaWord(), more = ranks.length > rows.length ? ` · 시설 수 상위 ${rows.length}개 ${lbl}` : '';
+    const heat = (v, mx, rgb) => v ? `style="background:color-mix(in srgb,${rgb} ${Math.round(8 + v / mx * 62)}%,transparent)"` : '';
+    $('ay-sec').hidden = $('at-sec').hidden = !rows.length;
+    if (!rows.length) return;
+    const years = []; for (let y = yNow - 14; y <= yNow; y++) years.push(y);
+    const colT = years.map(y => rows.reduce((p, [k]) => p + ((a.areaYear[k] || {})[y] || 0), 0));
+    const val = (k, j) => { const n = (a.areaYear[k] || {})[years[j]] || 0; return ayMode === 'n' ? n : colT[j] ? n / colT[j] : 0; };
+    const mxY = Math.max(1e-9, ...rows.flatMap(([k]) => years.map((_, j) => val(k, j))));
+    const cell = v => !v ? '·' : ayMode === 'n' ? fmt(v) : Math.round(v * 100) + '%';
+    document.querySelectorAll('#ay-mode button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === ayMode)));
+    $('ay-title').textContent = `${lbl}별 연도별 신규 인허가, 최근 15년`;
+    $('ay-table').innerHTML = `<thead><tr><th>${esc(lbl)}</th>${years.map(y => `<th>${y}${y === yNow ? '*' : ''}</th>`).join('')}</tr></thead><tbody>`
+      + rows.map(([k]) => `<tr><td>${esc(nm(k))}</td>${years.map((_, j) => { const v = val(k, j); return `<td ${heat(v, mxY, 'var(--c1)')}>${cell(v)}</td>`; }).join('')}</tr>`).join('')
+      + `<tr class="sum"><td>합계</td>${colT.map(v => `<td>${ayMode === 'n' ? fmt(v) : v ? '100%' : '·'}</td>`).join('')}</tr></tbody>`;
+    $('ay-sub').textContent = `${regionName()} · ${state.status < 0 ? '전체 상태' : ST[state.status]} 시설의 인허가 연도${more}. ${yNow}년은 진행 중입니다.`;
+    csvSet('ay-table', [lbl, ...years], rows.map(([k]) => [nm(k), ...years.map(y => (a.areaYear[k] || {})[y] || 0)]));
+    const mxT = Math.max(1, ...rows.flatMap(([k]) => G.map(g => gN(k, g))));
+    $('at-title').textContent = `${lbl}와 업종 교차표`;
+    $('at-sub').textContent = `칸이 진할수록 그 ${lbl}에 그 업종이 많습니다${more}.`;
+    $('at-table').innerHTML = `<thead><tr><th>${esc(lbl)}</th>${G.map(g => `<th><span class="sw" style="background:${g.col}"></span>${esc(g.short || g.name)}</th>`).join('')}<th>합계</th></tr></thead><tbody>`
+      + rows.map(([k, v]) => `<tr><td>${esc(nm(k))}</td>${G.map(g => { const n = gN(k, g); return `<td ${heat(n, mxT, 'var(--c0)')}>${n ? fmt(n) : '·'}</td>`; }).join('')}<td><b>${fmt(v)}</b></td></tr>`).join('')
+      + `<tr class="sum"><td>합계</td>${G.map(g => `<td>${fmt(rows.reduce((p, [k]) => p + gN(k, g), 0))}</td>`).join('')}<td>${fmt(rows.reduce((p, r) => p + r[1], 0))}</td></tr></tbody>`;
+    csvSet('at-table', [lbl, ...G.map(g => g.name), '합계'], rows.map(([k, v]) => [nm(k), ...G.map(g => gN(k, g)), v]));
+  }
+  $('ay-mode').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { ayMode = x.dataset.v; update(false); } });
   const drill = e => {
     const b = e.target.closest('button.row'); if (U || !b || b.dataset.k == null) return;
     const k = +b.dataset.k;

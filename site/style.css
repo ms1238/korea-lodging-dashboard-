@@ -122,3 +122,8 @@ th:first-child,td:first-child{text-align:left}
 .summary{border-left:4px solid var(--accent)}
 .summary ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:14.5px;line-height:1.6}
 .summary h3{padding-right:80px}
+.heat{border-collapse:separate;border-spacing:3px}
+.card:has(> .btn.csv + .tablewrap){padding-top:42px}
+.heat td,.heat th{border-bottom:0;text-align:center;padding:6px 8px;border-radius:4px}
+.heat th:first-child,.heat td:first-child{text-align:left;font-weight:600}
+.heat tr.sum td{font-weight:700}
