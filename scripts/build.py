@@ -764,30 +764,36 @@ def write_kto_index(sidos, sgg_of):
         json.dump({"months": months, "ix": KTO_IX, "v": out}, f, ensure_ascii=False, separators=(",", ":"))
 
 
-POP_SIDO = {"서울": "서울특별시", "부산": "부산광역시", "대구": "대구광역시", "인천": "인천광역시", "광주": "광주광역시", "대전": "대전광역시",
-            "울산": "울산광역시", "세종": "세종특별자치시", "경기": "경기도", "강원": "강원특별자치도", "충북": "충청북도", "충남": "충청남도",
-            "전북": "전북특별자치도", "전남": "전라남도", "경북": "경상북도", "경남": "경상남도", "제주": "제주특별자치도"}
-
-
 def add_population(sidos, sido_meta):
-    """sido_meta[i]["pop"] = [year, 주민등록인구] from the latest yearbook year (광주+전남 summed for the merged 시도)."""
+    """sido_meta[i]["pop"] = 주민등록인구 of the latest yearbook year whose names match the 시도 (short names such as
+    서울 or full names; 광주+전남 summed for the merged 시도). Returns that year."""
     path = os.path.join(RAW, "population.json")
     if not os.path.exists(path):
         return None
     rows = json.load(open(path, encoding="utf-8"))
-    year = max(r["year"] for r in rows)
-    pop = defaultdict(int)
+
+    def norm(name):
+        name = re.sub(r"\s", "", name)
+        if name in ("광주", "전남", "광주광역시", "전라남도") and MERGED_GWANGJU_JEONNAM in sidos:
+            return MERGED_GWANGJU_JEONNAM
+        return SIDO_ALIASES.get(name, name)
+    by_year = defaultdict(lambda: defaultdict(int))
+    unmatched = defaultdict(set)
     for r in rows:
-        if r["year"] != year or r["region"] not in POP_SIDO:
-            continue
-        name = POP_SIDO[r["region"]]
-        if name in ("광주광역시", "전라남도") and MERGED_GWANGJU_JEONNAM in sidos:
-            name = MERGED_GWANGJU_JEONNAM
-        pop[name] += r["pop"]
+        n = norm(r["region"])
+        if n in sidos:
+            by_year[r["year"]][n] += r["pop"]
+        elif r["region"] not in ("계", "합계", "전국"):
+            unmatched[r["year"]].add(r["region"])
+    if not by_year:
+        print(f"population: no 시도 matched; names e.g. {sorted({r['region'] for r in rows})[:20]}", flush=True)
+        return None
+    year = max(by_year, key=lambda y: (len(by_year[y]), y))
     for s, sm in zip(sidos, sido_meta):
-        if s in pop:
-            sm["pop"] = pop[s]
-    print(f"population: {year}, {sum(1 for s in sidos if s in pop)} of {len(sidos)} 시도", flush=True)
+        if s in by_year[year]:
+            sm["pop"] = by_year[year][s]
+    print(f"population: {year}, {len(by_year[year])} of {len(sidos)} 시도; unmatched names that year: {sorted(unmatched[year])}; "
+          f"latest year {max(r['year'] for r in rows)} names: {sorted({r['region'] for r in rows if r['year'] == max(x['year'] for x in rows)})[:20]}", flush=True)
     return year
 
 
