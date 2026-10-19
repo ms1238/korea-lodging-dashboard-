@@ -42,6 +42,7 @@ FESTIVALS = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"  # Tou
 CENTURY_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15132695/v1"  # 소상공인시장진흥공단 백년가게 (odcloud, one table per publication)
 VWORLD_GEOCODER = "https://api.vworld.kr/req/address"  # 브이월드 지오코더: address → coordinates (needs VWORLD_KEY)
 GEOCODE_BUDGET = 30000  # requests per run (the free key allows about 40,000 a day); the rest waits for the next run
+GEOCODE_MINUTES = 15  # stop looking up after this long, so the job (60 min limit) still saves its cache
 FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
@@ -403,8 +404,11 @@ def fetch_geocode(_key):
     path = os.path.join(RAW_DIR, "geocode.json")
     cache = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
     todo = sorted({geo_query(a) for a in restaurant_addrs() if a.strip()} - set(cache))[:GEOCODE_BUDGET // 2]
+    deadline = time.time() + GEOCODE_MINUTES * 60
 
     def one(q):
+        if time.time() > deadline:
+            return q, "retry"
         for kind in ("road", "parcel"):
             for attempt in range(4):
                 try:
