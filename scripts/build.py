@@ -15,14 +15,13 @@ Steps
 9. Visitors (KTO DataLab): 외지인 and 외국인 visitors per 시도 and 시군구 over the latest 12 months (meta.json)
    and per quarter since 2018 (visits.json).
 10. Foreign arrivals (한국문화관광연구원 출입국관광통계): national monthly totals and the top nationalities (arrivals.json).
-11. National parks: TourAPI attractions named "…국립공원" (plus 한라산·금정산, listed without the word) for the map (parks.json).
 12. cubeq.json / closeq.json: the last six years by quarter (year*10 + quarter) for the quarterly charts.
 13. subway.json: subway / light-rail lines (OpenStreetMap) as GeoJSON with each line's colour.
 14. park_areas.json: national-park boundaries (OpenStreetMap) as simplified polygons with their map area;
     금정산 falls back to the boundary traced from the designation map (scripts/static/geumjeongsan.json).
-15. stations.json: subway / light-rail stations (OpenStreetMap) with their lines, 시도/시군구 and the number of
+15. stations.json: subway / light-rail, 코레일 광역철도 and 간선열차 stations (OpenStreetMap, gaps filled from 전국도시철도역사정보표준데이터) with their lines, 시도/시군구 and the number of
     operating lodgings per type within 0.5 / 1 / 3 / 5 km (records with an exact position only), plus the monthly
-    boardings / alightings of 코레일 광역철도 stations matched by name (latest 12 months).
+    boardings / alightings of 코레일 광역철도 and 간선열차 stations matched by name (latest 12 months).
 16. icn.json: 인천공항 arriving / departing passengers per month and the top countries of the route.
 17. kac.json: passengers per airport and year, domestic / international (한국공항공사 공항별 여객실적).
 """
@@ -321,28 +320,6 @@ def add_visitors(sidos, sgg_of, sido_meta):
     return meta, visits
 
 
-def write_parks():
-    """TourAPI has no national-park category of its own, so take attractions whose title names a 국립공원
-    (skipping parking lots, campsites, centres and viewpoints). Some parks appear only under the mountain's name."""
-    aliases = {"한라산": "한라산국립공원", "금정산": "금정산국립공원"}  # 금정산: 24th national park, in force from 2026-03-03
-    seen, out = set(), []
-    for path in sorted(glob.glob(os.path.join(RAW, "tour_*.jsonl"))):
-        for line in open(path, encoding="utf-8"):
-            rec = json.loads(line)
-            title = clean(rec.get("title"))
-            t = title.replace(" ", "")
-            if not ("국립공원" in t or t in aliases) or re.search(r"(사무소|탐방안내소|주차장|야영장|센터|전망대|캠핑|박물관)", t):
-                continue
-            if rec.get("contentid") in seen or not rec.get("mapx"):
-                continue
-            seen.add(rec.get("contentid"))
-            m = re.match(r"국립공원공단(.+?)생태탐방원", t)  # e.g. 국립공원공단 한려해상생태탐방원
-            park = aliases.get(t) or (m.group(1) + "국립공원" if m else re.sub(r"국립공원.*", "국립공원", t))
-            out.append([round(float(rec["mapy"]), 5), round(float(rec["mapx"]), 5), park, title])
-    with open(os.path.join(OUT, "parks.json"), "w", encoding="utf-8") as f:
-        json.dump(sorted(out, key=lambda r: r[2]), f, ensure_ascii=False, separators=(",", ":"))
-
-
 def write_subway():
     """One LineString per OSM way; a way shared by several routes (both directions, through-running) is drawn once
     with the colour of the first route that has one."""
@@ -456,6 +433,11 @@ def write_park_areas():
     print(f"park_areas: {len(best)} parks: " + ", ".join(f"{k} {a:.0f}㎢ ({sum(len(p[0]) for p in polys)} pts)" for k, (a, polys, _) in sorted(best.items())), flush=True)
     feats = [{"type": "Feature", "properties": {"park": k, "km2": round(a, 1), "src": src},
               "geometry": {"type": "MultiPolygon", "coordinates": polys}} for k, (a, polys, src) in sorted(best.items())]
+    # one name label per park, at the middle of its largest part (a sea park has dozens of island parts)
+    for k, (_, polys, _) in sorted(best.items()):
+        ring = max((p[0] for p in polys), key=_km2)
+        feats.append({"type": "Feature", "properties": {"park": k},
+                      "geometry": {"type": "Point", "coordinates": [round(sum(x for x, _ in ring) / len(ring), 5), round(sum(y for _, y in ring) / len(ring), 5)]}})
     with open(os.path.join(OUT, "park_areas.json"), "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
 
@@ -476,27 +458,48 @@ def write_stations(rows, sidos, sgg_of, tidx):
         kx = 111.32 * math.cos(math.radians(lat))
         return ((la - lat) * km_lat) ** 2 + ((lo - lon) * kx) ** 2
 
-    # merge same-name nodes; railway stations join only when 코레일 광역철도 serves a station of that name
-    nodes = json.load(open(path, encoding="utf-8"))
-    rail, kw = os.path.join(RAW, "rail_stations.json"), os.path.join(RAW, "korail_wide.json")
-    if os.path.exists(rail) and os.path.exists(kw):
-        served = {korail_norm(r["name"]) for r in json.load(open(kw, encoding="utf-8"))}
-        extra = [dict(s, korail=1) for s in json.load(open(rail, encoding="utf-8")) if korail_norm(s["name"]) in served]
-        print(f"stations: {len(extra)} railway stations named like a 광역철도 station", flush=True)
-        nodes += extra
+    # sources: OSM subway / light-rail stations; OSM railway stations named like a station in the 코레일 광역철도 or
+    # 간선열차 tables; 전국도시철도역사정보표준데이터 (fills stations OSM lacks). Same name within 500 m = one station.
+    nodes = [dict(s, src="metro") for s in json.load(open(path, encoding="utf-8"))]
+    load = lambda name: json.load(open(os.path.join(RAW, name), encoding="utf-8")) if os.path.exists(os.path.join(RAW, name)) else []
+    rail = load("rail_stations.json")
+    wide = {korail_norm(r["name"]) for r in load("korail_wide.json")}
+    mp = os.path.join(RAW, "korail_main.jsonl")
+    main = {korail_norm(json.loads(l)["name"]) for l in open(mp, encoding="utf-8")} if os.path.exists(mp) else set()
+    by_name = defaultdict(list)
+    for r in rail:
+        by_name[korail_norm(r["name"])].append(r)
+    nodes += [dict(r, src="korail") for n in wide for r in by_name.get(n, [])]
+    # a 간선 station name that several distant railway stations share cannot be placed: skip it
+    far = lambda rs: any(dist2(x["lat"], x["lon"], y["lat"], y["lon"]) > 25 for x in rs for y in rs)
+    amb = sorted(n for n in main if far(by_name.get(n, [])))
+    nodes += [dict(r, src="main") for n in main if n not in amb for r in by_name.get(n, [])]
+    print(f"stations: 간선 {len(main)} names, {sum(1 for n in main if by_name.get(n))} found among railway stations; "
+          f"same name far apart (skipped): {' '.join(amb)}; not found: {' '.join(sorted(n for n in main if not by_name.get(n)))}", flush=True)
+    std = load("metro_std.json")
+    if std:
+        col = lambda *keys: next((c for c in std[0] if any(k in c for k in keys)), None)
+        cn, cl, cy, cx = col("역사명", "역명"), col("노선명"), col("위도"), col("경도")
+        for r in std:
+            try:
+                nodes.append({"name": r[cn].strip(), "lat": round(float(r[cy]), 5), "lon": round(float(r[cx]), 5), "src": "std", "line": (r.get(cl) or "").strip()})
+            except (TypeError, ValueError, KeyError):
+                pass
     st = []
     for s in nodes:
-        key = re.sub(r"역$", "", s["name"].strip())
+        key = korail_norm(s["name"])
         for m in st:
             if m["key"] == key and dist2(m["lat"], m["lon"], s["lat"], s["lon"]) <= 0.25:
                 m["pts"].append((s["lat"], s["lon"]))
                 break
         else:
-            st.append({"key": key, "name": s["name"].strip(), "lat": s["lat"], "lon": s["lon"], "pts": [(s["lat"], s["lon"])], "korail": s.get("korail")})
-    for m in st:
-        m["lat"] = round(sum(p[0] for p in m["pts"]) / len(m["pts"]), 5)
-        m["lon"] = round(sum(p[1] for p in m["pts"]) / len(m["pts"]), 5)
-
+            m = {"key": key, "name": s["name"].strip(), "lat": s["lat"], "lon": s["lon"], "pts": [(s["lat"], s["lon"])], "src": set(), "std_lines": set()}
+            st.append(m)
+        m["src"].add(s["src"])
+        if s.get("line"):
+            m["std_lines"].add(s["line"])
+    print(f"stations: {sum(1 for m in st if m['src'] == {'std'})} stations only in 표준데이터 (missing from OpenStreetMap): "
+          + " ".join(sorted(f"{m['name']}({'/'.join(sorted(m['std_lines']))})" for m in st if m["src"] == {"std"})), flush=True)
     # lines: route segments on a 0.01° grid
     lines, lidx, seg = [], {}, defaultdict(list)
     sub = os.path.join(RAW, "subway.json")
@@ -536,7 +539,7 @@ def write_stations(rows, sidos, sgg_of, tidx):
     for r in rows:
         if r["ll"] and not r.get("approx"):
             grid[(int(r["ll"][0] * 100), int(r["ll"][1] * 100))].append(r)
-    out = []
+    out, srcs = [], []
     for m in st:
         lat, lon = m["lat"], m["lon"]
         ci, cj = int(lat * 100), int(lon * 100)
@@ -558,28 +561,62 @@ def write_stations(rows, sidos, sgg_of, tidx):
         reg = near1.most_common(1)[0][0] if near1 else nearest[1]
         if not reg or not re.search("[가-힣]", m["name"]):  # no lodging within 10 km: outside Korea (the query box reaches Kyushu)
             continue
-        if m["korail"] and len(m["pts"]) == 1 and reg[0] not in KORAIL_SIDO:  # a same-named station elsewhere
+        if m["src"] == {"korail"} and reg[0] not in KORAIL_SIDO:  # a same-named station elsewhere
             continue
         si = sidos.index(reg[0])
         gi = sgg_of[reg[0]].index(reg[1])
+
+        def line(label, colour):
+            if label not in lidx:
+                lidx[label] = len(lines)
+                lines.append([label, colour])
+            return lidx[label]
         ln = lines_near(lat, lon)
-        if not ln and m["korail"]:  # Korail lines are route=train in OSM, so not in subway.json
-            if "코레일 광역철도" not in lidx:
-                lidx["코레일 광역철도"] = len(lines)
-                lines.append(["코레일 광역철도 (노선 미확인)", "#0052A4"])
-            ln = [lidx["코레일 광역철도"]]
+        if not ln:  # Korail lines are route=train in OSM, so not in subway.json; use the 표준데이터 line names
+            ln = [line(n, "#7f8c8d") for n in sorted(m["std_lines"])] or ([line("코레일 광역철도 (노선 미확인)", "#0052A4")] if "korail" in m["src"] else [])
+        if "main" in m["src"]:
+            ln = ln + [line("간선열차 정차역 (KTX·ITX·무궁화 등)", "#1f3a93")]
         out.append([lat, lon, m["name"], si, gi, ln, [[t, *c] for t, c in sorted(cnt.items())]])
+        srcs.append(m["src"])
     print(f"stations: {len(out)} after merging, {sum(1 for o in out if o[5])} on a known line, {len(lines)} lines", flush=True)
     kym = add_korail(out, lines, sidos)
+    mym = add_main(out, srcs)
     with open(os.path.join(OUT, "stations.json"), "w", encoding="utf-8") as f:
-        json.dump({"r": RADII, "lines": lines, "st": out, "kym": kym}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"r": RADII, "lines": lines, "st": out, "kym": kym, "mym": mym}, f, ensure_ascii=False, separators=(",", ":"))
+
+
+def add_main(out, srcs):
+    """Append [[boardings], [alightings]] of 간선열차 for the latest 12 months to stations taken from the 간선 table."""
+    path = os.path.join(RAW, "korail_main.jsonl")
+    for o in out:
+        o.append(0)
+    if not os.path.exists(path):
+        return []
+    data = [json.loads(l) for l in open(path, encoding="utf-8")]
+    mym = sorted({r["ym"] for r in data})[-12:]
+    by = defaultdict(dict)
+    for r in data:
+        if r["ym"] in mym:
+            by[korail_norm(r["name"])][r["ym"]] = (r["ride"], r["goff"])
+    hit = 0
+    for o, src in zip(out, srcs):
+        series = by.get(korail_norm(o[2])) if "main" in src else None
+        if series:
+            o[-1] = [[series.get(m, (0, 0))[0] for m in mym], [series.get(m, (0, 0))[1] for m in mym]]
+            hit += 1
+    print(f"korail_main: {len(by)} stations, {hit} on the map, months {mym[:1]}~{mym[-1:]}", flush=True)
+    return mym
 
 
 KORAIL_SIDO = ("서울특별시", "경기도", "인천광역시", "강원특별자치도", "충청남도", "부산광역시", "울산광역시", "대구광역시", "경상북도")  # where 코레일 광역철도 runs (동해선, 대경선 included)
 
 
+KORAIL_ALIAS = {"디엠시": "디지털미디어시티"}  # names the 광역철도 table abbreviates
+
+
 def korail_norm(n):
-    return re.sub(r"역$", "", re.sub(r"\(.*?\)|\s", "", n))
+    n = re.sub(r"역$", "", re.sub(r"\(.*?\)|\s", "", n))
+    return KORAIL_ALIAS.get(n, n)
 KORAIL_LINE = re.compile(r"코레일|동해|대경|경의|중앙|수인|분당|경춘|경강|1호선|3호선|4호선|서해|경부|경원|경인|안산|과천|일산|장항")
 
 
@@ -856,7 +893,6 @@ def main():
     write_arrivals()
     write_icn()
     write_kac()
-    write_parks()
     write_subway()
     write_park_areas()
     write_stations(rows, sidos, sgg_of, tidx)

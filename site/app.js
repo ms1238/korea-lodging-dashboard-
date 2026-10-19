@@ -14,7 +14,9 @@
   const pct = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '-';
   const esc = s => String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const getJSON = (u, fb) => fetch(u).then(r => r.ok ? r.json() : fb).catch(() => fb);
+  // 배포마다 바뀌는 버전(app.js?v=…)을 데이터 요청에도 붙여 브라우저가 지난 데이터를 쓰지 않게 함
+  const V = document.currentScript?.src.match(/[?&]v=([^&]+)/)?.[1];
+  const getJSON = (u, fb) => fetch(V ? `${u}?v=${V}` : u).then(r => r.ok ? r.json() : fb).catch(() => fb);
   const [meta, cube, close, minbak, visits, arrivals, cubeq, closeq] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []),
     getJSON('data/minbak.json', []), getJSON('data/visits.json', null), getJSON('data/arrivals.json', null), getJSON('data/cubeq.json', []), getJSON('data/closeq.json', [])]);
   const T = meta.types, CATS = meta.categories, S = meta.sido, ST = meta.status;
@@ -207,11 +209,12 @@
       // 국립공원 경계: OpenStreetMap(build.py → park_areas.json). 금정산은 지정 도면을 따라 그린 근사 경계
       const font = (map.getStyle().layers.find(l => l.layout && l.layout['text-font']) || {}).layout?.['text-font'] || ['Noto Sans Regular'];
       map.addSource('park-areas', { type: 'geojson', data: empty });
-      getJSON('data/park_areas.json', null).then(g => { if (g) map.getSource('park-areas').setData(g); });
+      getJSON('data/park_areas.json', null).then(g => { if (!g) return; map.getSource('park-areas').setData(g);
+        $('n-park').textContent = g.features.filter(f => f.geometry.type === 'Point').length + '곳'; });
       map.addLayer({ id: 'park-fill', type: 'fill', source: 'park-areas', paint: { 'fill-color': '#2e7d32', 'fill-opacity': .3 } }, firstSymbol);
       map.addLayer({ id: 'park-line', type: 'line', source: 'park-areas', paint: { 'line-color': '#1b5e20', 'line-opacity': .9,
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.6] } }, firstSymbol);
-      map.addLayer({ id: 'park-label', type: 'symbol', source: 'park-areas', minzoom: 7, layout: { 'text-field': ['get', 'park'], 'text-font': font, 'text-size': 12 },
+      map.addLayer({ id: 'park-label', type: 'symbol', source: 'park-areas', minzoom: 7, filter: ['==', ['geometry-type'], 'Point'], layout: { 'text-field': ['get', 'park'], 'text-font': font, 'text-size': 12 },
         paint: { 'text-color': '#1b5e20', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
       // 교통시설 아이콘: 네모(철도역 = 보라, 공항 = 남색)
       const square = (fill, px) => {
@@ -222,7 +225,7 @@
       map.addImage('sq-rail', square('#8e44ad', 20), { pixelRatio: 2 });
       map.addImage('sq-air', square('#1f3a93', 28), { pixelRatio: 2 });
       const nm = ['coalesce', ['get', 'name:ko'], ['get', 'name']];
-      // 교통·자연: 배경지도 벡터 타일(OpenMapTiles 스키마)의 공항·철도, TourAPI의 국립공원
+      // 교통: 배경지도 벡터 타일(OpenMapTiles 스키마)의 공항·철도
       const vec = Object.entries(map.getStyle().sources).find(([, v]) => v.type === 'vector')?.[0];
       if (vec) {
         map.addLayer({ id: 'rail-line', type: 'line', source: vec, 'source-layer': 'transportation',
@@ -248,12 +251,6 @@
         map.getSource('subway').setData(g);
         if (map.getLayer('rail-line')) map.setFilter('rail-line', ['all', ['==', ['get', 'class'], 'rail'], ['!', ['has', 'service']]]);
       });
-      map.addSource('parks', { type: 'geojson', data: empty });
-      getJSON('data/parks.json', []).then(rows => { map.getSource('parks').setData({ type: 'FeatureCollection', features: rows.map(r => ({
-        type: 'Feature', geometry: { type: 'Point', coordinates: [r[1], r[0]] }, properties: { park: r[2], title: r[3] } })) });
-        $('n-park').textContent = new Set(rows.map(r => r[2])).size + '곳'; });
-      map.addLayer({ id: 'parks', type: 'circle', source: 'parks', paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 4, 12, 7], 'circle-color': '#2e7d32', 'circle-opacity': .85, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
       map.addSource('areas', { type: 'geojson', data: empty });
       map.addLayer({ id: 'areas', type: 'circle', source: 'areas', paint: {
         'circle-radius': ['interpolate', ['linear'], ['sqrt', ['get', 'n']], 0, 0, 10, 6, 60, 26],
@@ -286,23 +283,22 @@
       });
       map.on('click', 'areas', async e => { const p = e.features[0].properties; await setSido(p.si); setSgg(p.gi); });
       const pop = (ll, html) => new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(ll).setHTML(html).addTo(map);
-      map.on('click', 'parks', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.park)}</b><br>${esc(p.title)}<br><small>출처: 한국관광공사 TourAPI</small>`); });
       map.on('click', 'airports', e => {
         const p = e.features[0].properties, nm = p['name:ko'] || p.name, k = kacOf(nm), n = k ? kac.years.length - 1 : 0;
         pop(e.lngLat, `<b>${esc(nm)}</b>${p.iata ? ` (${esc(p.iata)})` : ''}<br>${k ? `${kac.years[n]}년 여객 ${fmt(k.dom[n] + k.intl[n])}명 (국내선 ${fmt(k.dom[n])} · 국제선 ${fmt(k.intl[n])})<br>` : ''}<small>출처: OpenStreetMap${k ? ', 한국공항공사' : ''}</small>`);
       });
       map.on('click', 'subway', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'park-fill', e => {
-        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'areas', 'parks', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'areas', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties;
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
       map.on('click', 'rail-st', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['parks', 'park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']]]) {
+      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
-      for (const l of ['pts', 'areas', 'tour', 'parks', 'airports', 'rail-st', 'subway', 'park-fill']) {
+      for (const l of ['pts', 'areas', 'tour', 'airports', 'rail-st', 'subway', 'park-fill']) {
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
@@ -762,12 +758,7 @@
   function renderStations() {
     if (!STN || !STN.st.length) { $('stn-sub').textContent = '역 자료가 아직 없습니다. 다음 데이터 갱신 후 표시됩니다.'; $('stn-sel').disabled = true; return; }
     const regs = U ? U.regs : [curReg()];
-    const inR = STN.st.map((_, i) => i).filter(i => regs.some(r => inReg(r, STN.st[i][3], STN.st[i][4])));
-    // 검색: 역 이름이나 노선 이름에 검색어가 들어간 역만 (공백 무시). 이름이 똑같은 역이 있으면 그 역을 고름
-    const q = $('stn-q').value.replace(/\s/g, ''), hay = i => (STN.st[i][2] + STN.st[i][5].map(li => STN.lines[li][0]).join('')).replace(/\s/g, '');
-    const ids = q ? inR.filter(i => hay(i).includes(q)) : inR;
-    const exact = ids.find(i => STN.st[i][2].replace(/역$/, '') === q.replace(/역$/, ''));
-    if (exact != null && q) stnSel = exact;
+    const ids = stnInReg();
     if (!ids.includes(stnSel)) stnSel = ids.length ? ids.reduce((a, b) => stnCount(STN.st[b], 1) > stnCount(STN.st[a], 1) ? b : a) : -1;
     // 노선별로 묶은 목록. 여러 노선이 지나는 역은 노선마다 나옵니다
     const byName = (a, b) => STN.st[a][2].localeCompare(STN.st[b][2], 'ko');
@@ -778,9 +769,8 @@
     $('stn-sel').innerHTML = groups.map(([name, xs]) => `<optgroup label="${esc(name)}">${xs.map(i => `<option value="${i}">${esc(STN.st[i][2])}</option>`).join('')}</optgroup>`).join('');
     $('stn-sel').disabled = !ids.length;
     if (stnSel >= 0) $('stn-sel').value = String(stnSel);
-    $('stn-sub').textContent = !inR.length ? `${regionName()}에는 지하철·광역철도역이 없습니다.`
-      : q ? `${regionName()} 역 ${fmt(inR.length)}곳 중 "${$('stn-q').value}" 검색 결과 ${fmt(ids.length)}곳`
-      : `${regionName()} 역 ${fmt(inR.length)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.`;
+    $('stn-sub').textContent = !ids.length ? `${regionName()}에는 지하철·광역철도역이 없습니다.`
+      : `${regionName()} 역 ${fmt(ids.length)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.`;
     renderStation();
   }
   function renderStation() {
@@ -795,7 +785,16 @@
       const ride = kr[0].reduce((a, b) => a + b, 0), goff = kr[1].reduce((a, b) => a + b, 0), nm = kr[0].filter((v, i) => v || kr[1][i]).length || 1;
       $('stn-rail').innerHTML = `<b>코레일 광역철도 승하차</b> ${ym(K[0])}~${ym(K[K.length - 1])}: 승차 ${fmt(ride)}명 · 하차 ${fmt(goff)}명 · 월평균 ${fmt(Math.round((ride + goff) / nm))}명`
         + ` (${ym(K[K.length - 1])} ${fmt(kr[0][kr[0].length - 1] + kr[1][kr[1].length - 1])}명). 서울교통공사 등 다른 운영기관 노선 이용객은 들어 있지 않습니다.`;
-    } else $('stn-rail').textContent = K.length ? '코레일 광역철도 승하차 자료가 없는 역입니다(코레일이 운영하지 않는 노선이거나 역 이름이 맞지 않음).' : '';
+    } else $('stn-rail').textContent = K.length && !s[8] ? '코레일 승하차 자료가 없는 역입니다(코레일이 운영하지 않는 노선이거나 역 이름이 맞지 않음).' : '';
+    const mr = s[8], MK = STN.mym || [];
+    if (mr) {
+      // 매일 쌓이는 자료라 이번 달은 진행 중: 월평균은 다 찬 달만으로
+      const now = new Date(), cur = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`, part = MK.at(-1) === cur;
+      const ride = mr[0].reduce((a, b) => a + b, 0), goff = mr[1].reduce((a, b) => a + b, 0);
+      const full = MK.map((_, i) => i).filter(i => !(part && i === MK.length - 1) && (mr[0][i] || mr[1][i]));
+      const avg = full.length ? full.reduce((a, i) => a + mr[0][i] + mr[1][i], 0) / full.length : 0;
+      $('stn-rail').insertAdjacentHTML('beforeend', `${kr ? '<br>' : ''}<b>간선열차(KTX·ITX·무궁화 등) 승하차</b> ${ym(MK[0])}~${ym(MK.at(-1))}${part ? '(진행 중)' : ''}: 승차 ${fmt(ride)}명 · 하차 ${fmt(goff)}명 · 월평균 ${fmt(Math.round(avg))}명.`);
+    }
     const rows = s[6].filter(c => state.types.has(c[0])).sort((a, b) => b[R.length] - a[R.length]);
     $('stn-table-title').textContent = `${s[2]} 업종별 숙소 수`;
     $('stn-table').innerHTML = `<thead><tr><th>업종</th>${R.map(km => `<th>${kmLabel(km)}</th>`).join('')}</tr></thead><tbody>`
@@ -818,7 +817,40 @@
     }
     map.getSource('stn-ring').setData({ type: 'FeatureCollection', features: feats });
   }
-  $('stn-q').oninput = () => { if (!STN) return; const before = stnSel; renderStations(); if (stnSel !== before && stnSel >= 0) drawRings(STN.st[stnSel], true); };
+  function stnInReg() {
+    const regs = U ? U.regs : [curReg()];
+    return STN.st.map((_, i) => i).filter(i => regs.some(r => inReg(r, STN.st[i][3], STN.st[i][4])));
+  }
+  // 검색: 역·노선 이름에 검색어가 들어간 역을 목록으로 보여주고, 누르거나 ↑↓·Enter로 고름 (공백 무시, 이름이 같은 역 먼저)
+  let sugg = [], suggAt = 0;
+  const pickStation = i => { stnSel = i; $('stn-q').value = ''; closeSugg(); renderStations(); drawRings(STN.st[i], true); };
+  const closeSugg = () => { $('stn-sugg').hidden = true; sugg = []; };
+  function showSugg() {
+    const q = $('stn-q').value.replace(/\s/g, '');
+    if (!STN || !q) return closeSugg();
+    const nm = i => STN.st[i][2].replace(/\s/g, ''), hay = i => nm(i) + STN.st[i][5].map(li => STN.lines[li][0]).join('').replace(/\s/g, '');
+    const all = stnInReg().filter(i => hay(i).includes(q)), bare = n => n.replace(/역$/, '');
+    sugg = all.sort((a, b) => (bare(nm(b)) === bare(q)) - (bare(nm(a)) === bare(q)) || nm(b).startsWith(q) - nm(a).startsWith(q) || nm(a).localeCompare(nm(b), 'ko')).slice(0, 15);
+    suggAt = 0;
+    const nat = sugg.length ? 0 : STN.st.filter((s, i) => hay(i).includes(q)).length;
+    $('stn-sugg').innerHTML = sugg.map((i, k) => { const s = STN.st[i];
+      return `<button type="button" role="option" data-i="${i}" aria-selected="${k === 0}"><b>${esc(s[2])}</b><small>${s[5].map(li => `<span class="sw" style="background:${STN.lines[li][1] || '#7f8c8d'}"></span>${esc(STN.lines[li][0])}`).join(' ')}${s[3] >= 0 ? ` · ${esc(short(S[s[3]].name))} ${esc(S[s[3]].sgg[s[4]])}` : ''}</small></button>`; }).join('')
+      + (all.length > sugg.length ? `<p class="note">${fmt(all.length - sugg.length)}곳 더 있습니다. 더 입력해 좁혀 보세요.</p>` : '')
+      || `<p class="note">${regionName()}에 맞는 역이 없습니다.${nat ? ` 전국에는 ${fmt(nat)}곳 있습니다(위에서 광역을 전국으로).` : ''}</p>`;
+    $('stn-sugg').hidden = false;
+  }
+  $('stn-q').oninput = showSugg;
+  $('stn-q').onkeydown = e => {
+    if ($('stn-sugg').hidden || !sugg.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault(); suggAt = (suggAt + (e.key === 'ArrowDown' ? 1 : sugg.length - 1)) % sugg.length;
+      $('stn-sugg').querySelectorAll('button').forEach((b, k) => { b.setAttribute('aria-selected', String(k === suggAt)); if (k === suggAt) b.scrollIntoView({ block: 'nearest' }); });
+    } else if (e.key === 'Enter') { e.preventDefault(); pickStation(sugg[suggAt]); }
+    else if (e.key === 'Escape') closeSugg();
+  };
+  $('stn-sugg').addEventListener('mousedown', e => { const b = e.target.closest('button[data-i]'); if (b) { e.preventDefault(); pickStation(+b.dataset.i); } });
+  $('stn-q').onblur = () => setTimeout(closeSugg, 150);
+  $('stn-q').onfocus = showSugg;
   $('stn-sel').onchange = e => { stnSel = +e.target.value; renderStation(); drawRings(STN.st[stnSel], true); };
   getJSON('data/stations.json', null).then(d => { STN = d; renderStations(); });
 

@@ -11,6 +11,8 @@ Endpoint pattern: https://apis.data.go.kr/1741000/<endpoint>/info
 The service key is read from the DATA_GO_KR_KEY environment variable (a GitHub Actions secret);
 it must never be written into the repository.
 """
+import csv
+import io
 import json
 import math
 import os
@@ -42,6 +44,8 @@ ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntT
 ICN = "https://apis.data.go.kr/B551177/AviationStatsByCountry/getTotalNumberOfPassenger"  # 인천공항 국가별 여객
 KORAIL_WIDE = "https://apis.data.go.kr/B551457/issueStatistics/wideRailloadStationPer"  # 코레일 광역철도 역별 승하차
 KAC_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1"  # 한국공항공사 공항별 여객실적 (odcloud)
+KORAIL_MAIN = "https://apis.data.go.kr/B551457/issueStatistics/mainLineStationPer"  # 코레일 간선열차 역별 승하차 (daily, about a year)
+METRO_STD = "https://www.data.go.kr/data/15013205/standard.do"  # 전국도시철도역사정보표준데이터 (국가철도공단, yearly file)
 OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
 # a bounding box of South Korea instead of an area lookup: some mirrors have no area index and answer 500
@@ -64,8 +68,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "kac_years"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"subway", "parks_osm", "stations", "rail_stations", "korail_wide", "kac_years"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -220,7 +224,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "kac_years"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
@@ -228,7 +232,7 @@ def main():
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
-             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide,
+             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std,
              "kac_years": fetch_kac}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
@@ -356,6 +360,66 @@ def fetch_korail_wide(key):
     if not rows:
         raise RuntimeError("no rows returned")
     save_json("korail_wide.json", rows)
+
+
+def fetch_korail_main(key):
+    """코레일 간선열차 boardings / alightings per station and day (KTX, ITX, 무궁화 ...), summed per month.
+    The service keeps about a year; months since 2025 are asked for, the latest REFRESH_MONTHS again each run."""
+    today = date.today()
+    months = [(y, m) for y in range(2025, today.year + 1) for m in range(1, 13) if (y, m) <= (today.year, today.month)]
+    path, cut = os.path.join(RAW_DIR, "korail_main.jsonl"), "%d%02d" % months[-REFRESH_MONTHS]
+    kept = [r for r in (json.loads(l) for l in open(path, encoding="utf-8"))] if os.path.exists(path) else []
+    kept = [r for r in kept if r["ym"] < cut]
+    have = {r["ym"] for r in kept}
+
+    def month(ym):
+        y, m = ym
+        last = date(y + m // 12, m % 12 + 1, 1).toordinal() - 1
+        cond = {"cond[opr_ymd::GTE]": f"{y}{m:02d}01", "cond[opr_ymd::LTE]": date.fromordinal(last).strftime("%Y%m%d")}
+        page = lambda p: get_body(KORAIL_MAIN, {"serviceKey": key, "pageNo": p, "numOfRows": 1000, "returnType": "json", **cond}, f"korail_main {y}-{m:02d} page {p}")
+        first = page(1)
+        total, size = int(first.get("totalCount") or 0), max(1, len(items_of(first)))
+        items = items_of(first) + [it for p in range(2, math.ceil(total / size) + 1) for it in items_of(page(p))]
+        agg = {}
+        for it in items:
+            a = agg.setdefault((it["stn_cd"], it["stn_nm"]), [0, 0, set()])
+            a[0] += num(it["ride_nope"]); a[1] += num(it["goff_nope"]); a[2].add(it["opr_ymd"])
+        return [{"ym": f"{y}{m:02d}", "cd": cd, "name": nm, "ride": a[0], "goff": a[1], "days": len(a[2])} for (cd, nm), a in agg.items()], total, len(items)
+    todo = [ym for ym in months if "%d%02d" % ym not in have]
+    with ThreadPoolExecutor(3) as pool:
+        got = list(pool.map(month, todo))
+    rows = kept + [r for g in got for r in g[0]]
+    check(f"korail_main ({len(todo)} months)", sum(g[2] for g in got), sum(g[1] for g in got))
+    if not rows:
+        raise RuntimeError("no rows returned")
+    write_rows("korail_main", sorted(rows, key=lambda r: r["ym"]))
+
+
+def fetch_metro_std(_key):
+    """전국도시철도역사정보표준데이터: the file behind the dataset page (hidden form fields name it), CSV in UTF-8 or CP949."""
+    ua = {"User-Agent": "Mozilla/5.0"}
+    t = requests.get(METRO_STD, headers=ua, timeout=60).text
+    def hidden(name):
+        m = re.search(r'id="%s"[^>]*value="([^"]*)"' % name, t) or re.search(r'value="([^"]*)"[^>]*id="%s"' % name, t)
+        return m.group(1) if m else None
+    atch, sn = hidden("limitAtchFileId"), hidden("limitFileDetailSn")
+    if not atch:
+        raise RuntimeError("file id not found: " + " | ".join(re.findall(r".{0,80}limitAtchFileId.{0,120}", t)[:3]))
+    r = requests.get("https://www.data.go.kr/cmm/cmm/fileDownload.do", params={"atchFileId": atch, "fileDetailSn": sn or "1"}, headers=ua, timeout=120)
+    raw = r.content
+    if raw[:2] == b"PK" or b"<html" in raw[:500].lower():
+        raise RuntimeError(f"not a CSV file (HTTP {r.status_code}, {r.headers.get('content-type')}, {raw[:80]!r})")
+    for enc in ("utf-8-sig", "cp949"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    rows = list(csv.DictReader(io.StringIO(text)))
+    print(f"metro_std: {len(rows)} rows; columns {list(rows[0]) if rows else []}; first {rows[:1]}", flush=True)
+    if not rows:
+        raise RuntimeError("empty file")
+    save_json("metro_std.json", rows)
 
 
 def fetch_kac(key):

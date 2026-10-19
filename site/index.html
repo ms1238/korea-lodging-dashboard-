@@ -68,7 +68,7 @@
         <div class="chk"><input type="checkbox" id="ck-park" checked><label for="ck-park"><span class="sw" style="background:#2e7d32"></span>국립공원</label><span class="n" id="n-park"></span></div>
         <div class="chk"><input type="checkbox" id="ck-air" checked><label for="ck-air"><span class="sw" style="background:#1f3a93;border-radius:1px"></span>공항</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-rail" checked><label for="ck-rail"><span class="sw" style="background:linear-gradient(90deg,#0052a4 33%,#00a84d 33% 66%,#ef7c1c 66%)"></span>철도(회색)·지하철(노선색)·역(<span class="sw" style="background:#8e44ad;border-radius:1px;width:8px;height:8px;margin:0 2px"></span>)</label><span></span></div>
-        <p class="note" style="margin-top:4px">국립공원 경계·면적은 OpenStreetMap(금정산은 지정 도면 기반 근사), 점은 TourAPI 관광지, 공항·철도는 배경지도(OpenStreetMap) 자료입니다.</p>
+        <p class="note" style="margin-top:4px">국립공원 경계·면적은 OpenStreetMap(금정산은 지정 도면 기반 근사), 공항·철도는 배경지도(OpenStreetMap) 자료입니다.</p>
         <div class="railhead" style="margin-top:16px"><h3>지형</h3></div>
         <div class="chk"><input type="checkbox" id="ck-shade" checked><label for="ck-shade">산 음영</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-3d"><label for="ck-3d">3D 지형 (기울여 보기)</label><span></span></div>
@@ -120,7 +120,7 @@
   <section data-tab="transit" id="stn-sec">
     <div class="sechead"><h2>역세권 숙소 (지하철·광역철도)</h2><p class="sub" id="stn-sub"></p></div>
     <div class="card">
-      <div class="tlrow" style="margin-bottom:10px"><label for="stn-q" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">역<input type="search" id="stn-q" placeholder="역·노선 이름 검색" autocomplete="off"></label><select id="stn-sel" aria-label="역 선택"></select><span id="stn-lines"></span></div>
+      <div class="tlrow" style="margin-bottom:10px"><label for="stn-q" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">역<span class="suggwrap"><input type="search" id="stn-q" placeholder="역·노선 이름 검색" autocomplete="off" role="combobox" aria-controls="stn-sugg"><span class="sugg" id="stn-sugg" role="listbox" hidden></span></span></label><select id="stn-sel" aria-label="역 선택"></select><span id="stn-lines"></span></div>
       <div class="kpis" id="stn-kpis"></div>
       <p class="note" id="stn-rail" style="margin-top:10px"></p>
     </div>
