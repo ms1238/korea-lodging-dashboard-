@@ -697,12 +697,17 @@
     // 지표 표
     const stats = R.map(regStats), Y3 = yNow - 3;
     const pctS = (a, b) => b ? (a >= 0 ? '+' : '') + (a / b * 100).toFixed(1) + '%' : '-';
-    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 100만 명당 숙소</th><th>외국인 100만 명당 숙소</th><th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th></tr></thead><tbody>`
+    // 체류 지수(한국관광데이터랩): 계절 차이를 줄이려고 최근 12개월 평균. 묶음·전국은 자료 없음
+    const KX = [['21', '체류 강도'], ['2102', '숙박 비중']], kv = R.map(r => KX.map(([c]) => kixAvg(r, c)));
+    const kf = v => v == null ? '-' : v.toFixed(1);
+    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 100만 명당 숙소</th><th>외국인 100만 명당 숙소</th>${KX.map(k => `<th>${k[1]} 지수</th>`).join('')}<th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th></tr></thead><tbody>`
       + R.map((r, i) => { const x = stats[i];
-        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
-    csvSet('cmp-table', ['지역', '영업 숙소', '연간 외지인', '연간 외국인', '외지인 100만 명당 숙소', '외국인 100만 명당 숙소', `${Y3 + 1}~${yNow} 증가율(%)`, '누적 폐업률(%)', '영업 도시민박'],
+        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}${kv[i].map(v => `<td>${kf(v)}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
+    $('cmp-kix-note').hidden = !kix;
+    csvSet('cmp-table', ['지역', '영업 숙소', '연간 외지인', '연간 외국인', '외지인 100만 명당 숙소', '외국인 100만 명당 숙소', ...KX.map(k => `${k[1]} 지수(12개월 평균)`), `${Y3 + 1}~${yNow} 증가율(%)`, '누적 폐업률(%)', '영업 도시민박'],
       R.map((r, i) => { const x = stats[i];
         return [regLabel(r), x.st[0], x.v ? x.v[0] : '', x.v ? x.v[1] : '', ...[0, 1].map(j => x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(2) : ''),
+          ...kv[i].map(v => v == null ? '' : v.toFixed(2)),
           x.tr.base ? ((x.tr.nw - x.tr.cl) / x.tr.base * 100).toFixed(2) : '', x.st[0] + x.st[2] ? (x.st[2] / (x.st[0] + x.st[2]) * 100).toFixed(2) : '', x.mb]; }));
     // 연도별 신규 인허가
     const P = periods(), years = P.keys;
@@ -930,7 +935,14 @@
       + rows.map(([nm, k]) => `<tr${k === ck ? ' class="sum"' : ''}><td>${esc(nm)}</td>${cols.map((j, c) => { const x = val(k, j); return `<td ${heat(x, range[c])}>${x == null ? '·' : x.toFixed(1)}</td>`; }).join('')}</tr>`).join('') + '</tbody>';
     csvSet('kix-table', ['지역', '기준월', ...kix.ix.map(x => x[1])], rows.flatMap(([nm, k]) => M.map((m, i) => [nm, m, ...kix.ix.map((_, j) => row(k)[j][i] ?? '')])));
   }
-  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); });
+  // 지역 하나(광역 또는 기초)의 최근 12개월 평균 지수
+  function kixAvg(r, code) {
+    if (!kix || r.si < 0 || r.grp != null) return null;
+    const v = kix.v[r.gi >= 0 ? `${r.si}:${r.gi}` : String(r.si)], j = kix.ix.findIndex(x => x[0] === code);
+    const xs = v ? v[j].slice(-12).filter(x => x != null) : [];
+    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  }
+  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); renderCompare(); });
 
   /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
   let icn = null, icnPer = 'm';
