@@ -59,8 +59,8 @@ STATIONS_QUERY = """[out:json][timeout:180];
  nwr["railway"="station"]["subway"="yes"](33.0,124.5,38.7,131.0);
  nwr["railway"="station"]["light_rail"="yes"](33.0,124.5,38.7,131.0););
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "icn", "korail_wide", "kac"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"subway", "parks_osm", "stations", "korail_wide", "kac"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "parks_osm", "stations", "icn", "korail_wide", "kac_years"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"subway", "parks_osm", "stations", "korail_wide", "kac_years"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -215,7 +215,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "icn", "korail_wide", "kac"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "icn", "korail_wide", "kac_years"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
@@ -223,7 +223,7 @@ def main():
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations, "icn": fetch_icn, "korail_wide": fetch_korail_wide,
-             "kac": fetch_kac}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -353,27 +353,28 @@ def fetch_korail_wide(key):
 
 
 def fetch_kac(key):
-    """한국공항공사 공항별 여객실적: the odcloud dataset is one table per publication; take the latest one.
-    The column names are printed so the build can be written against them."""
+    """한국공항공사 공항별 여객실적: the odcloud dataset holds one table per publication (one year each).
+    Tables with the current columns (공항, 노선, 연도, 여객성인도착 ...) are kept; older layouts are skipped."""
     spec = requests.get(KAC_SPEC, timeout=60).json()
-    paths = [(re.findall(r"\d{8}", v["get"].get("summary", "")) or ["0"])[0] + "|" + p + "|" + v["get"].get("summary", "")
-             for p, v in spec["paths"].items()]
-    print("kac tables:", [x.split("|", 2)[2] for x in sorted(paths)], flush=True)
-    _, path, title = sorted(paths)[-1].split("|", 2)
-    rows, p = [], 1
-    while True:
-        r = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": p, "perPage": 1000, "returnType": "JSON"}, timeout=90)
-        d = r.json()
-        if "data" not in d:
-            raise RuntimeError(f"HTTP {r.status_code}: {str(d)[:200]}")
-        rows += d["data"]
-        if not d["data"] or len(rows) >= int(d.get("totalCount") or 0):
-            break
-        p += 1
-    print(f"kac: {title}: {len(rows)} rows; columns {list(rows[0]) if rows else []}; first {rows[:2]}", flush=True)
-    if not rows:
-        raise RuntimeError("no rows returned")
-    save_json("kac.json", {"title": title, "rows": rows})
+    tables = []
+    for path, v in spec["paths"].items():
+        title, rows, p = v["get"].get("summary", ""), [], 1
+        while True:
+            r = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": p, "perPage": 1000, "returnType": "JSON"}, timeout=90)
+            d = r.json()
+            if "data" not in d:
+                raise RuntimeError(f"{title}: HTTP {r.status_code}: {str(d)[:200]}")
+            rows += d["data"]
+            if not d["data"] or len(rows) >= int(d.get("totalCount") or 0):
+                break
+            p += 1
+        ok = bool(rows) and {"공항", "노선", "연도", "여객성인도착", "여객성인출발"} <= set(rows[0])
+        print(f"kac: {title}: {len(rows)} rows, {'kept' if ok else 'skipped, columns ' + str(list(rows[0]) if rows else [])}", flush=True)
+        if ok:
+            tables.append({"title": title, "rows": rows})
+    if not tables:
+        raise RuntimeError("no table with the expected columns")
+    save_json("kac_years.json", tables)
 
 
 if __name__ == "__main__":

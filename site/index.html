@@ -120,7 +120,7 @@
   <section data-tab="transit" id="stn-sec">
     <div class="sechead"><h2>역세권 숙소</h2><p class="sub" id="stn-sub"></p></div>
     <div class="card">
-      <div class="tlrow" style="margin-bottom:10px"><label for="stn-sel" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">지하철·도시철도역<select id="stn-sel"></select></label><span id="stn-lines"></span></div>
+      <div class="tlrow" style="margin-bottom:10px"><label for="stn-q" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">지하철·도시철도역<input type="search" id="stn-q" placeholder="역·노선 이름 검색" autocomplete="off"></label><select id="stn-sel" aria-label="역 선택"></select><span id="stn-lines"></span></div>
       <div class="kpis" id="stn-kpis"></div>
       <p class="note" id="stn-rail" style="margin-top:10px"></p>
     </div>
@@ -187,6 +187,12 @@
       <div class="chartwrap"><svg id="icn" viewBox="0 0 900 260" role="img" aria-label="인천공항 여객 추이"></svg><div class="tip" id="icn-tip" hidden></div></div></div>
     <div class="card"><button class="btn csv" data-csv="icn-top" data-name="인천공항_국가별_도착">CSV</button><h3 style="margin-bottom:10px">국가별 도착 여객 상위 12 · 최근 12개월 (비중 · 직전 12개월 대비)</h3><div class="sharelist" id="icn-top"></div>
       <p class="note">출처: 인천국제공항공사 국가별 항공 통계(공공데이터포털). 국가는 출발 공항이 있는 나라라서 국적과 다르고, 귀국하는 내국인도 들어 있습니다. 외국인 국적별 입국자는 위 "방한 외래관광객"에서 보세요.</p></div>
+  </section>
+
+  <section data-tab="demand" id="kac-sec" hidden>
+    <div class="sechead"><h2 id="kac-title">공항별 여객</h2><p class="sub" id="kac-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="kac-list" data-name="공항별_여객">CSV</button><div class="sharelist" id="kac-list"></div>
+      <p class="note">출처: 한국공항공사 공항별 여객실적(공공데이터포털, 연 단위). 성인·유아, 정기·부정기를 합친 도착+출발 여객입니다. 지도에서 공항을 누르면 같은 값이 나옵니다.</p></div>
   </section>
 
   <section data-tab="trend">

@@ -24,6 +24,7 @@ Steps
     operating lodgings per type within 0.5 / 1 / 3 / 5 km (records with an exact position only), plus the monthly
     boardings / alightings of 코레일 광역철도 stations matched by name (latest 12 months).
 16. icn.json: 인천공항 arriving / departing passengers per month and the top countries of the route.
+17. kac.json: passengers per airport and year, domestic / international (한국공항공사 공항별 여객실적).
 """
 import difflib
 import glob
@@ -544,8 +545,10 @@ def write_stations(rows, sidos, sgg_of, tidx):
                             if d2 <= rad * rad:
                                 c[k] += 1
         reg = near1.most_common(1)[0][0] if near1 else nearest[1]
-        si = sidos.index(reg[0]) if reg else -1
-        gi = sgg_of[reg[0]].index(reg[1]) if reg else -1
+        if not reg or not re.search("[가-힣]", m["name"]):  # no lodging within 10 km: outside Korea (the query box reaches Kyushu)
+            continue
+        si = sidos.index(reg[0])
+        gi = sgg_of[reg[0]].index(reg[1])
         out.append([lat, lon, m["name"], si, gi, lines_near(lat, lon), [[t, *c] for t, c in sorted(cnt.items())]])
     print(f"stations: {len(out)} after merging, {sum(1 for o in out if o[5])} on a known line, {len(lines)} lines", flush=True)
     kym = add_korail(out, lines, sidos)
@@ -578,17 +581,44 @@ def add_korail(out, lines, sidos):
         if o[3] >= 0 and sidos[o[3]] in KORAIL_SIDO:
             cand[norm(o[2])].append(i)
     hit = amb = 0
+    missing = []
     for name, series in by.items():
         ids = cand.get(name, [])
         if len(ids) > 1:
             ids = [i for i in ids if any(KORAIL_LINE.search(lines[li][0]) for li in out[i][5])]
         if len(ids) != 1:
             amb += bool(cand.get(name))
+            if not cand.get(name):
+                missing.append(name)
             continue
         out[ids[0]][-1] = [[series.get(m, (0, 0))[0] for m in kym], [series.get(m, (0, 0))[1] for m in kym]]
         hit += 1
-    print(f"korail_wide: {len(by)} stations, {hit} matched to a map station, {amb} ambiguous, months {kym[:1]}~{kym[-1:]}", flush=True)
+    print(f"korail_wide: {len(by)} stations, {hit} matched to a map station, {amb} ambiguous, months {kym[:1]}~{kym[-1:]}; "
+          f"not on the map: {' '.join(sorted(missing))}", flush=True)
     return kym
+
+
+def write_kac():
+    """한국공항공사 공항별 여객 per year (one odcloud table per publication; the newest table wins for a year).
+    Passengers = adults + infants, arriving + departing, scheduled + unscheduled."""
+    path = os.path.join(RAW, "kac_years.json")
+    if not os.path.exists(path):
+        return
+    per = {}
+    for t in sorted(json.load(open(path, encoding="utf-8")), key=lambda t: (re.findall(r"\d{8}", t["title"]) or ["0"])[0]):
+        by = defaultdict(lambda: [0, 0])
+        for r in t["rows"]:
+            n = sum(int(r.get(k) or 0) for k in ("여객성인도착", "여객성인출발", "여객유아도착", "여객유아출발"))
+            by[(int(r["연도"]), r["공항"])][1 if r["노선"] == "국제선" else 0] += n
+        for (y, a), v in by.items():
+            per.setdefault(y, {})[a] = v
+    years = sorted(per)[-6:]
+    names = sorted({a for y in years for a in per[y]}, key=lambda a: -sum(per[years[-1]].get(a, [0, 0])))
+    out = {"years": years, "airports": [{"name": a.split("_")[0], "dom": [per[y].get(a, [0, 0])[0] for y in years],
+                                         "intl": [per[y].get(a, [0, 0])[1] for y in years]} for a in names]}
+    print(f"kac: years {years}, {len(names)} airports", flush=True)
+    with open(os.path.join(OUT, "kac.json"), "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def write_icn():
@@ -802,6 +832,7 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     write_arrivals()
     write_icn()
+    write_kac()
     write_parks()
     write_subway()
     write_park_areas()

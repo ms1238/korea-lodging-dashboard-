@@ -287,7 +287,10 @@
       map.on('click', 'areas', async e => { const p = e.features[0].properties; await setSido(p.si); setSgg(p.gi); });
       const pop = (ll, html) => new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(ll).setHTML(html).addTo(map);
       map.on('click', 'parks', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.park)}</b><br>${esc(p.title)}<br><small>출처: 한국관광공사 TourAPI</small>`); });
-      map.on('click', 'airports', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name)}</b>${p.iata ? ` (${esc(p.iata)})` : ''}<br><small>출처: OpenStreetMap</small>`); });
+      map.on('click', 'airports', e => {
+        const p = e.features[0].properties, nm = p['name:ko'] || p.name, k = kacOf(nm), n = k ? kac.years.length - 1 : 0;
+        pop(e.lngLat, `<b>${esc(nm)}</b>${p.iata ? ` (${esc(p.iata)})` : ''}<br>${k ? `${kac.years[n]}년 여객 ${fmt(k.dom[n] + k.intl[n])}명 (국내선 ${fmt(k.dom[n])} · 국제선 ${fmt(k.intl[n])})<br>` : ''}<small>출처: OpenStreetMap${k ? ', 한국공항공사' : ''}</small>`);
+      });
       map.on('click', 'subway', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'park-fill', e => {
         if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'areas', 'parks', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
@@ -303,7 +306,8 @@
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
-      update(false);
+      update(!!D);  // 공유 링크로 지역이 이미 골라져 있으면 그 지역으로
+      if (state.cmp.length && !unionOn()) fitRegs(state.cmp);
     });
   }
   /* ---------- timeline ---------- */
@@ -411,16 +415,28 @@
     }
     map.getSource('areas').setData(empty);
     const feats = [];
-    let minx = 180, miny = 90, maxx = -180, maxy = -90;
     for (const r of D.rows) {
       if (r[0] == null || !inDetail(r) || !state.types.has(r[2]) || !tlRowOK(r)) continue;
       feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [r[1], r[0]] },
         properties: { t: r[2], c: catOf[r[2]], s: r[6], name: r[9], addr: r[10], date: r[11], closed: r[12], ap: r[13] } });
-      minx = Math.min(minx, r[1]); maxx = Math.max(maxx, r[1]); miny = Math.min(miny, r[0]); maxy = Math.max(maxy, r[0]);
     }
     map.getSource('pts').setData({ type: 'FeatureCollection', features: feats });
     drawTour();
-    if (fly && feats.length) map.fitBounds([[minx, miny], [maxx, maxy]], { padding: 40, maxZoom: 15, duration: 800 });
+    if (fly) fitLL(feats.map(f => f.geometry.coordinates), .01);
+  }
+  // 점들이 보이게 지도를 맞춤. 점이 많으면 양 끝 2%(좌표가 잘못 찍힌 시설, 멀리 떨어진 섬)는 범위에서 뺌
+  function fitLL(pts, pad) {
+    if (!mapReady || !pts.length) return;
+    const q = (xs, f) => { xs.sort((a, b) => a - b); return xs[Math.min(xs.length - 1, Math.max(0, Math.round((xs.length - 1) * f)))]; };
+    const cut = pts.length >= 40 ? .02 : 0, xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const b = [[q(xs, cut) - pad, q(ys, cut) - pad], [q(xs, 1 - cut) + pad, q(ys, 1 - cut) + pad]];
+    map.fitBounds(b, { padding: 40, maxZoom: 14, duration: 800 });
+  }
+  // 비교 목록의 지역들이 한 화면에 들어오게 (시군구 중심점 기준, 전국이 끼어 있으면 전국)
+  function fitRegs(regs) {
+    if (!mapReady) return;
+    if (regs.some(r => r.si < 0)) { map.flyTo({ center: [127.8, 36.2], zoom: 5.6 }); return; }
+    fitLL(regs.flatMap(r => (gisOf(r) || S[r.si].sgg.map((_, gi) => gi)).map(gi => S[r.si].sggc[gi]).filter(Boolean).map(c => [c[1], c[0]])), .12);
   }
 
   /* ---------- render ---------- */
@@ -585,11 +601,13 @@
     const r = curReg();
     if (state.cmp.length >= 7 || state.cmp.some(x => regKey(x) === regKey(r))) return;
     state.cmp.push(r); renderChips(); renderCompare(); applyUnion(); writeHash();
+    if (!unionOn()) fitRegs(state.cmp);
   };
   $('cmp-chips').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.id === 'cmp-clear') state.cmp = []; else state.cmp.splice(+b.dataset.i, 1);
     renderChips(); renderCompare(); applyUnion(); writeHash();
+    if (!unionOn()) fitRegs(state.cmp.length ? state.cmp : [curReg()]);
   });
   const visOf = r => {
     if (!visits) return null;
@@ -744,7 +762,12 @@
   function renderStations() {
     if (!STN || !STN.st.length) { $('stn-sub').textContent = '역 자료가 아직 없습니다. 다음 데이터 갱신 후 표시됩니다.'; $('stn-sel').disabled = true; return; }
     const regs = U ? U.regs : [curReg()];
-    const ids = STN.st.map((_, i) => i).filter(i => regs.some(r => inReg(r, STN.st[i][3], STN.st[i][4])));
+    const inR = STN.st.map((_, i) => i).filter(i => regs.some(r => inReg(r, STN.st[i][3], STN.st[i][4])));
+    // 검색: 역 이름이나 노선 이름에 검색어가 들어간 역만 (공백 무시). 이름이 똑같은 역이 있으면 그 역을 고름
+    const q = $('stn-q').value.replace(/\s/g, ''), hay = i => (STN.st[i][2] + STN.st[i][5].map(li => STN.lines[li][0]).join('')).replace(/\s/g, '');
+    const ids = q ? inR.filter(i => hay(i).includes(q)) : inR;
+    const exact = ids.find(i => STN.st[i][2].replace(/역$/, '') === q.replace(/역$/, ''));
+    if (exact != null && q) stnSel = exact;
     if (!ids.includes(stnSel)) stnSel = ids.length ? ids.reduce((a, b) => stnCount(STN.st[b], 1) > stnCount(STN.st[a], 1) ? b : a) : -1;
     // 노선별로 묶은 목록. 여러 노선이 지나는 역은 노선마다 나옵니다
     const byName = (a, b) => STN.st[a][2].localeCompare(STN.st[b][2], 'ko');
@@ -755,12 +778,14 @@
     $('stn-sel').innerHTML = groups.map(([name, xs]) => `<optgroup label="${esc(name)}">${xs.map(i => `<option value="${i}">${esc(STN.st[i][2])}</option>`).join('')}</optgroup>`).join('');
     $('stn-sel').disabled = !ids.length;
     if (stnSel >= 0) $('stn-sel').value = String(stnSel);
-    $('stn-sub').textContent = ids.length ? `${regionName()} 역 ${fmt(ids.length)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.` : `${regionName()}에는 지하철·도시철도역이 없습니다.`;
+    $('stn-sub').textContent = !inR.length ? `${regionName()}에는 지하철·도시철도역이 없습니다.`
+      : q ? `${regionName()} 역 ${fmt(inR.length)}곳 중 "${$('stn-q').value}" 검색 결과 ${fmt(ids.length)}곳`
+      : `${regionName()} 역 ${fmt(inR.length)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.`;
     renderStation();
   }
   function renderStation() {
     const s = STN.st[stnSel];
-    if (!s) { $('stn-kpis').innerHTML = ''; $('stn-table').innerHTML = ''; $('stn-lines').innerHTML = ''; drawRings(null); return; }
+    if (!s) { $('stn-kpis').innerHTML = ''; $('stn-table').innerHTML = ''; $('stn-lines').innerHTML = ''; $('stn-rail').textContent = ''; $('stn-table-title').textContent = '업종별 숙소 수'; drawRings(null); return; }
     const R = STN.r, place = s[3] >= 0 ? `${short(S[s[3]].name)} ${S[s[3]].sgg[s[4]]}` : '';
     $('stn-lines').innerHTML = s[5].map(li => `<span class="chip" style="padding-right:10px"><span class="sw" style="background:${STN.lines[li][1] || '#7f8c8d'}"></span>${esc(STN.lines[li][0])}</span>`).join(' ')
       + (place ? ` <small style="color:var(--muted)">${esc(place)}</small>` : '');
@@ -793,6 +818,7 @@
     }
     map.getSource('stn-ring').setData({ type: 'FeatureCollection', features: feats });
   }
+  $('stn-q').oninput = () => { if (!STN) return; const before = stnSel; renderStations(); if (stnSel !== before && stnSel >= 0) drawRings(STN.st[stnSel], true); };
   $('stn-sel').onchange = e => { stnSel = +e.target.value; renderStation(); drawRings(STN.st[stnSel], true); };
   getJSON('data/stations.json', null).then(d => { STN = d; renderStations(); });
 
@@ -865,6 +891,23 @@
   }
   $('icn-per').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { icnPer = x.dataset.v; renderIcn(); } });
   getJSON('data/icn.json', null).then(d => { icn = d; renderIcn(); });
+
+  /* ---------- 공항별 여객 (한국공항공사, 연간, build.py → kac.json) ---------- */
+  let kac = null;
+  function renderKac() {
+    $('kac-sec').hidden = !kac || !kac.airports.length;
+    if (!kac || !kac.airports.length) return;
+    const Y = kac.years, n = Y.length, tot = a => a.dom[n - 1] + a.intl[n - 1], prev = a => n > 1 ? a.dom[n - 2] + a.intl[n - 2] : 0;
+    const man = v => v >= 1e4 ? fmt(Math.round(v / 1e4)) + '만' : fmt(v), yoy = (a, b) => b ? (a >= b ? '+' : '') + ((a / b - 1) * 100).toFixed(1) + '%' : '-';
+    const all = kac.airports.reduce((p, a) => p + tot(a), 0);
+    $('kac-title').textContent = `공항별 여객 · ${Y[n - 1]}년 (도착+출발)`;
+    $('kac-list').innerHTML = rowsHTML(kac.airports.filter(a => tot(a)).map(a => ({ name: a.name, value: tot(a), label: man(tot(a)),
+      extra: `국내 ${man(a.dom[n - 1])} · 국제 ${man(a.intl[n - 1])} · ${n > 1 ? `${Y[n - 2]}년 대비 ${yoy(tot(a), prev(a))}` : ''}` })), {});
+    $('kac-sub').textContent = `${Y[n - 1]}년 전국 공항 여객 ${man(all)}명. 지방공항 수요는 그 지역 숙소 수요와 함께 보세요.`;
+    csvSet('kac-list', ['공항', ...Y.flatMap(y => [`${y} 국내선`, `${y} 국제선`])], kac.airports.map(a => [a.name, ...Y.flatMap((_, i) => [a.dom[i], a.intl[i]])]));
+  }
+  const kacOf = name => kac && name ? kac.airports.find(a => name.startsWith(a.name)) : null;
+  getJSON('data/kac.json', null).then(d => { kac = d; renderKac(); });
 
   /* ---------- 외지인·외국인 방문객 추이 (지금 고른 지역, 누적 막대 + 외국인 비중) ---------- */
   let dvPer = 'y', dvMode = 'bar';
