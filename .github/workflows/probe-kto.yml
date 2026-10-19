@@ -1,0 +1,52 @@
+# Temporary: what AreaTarDivService offers, and which 관광특구 datasets exist on the portal.
+name: Probe KTO data
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-kto.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import json, os, re, requests
+          K = os.environ["KEY"]
+          H = {"User-Agent": "Mozilla/5.0"}
+          def search(kw, dtype):
+              t = requests.get("https://www.data.go.kr/tcs/dss/selectDataSetList.do", params={"keyword": kw, "dType": dtype, "perPage": 40}, headers=H, timeout=90).text
+              ids = list(dict.fromkeys(re.findall(r"/data/(\d{8})/(?:openapi|fileData|standard)\.do", t)))
+              titles = [re.sub(r"<[^>]+>|\s+", " ", x).strip() for x in re.findall(r'<span class="title">(.*?)</span>', t, re.S)]
+              print(f"== SEARCH {kw} {dtype}: {list(zip(ids, titles))[:25]}", flush=True)
+              return ids
+          found = None
+          for kw in ("AreaTarDivService", "한국관광공사 다양성", "한국관광공사 지역별 관광"):
+              for cid in search(kw, "API")[:15]:
+                  t = requests.get(f"https://www.data.go.kr/data/{cid}/openapi.do", headers=H, timeout=90).text
+                  if "AreaTarDivService" in t:
+                      found = (cid, t); break
+              if found: break
+          if found:
+              cid, t = found
+              print("== FOUND", cid, re.findall(r"<title>(.*?)</title>", t, re.S)[:1])
+              m = re.search(r"swaggerJson\s*=\s*`(.*?)`", t, re.S)
+              sw = m.group(1) if m else ""
+              print("== description:", re.findall(r'"description":"(.{0,600}?)"', sw)[:1])
+              for op in re.findall(r'"(/\w+)":\{"get"', sw):
+                  j = sw.find(f'"{op}"')
+                  print("== OP", op, re.findall(r'"summary":"([^"]*)"', sw[j:j + 30000])[:1],
+                        "\n   desc:", re.findall(r'"description":"([^"]{0,300})"', sw[j:j + 30000])[:1],
+                        "\n   params:", re.findall(r'"name":"([^"]+)","description":"([^"]*)"', sw[j:j + 30000])[:14],
+                        "\n   fields:", re.findall(r'"(\w+)":\{"type":"(?:string|number|integer)","description":"([^"]*)"', sw[j:j + 30000])[:30], flush=True)
+              for op in re.findall(r'"(/\w+)":\{"get"', sw)[:6]:
+                  r = requests.get("https://apis.data.go.kr/B551011/AreaTarDivService" + op, params={"serviceKey": K, "pageNo": 1, "numOfRows": 3, "MobileOS": "ETC", "MobileApp": "test", "_type": "json"}, timeout=90)
+                  print(f"== CALL {op} [{r.status_code}] {r.text[:1200]}\n", flush=True)
+          else:
+              print("== AreaTarDivService not found in the searched pages", flush=True)
+          for kw in ("관광특구", "관광특구 경계", "관광특구 공간"):
+              search(kw, "FILE"); search(kw, "API")
