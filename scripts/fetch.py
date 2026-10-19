@@ -38,6 +38,8 @@ ENDPOINTS = [
 BASE = "https://apis.data.go.kr/1741000/{}/info"
 TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2/areaBasedList2"
 TOUR_TYPES = {"12": "관광지", "14": "문화시설", "28": "레포츠"}  # TourAPI contentTypeId
+FESTIVALS = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"  # TourAPI 행사·축제
+FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
 DATALAB_FROM = 2018  # first year the service has data for
@@ -80,7 +82,7 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month"}  # the page works without these, so a failed first fetch does not stop the deploy
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals"}  # the page works without these, so a failed first fetch does not stop the deploy
 JSON_FILES = {"subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
@@ -237,7 +239,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
@@ -246,7 +248,7 @@ def main():
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
-             "kac_years": fetch_kac}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -329,6 +331,29 @@ def fetch_arrivals(key):
 
 def num(v):
     return int(str(v or 0).replace(",", "") or 0)
+
+
+def fetch_festivals(key):
+    """TourAPI festivals. The service keeps only each festival's latest edition, so earlier editions are carried over
+    from the previous raw/festivals.jsonl: one row per festival and year. "cur" marks rows the service still lists."""
+    path = os.path.join(RAW_DIR, "festivals.jsonl")
+    old = [dict(json.loads(l), cur=False) for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
+    params = {"serviceKey": key, "numOfRows": 1000, "_type": "json", "MobileOS": "ETC", "MobileApp": "korea-lodging-dashboard",
+              "eventStartDate": FESTIVALS_FROM}
+    items, total = [], 1
+    while len(items) < total:
+        body = get_body(FESTIVALS, dict(params, pageNo=len(items) // 1000 + 1), "festivals")
+        total, got = int(body.get("totalCount") or 0), items_of(body)
+        if not got:
+            break
+        items += got
+    check("festivals", len(items), total)
+    keep = ("contentid", "title", "addr1", "eventstartdate", "eventenddate", "mapx", "mapy", "firstimage", "firstimage2", "tel")
+    new = [dict({k: it.get(k) or "" for k in keep}, cur=True) for it in items]
+    year = {r["contentid"]: r["eventstartdate"][:4] for r in new}
+    # an earlier year of a listed festival stays; the same year again is a correction of its dates
+    rows = [r for r in old if r["eventstartdate"][:4] < year.get(r["contentid"], "9999")] + new
+    write_rows("festivals", sorted(rows, key=lambda r: (r["eventstartdate"], r["contentid"])))
 
 
 def fetch_icn(key):

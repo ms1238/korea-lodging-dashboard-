@@ -28,6 +28,7 @@
         <button role="tab" data-t="summary" aria-selected="false">종합</button>
         <button role="tab" data-t="now" aria-selected="true">현황</button>
         <button role="tab" data-t="demand" aria-selected="false">관광 수요</button>
+        <button role="tab" data-t="festival" aria-selected="false">축제</button>
         <button role="tab" data-t="trend" aria-selected="false">동향</button>
         <button role="tab" data-t="minbak" aria-selected="false">도시민박</button>
         <button role="tab" data-t="compare" aria-selected="false">지역 비교</button>
@@ -135,6 +136,23 @@
     </div>
     <div class="card"><button class="btn csv" data-csv="stn-table" data-name="역세권_업종별">CSV</button><h3 style="margin-bottom:10px" id="stn-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="stn-table"></table></div>
       <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 역 위치에서 잰 직선거리입니다. 역 위치와 노선: OpenStreetMap. 역의 시·군·구는 반경 1km 안 숙소 주소로 정했습니다.</p></div>
+  </section>
+
+  <section data-tab="festival" id="fest-sec">
+    <div class="sechead"><h2>축제 주변 숙소</h2><p class="sub" id="fest-sub"></p></div>
+    <div class="card">
+      <div class="tlrow" style="margin-bottom:10px"><label for="fest-q" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">축제<span class="suggwrap"><input type="search" id="fest-q" placeholder="축제 이름·장소 검색" autocomplete="off" role="combobox" aria-controls="fest-sugg"><span class="sugg" id="fest-sugg" role="listbox" hidden></span></span></label><select id="fest-sel" aria-label="축제 선택"></select></div>
+      <div class="festinfo" id="fest-info"></div>
+      <div class="kpis" id="fest-kpis"></div>
+    </div>
+    <div class="card"><button class="btn csv" data-csv="fest-table" data-name="축제주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="fest-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="fest-table"></table></div>
+      <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 한국관광공사가 등록한 축제 위치에서 잰 직선거리입니다. 행사장이 넓거나 여러 곳이면 실제 생활권과 다를 수 있습니다.</p></div>
+    <div class="card"><h3 style="margin-bottom:6px" id="fest-vis-title">축제 달과 월별 외지인 방문객</h3>
+      <div class="legend"><span><i style="background:var(--c0)"></i>외지인 방문객</span><span><i style="background:#e67e22"></i>축제가 열린 달</span><span><i style="background:#e67e22;opacity:.4"></i>열렸을 것으로 추정한 달(예년 일정 기준)</span></div>
+      <div class="chartwrap"><svg id="fest-vis" viewBox="0 0 900 260" role="img" aria-label="축제 달과 월별 외지인 방문객"></svg><div class="tip" id="fest-vis-tip" hidden></div></div>
+      <p class="note" id="fest-vis-note"></p></div>
+    <div class="card"><button class="btn csv" data-csv="fest-list" data-name="지역_축제목록">CSV</button><h3 style="margin-bottom:10px" id="fest-list-title">지역 축제 목록</h3><div class="tablewrap" style="max-height:440px;overflow:auto"><table id="fest-list"></table></div>
+      <p class="note">줄을 누르면 그 축제를 고릅니다. 출처: 한국관광공사 TourAPI(행사·축제). 관광공사 자료는 축제마다 가장 최근 회차 일정만 담고 있어, 이 사이트가 매일 모으며 지난 회차를 쌓아 갑니다. 지도에는 축제 탭에서만 축제 위치가 별로 나옵니다(빨강 = 진행 중, 주황 = 예정, 회색 = 끝남).</p></div>
   </section>
 
   <section data-tab="compare" id="cmp-sec">

@@ -25,6 +25,8 @@ Steps
 16. icn.json: 인천공항 arriving / departing passengers per month and the top countries of the route.
 17. kac.json: passengers per airport and year, domestic / international (한국공항공사 공항별 여객실적).
 18. kto_index.json: 관광수요지수 세부 지표 (체류·소비 강도, 다양성) per 시도 / 시군구 and month (한국관광데이터랩, indices).
+19. festivals.json: TourAPI festivals with every edition collected so far and the operating lodgings per type within
+    0.5 / 1 / 3 / 5 km, as for stations.
 """
 import calendar
 import difflib
@@ -625,6 +627,54 @@ def write_stations(rows, sidos, sgg_of, tidx):
         json.dump({"r": RADII, "lines": lines, "st": out, "kym": kym, "mym": mym, "near": near}, f, ensure_ascii=False, separators=(",", ":"))
 
 
+def write_festivals(rows, sidos, sgg_of, tidx, merged):
+    """TourAPI festivals with every edition seen so far and the operating lodgings (exact positions) within RADII of
+    the festival, per type, as for stations. Editions the service no longer lists and that have not ended are dropped
+    (cancelled or moved)."""
+    path = os.path.join(RAW, "festivals.jsonl")
+    if not os.path.exists(path):
+        return
+    today = datetime.now(KST).strftime("%Y%m%d")
+    by_id = defaultdict(list)
+    for line in open(path, encoding="utf-8"):
+        rec = json.loads(line)
+        if rec["eventstartdate"] and (rec["cur"] or rec["eventenddate"] < today):
+            by_id[rec["contentid"]].append(rec)
+    grid = defaultdict(list)
+    for r in rows:
+        if r["status"] == 0 and r["ll"] and not r.get("approx"):
+            grid[(int(r["ll"][0] * 100), int(r["ll"][1] * 100))].append(r)
+    out, skipped = [], 0
+    for recs in by_id.values():
+        recs.sort(key=lambda r: r["eventstartdate"])
+        rec = recs[-1]
+        try:
+            lon, lat = float(rec["mapx"]), float(rec["mapy"])
+        except ValueError:
+            lon = lat = 0
+        sido, sgg = region(rec["addr1"], merged)
+        if not (32.8 < lat < 38.9 and 124.2 < lon < 132.2) or sido not in sidos:
+            skipped += 1
+            continue
+        kx = 111.32 * math.cos(math.radians(lat))
+        cnt = defaultdict(lambda: [0] * len(RADII))
+        ci, cj = int(lat * 100), int(lon * 100)
+        for i in range(ci - 5, ci + 6):
+            for j in range(cj - 6, cj + 7):
+                for r in grid.get((i, j), ()):
+                    d2 = ((r["ll"][0] - lat) * 110.95) ** 2 + ((r["ll"][1] - lon) * kx) ** 2
+                    for k, rad in enumerate(RADII):
+                        if d2 <= rad * rad:
+                            cnt[tidx[r["type"]]][k] += 1
+        out.append([round(lat, 5), round(lon, 5), clean(rec["title"]), sidos.index(sido), sgg_of[sido].index(sgg) if sgg in sgg_of[sido] else -1,
+                    [[int(r["eventstartdate"]), int(r["eventenddate"] or r["eventstartdate"])] for r in recs],
+                    re.sub(r"^\S+\s", "", clean(rec["addr1"])), clean(rec["firstimage2"] or rec["firstimage"]).replace("http://", "https://"),
+                    clean(rec["tel"]), [[t, *c] for t, c in sorted(cnt.items())]])
+    print(f"festivals: {len(out)} festivals, {sum(len(f[5]) for f in out)} editions; skipped (no position or region) {skipped}", flush=True)
+    with open(os.path.join(OUT, "festivals.json"), "w", encoding="utf-8") as f:
+        json.dump({"r": RADII, "f": out}, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def add_main(out, srcs):
     """Append [[boardings], [alightings]] of 간선열차 for the latest 12 months to stations taken from the 간선 table."""
     path = os.path.join(RAW, "korail_main.jsonl")
@@ -1019,6 +1069,7 @@ def main():
     write_subway()
     write_park_areas()
     write_stations(rows, sidos, sgg_of, tidx)
+    write_festivals(rows, sidos, sgg_of, tidx, merged)
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))

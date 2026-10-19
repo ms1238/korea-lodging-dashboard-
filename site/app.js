@@ -271,6 +271,22 @@
       map.addLayer({ id: 'tour', type: 'circle', source: 'tour', paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 3, 12, 5, 15, 7], 'circle-color': '#ffffff', 'circle-stroke-width': 2,
         'circle-stroke-color': ['match', ['get', 't'], ...TOUR_COL.flatMap((c, i) => [i, c]), '#333'] } });
+      // 축제 위치(축제 탭에서만): 별, 진행 중 = 빨강, 예정 = 주황, 끝남 = 회색
+      const star = (fill, px) => {
+        const c = document.createElement('canvas'); c.width = c.height = px; const g = c.getContext('2d'), r = px / 2;
+        g.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, d = k % 2 ? r * .45 : r - 1.5; g.lineTo(r + d * Math.cos(a), r + d * Math.sin(a)); }
+        g.closePath(); g.fillStyle = fill; g.fill(); g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+        return g.getImageData(0, 0, px, px);
+      };
+      ['#c0392b', '#e67e22', '#7f8c8d'].forEach((c, k) => map.addImage('star' + k, star(c, 64), { pixelRatio: 2 }));
+      map.addSource('fest', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'fest', type: 'symbol', source: 'fest', layout: { visibility: tab === 'festival' ? 'visible' : 'none',
+        'icon-image': ['concat', 'star', ['to-string', ['get', 's']]], 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, .55, 12, 1] } });
+      map.on('click', 'fest', e => {
+        const i = e.features[0].properties.i, f = FEST.f[i];
+        pop(e.lngLat, `${f[7] ? `<img src="${esc(f[7])}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(f[2])}</b><br>${edSpan(f[5].at(-1))} · ${FST[festState(f)]}<br>${esc(f[6])}<br>영업 숙소 반경 1km ${fmt(festCount(f, 1))}곳 · 3km ${fmt(festCount(f, 2))}곳<br><small>출처: 한국관광공사 TourAPI</small>`);
+        fSel = i; $('fest-sel').value = String(i); renderFestOne();
+      });
       map.on('click', 'pts', e => {
         const p = e.features[0].properties;
         new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(e.lngLat).setHTML(
@@ -289,7 +305,7 @@
       });
       map.on('click', 'subway', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'park-fill', e => {
-        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'areas', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'fest', 'areas', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties;
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
@@ -298,7 +314,7 @@
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
-      for (const l of ['pts', 'areas', 'tour', 'airports', 'rail-st', 'subway', 'park-fill']) {
+      for (const l of ['pts', 'areas', 'tour', 'fest', 'airports', 'rail-st', 'subway', 'park-fill']) {
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
@@ -495,6 +511,7 @@
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
     renderStations();
+    renderFest();
     writeHash();
     drawTimeline();
     drawMap(fly);
@@ -810,12 +827,12 @@
     csvSet('stn-table', ['역', '업종', ...R.map(km => `반경 ${kmLabel(km)}`)], rows.map(c => [s[2], T[c[0]].name, ...c.slice(1)]));
     drawRings(s);
   }
-  function drawRings(s, fly) {
-    if (!mapReady) return;
+  function drawRings(s, fly, kind = 'transit') {  // kind: 반경을 보여 줄 탭(역 = transit, 축제 = festival). 다른 탭에서는 그리지 않음
+    if (!mapReady || tab !== kind) return;
     const feats = [];
-    if (s && tab === 'transit') {
+    if (s) {
       const [lat, lon] = s, kx = 111.32 * Math.cos(lat * Math.PI / 180);
-      for (const km of STN.r) {
+      for (const km of (kind === 'festival' ? FEST : STN).r) {
         const g = []; for (let k = 0; k <= 72; k++) { const a = k / 72 * 2 * Math.PI; g.push([lon + km / kx * Math.sin(a), lat + km / 110.95 * Math.cos(a)]); }
         feats.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: g } },
           { type: 'Feature', properties: { l: kmLabel(km) }, geometry: { type: 'Point', coordinates: [lon, lat + km / 110.95] } });
@@ -828,38 +845,153 @@
     const regs = U ? U.regs : [curReg()];
     return STN.st.map((_, i) => i).filter(i => regs.some(r => inReg(r, STN.st[i][3], STN.st[i][4])));
   }
-  // 검색: 역·노선 이름에 검색어가 들어간 역을 목록으로 보여주고, 누르거나 ↑↓·Enter로 고름 (공백 무시, 이름이 같은 역 먼저)
-  let sugg = [], suggAt = 0;
-  const pickStation = i => { stnSel = i; $('stn-q').value = ''; closeSugg(); renderStations(); drawRings(STN.st[i], true); };
-  const closeSugg = () => { $('stn-sugg').hidden = true; sugg = []; };
-  function showSugg() {
-    const q = $('stn-q').value.replace(/\s/g, '');
-    if (!STN || !q) return closeSugg();
-    const nm = i => STN.st[i][2].replace(/\s/g, ''), hay = i => nm(i) + STN.st[i][5].map(li => STN.lines[li][0]).join('').replace(/\s/g, '');
-    const all = stnInReg().filter(i => hay(i).includes(q)), bare = n => n.replace(/역$/, '');
-    sugg = all.sort((a, b) => (bare(nm(b)) === bare(q)) - (bare(nm(a)) === bare(q)) || nm(b).startsWith(q) - nm(a).startsWith(q) || nm(a).localeCompare(nm(b), 'ko')).slice(0, 15);
-    suggAt = 0;
-    const nat = sugg.length ? 0 : STN.st.filter((s, i) => hay(i).includes(q)).length;
-    $('stn-sugg').innerHTML = sugg.map((i, k) => { const s = STN.st[i];
-      return `<button type="button" role="option" data-i="${i}" aria-selected="${k === 0}"><b>${esc(s[2])}</b><small>${s[5].map(li => `<span class="sw" style="background:${STN.lines[li][1] || '#7f8c8d'}"></span>${esc(STN.lines[li][0])}`).join(' ')}${s[3] >= 0 ? ` · ${esc(short(S[s[3]].name))} ${esc(S[s[3]].sgg[s[4]])}` : ''}</small></button>`; }).join('')
-      + (all.length > sugg.length ? `<p class="note">${fmt(all.length - sugg.length)}곳 더 있습니다. 더 입력해 좁혀 보세요.</p>` : '')
-      || `<p class="note">${regionName()}에 맞는 역이 없습니다.${nat ? ` 전국에는 ${fmt(nat)}곳 있습니다(위에서 광역을 전국으로).` : ''}</p>`;
-    $('stn-sugg').hidden = false;
+  // 검색 상자: 입력하면 맞는 항목을 목록으로 보여주고, 누르거나 ↑↓·Enter로 고름. find(검색어) → {ids, html} 또는 null
+  function searchBox(q, box, find, pick) {
+    let ids = [], at = 0;
+    const close = () => { box.hidden = true; ids = []; };
+    const show = () => { const r = find(q.value.replace(/\s/g, '')); if (!r) return close(); ids = r.ids; at = 0; box.innerHTML = r.html; box.hidden = false; };
+    const choose = i => { q.value = ''; close(); pick(i); };
+    q.oninput = show; q.onfocus = show; q.onblur = () => setTimeout(close, 150);
+    q.onkeydown = e => {
+      if (box.hidden || !ids.length) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault(); at = (at + (e.key === 'ArrowDown' ? 1 : ids.length - 1)) % ids.length;
+        box.querySelectorAll('button').forEach((b, k) => { b.setAttribute('aria-selected', String(k === at)); if (k === at) b.scrollIntoView({ block: 'nearest' }); });
+      } else if (e.key === 'Enter') { e.preventDefault(); choose(ids[at]); }
+      else if (e.key === 'Escape') close();
+    };
+    box.addEventListener('mousedown', e => { const b = e.target.closest('button[data-i]'); if (b) { e.preventDefault(); choose(+b.dataset.i); } });
   }
-  $('stn-q').oninput = showSugg;
-  $('stn-q').onkeydown = e => {
-    if ($('stn-sugg').hidden || !sugg.length) return;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault(); suggAt = (suggAt + (e.key === 'ArrowDown' ? 1 : sugg.length - 1)) % sugg.length;
-      $('stn-sugg').querySelectorAll('button').forEach((b, k) => { b.setAttribute('aria-selected', String(k === suggAt)); if (k === suggAt) b.scrollIntoView({ block: 'nearest' }); });
-    } else if (e.key === 'Enter') { e.preventDefault(); pickStation(sugg[suggAt]); }
-    else if (e.key === 'Escape') closeSugg();
-  };
-  $('stn-sugg').addEventListener('mousedown', e => { const b = e.target.closest('button[data-i]'); if (b) { e.preventDefault(); pickStation(+b.dataset.i); } });
-  $('stn-q').onblur = () => setTimeout(closeSugg, 150);
-  $('stn-q').onfocus = showSugg;
+  // 이름이 검색어와 같은 것 → 검색어로 시작하는 것 → 가나다 순으로 15개까지
+  function suggList(all, nm, q, item, what, nat) {
+    const bare = n => n.replace(/역$/, '');
+    const ids = all.sort((a, b) => (bare(nm(b)) === bare(q)) - (bare(nm(a)) === bare(q)) || nm(b).startsWith(q) - nm(a).startsWith(q) || nm(a).localeCompare(nm(b), 'ko')).slice(0, 15);
+    return { ids, html: ids.map((i, k) => `<button type="button" role="option" data-i="${i}" aria-selected="${k === 0}">${item(i)}</button>`).join('')
+      + (all.length > ids.length ? `<p class="note">${fmt(all.length - ids.length)}곳 더 있습니다. 더 입력해 좁혀 보세요.</p>` : '')
+      || `<p class="note">${regionName()}에 맞는 ${what} 없습니다.${nat() ? ` 전국에는 ${fmt(nat())}곳 있습니다(위에서 광역을 전국으로).` : ''}</p>` };
+  }
+  // 역: 역·노선 이름에 검색어가 들어간 역 (공백 무시)
+  searchBox($('stn-q'), $('stn-sugg'), q => {
+    if (!STN || !q) return null;
+    const nm = i => STN.st[i][2].replace(/\s/g, ''), hay = i => nm(i) + STN.st[i][5].map(li => STN.lines[li][0]).join('').replace(/\s/g, '');
+    return suggList(stnInReg().filter(i => hay(i).includes(q)), nm, q, i => { const s = STN.st[i];
+      return `<b>${esc(s[2])}</b><small>${s[5].map(li => `<span class="sw" style="background:${STN.lines[li][1] || '#7f8c8d'}"></span>${esc(STN.lines[li][0])}`).join(' ')}${s[3] >= 0 ? ` · ${esc(short(S[s[3]].name))} ${esc(S[s[3]].sgg[s[4]])}` : ''}</small>`; },
+    '역이', () => STN.st.filter((_, i) => hay(i).includes(q)).length);
+  }, i => { stnSel = i; renderStations(); drawRings(STN.st[i], true); });
   $('stn-sel').onchange = e => { stnSel = +e.target.value; renderStation(); drawRings(STN.st[stnSel], true); };
   getJSON('data/stations.json', null).then(d => { STN = d; renderStations(); renderOverview(); });
+
+  /* ---------- 축제: 축제 위치 반경 안 영업 숙소, 축제 달 외지인 (TourAPI 행사·축제, build.py → festivals.json) ---------- */
+  // FEST.f: [lat, lon, 이름, si, gi, [[시작, 끝(YYYYMMDD)]…회차], 주소, 사진, 전화, [[업종, 0.5km, 1km, 3km, 5km]…]]
+  let FEST = null, fSel = -1;
+  const today = (d => d.getFullYear() * 1e4 + (d.getMonth() + 1) * 100 + d.getDate())(new Date());
+  const ymd = d => `${String(d).slice(0, 4)}.${String(d).slice(4, 6)}.${String(d).slice(6)}`;
+  const edSpan = ([a, b]) => ymd(a) + (b !== a ? '~' + (String(b).slice(0, 4) === String(a).slice(0, 4) ? ymd(b).slice(5) : ymd(b)) : '');
+  const festState = f => { const [a, b] = f[5].at(-1); return a > today ? 1 : b >= today ? 0 : 2; };  // 0 진행 중, 1 예정, 2 끝남
+  const FST = ['진행 중', '예정', '끝남'];
+  const festCount = (f, k) => f[9].reduce((a, c) => a + (state.types.has(c[0]) ? c[k + 1] : 0), 0);
+  const festPlace = f => f[4] >= 0 ? `${short(S[f[3]].name)} ${S[f[3]].sgg[f[4]]}` : S[f[3]].name;
+  function festInReg() {
+    const regs = U ? U.regs : [curReg()];
+    return FEST.f.map((_, i) => i).filter(i => regs.some(r => inReg(r, FEST.f[i][3], FEST.f[i][4])));
+  }
+  function renderFest() {
+    if (!FEST) return;
+    if (!FEST.f.length) { $('fest-sub').textContent = '축제 자료가 아직 없습니다. 다음 데이터 갱신 후 표시됩니다.'; $('fest-sel').disabled = true; return; }
+    const ids = festInReg();
+    // 진행 중 → 예정(가까운 순) → 끝남(최근 순)
+    const order = (a, b) => festState(FEST.f[a]) - festState(FEST.f[b]) || (festState(FEST.f[a]) === 2 ? FEST.f[b][5].at(-1)[1] - FEST.f[a][5].at(-1)[1] : FEST.f[a][5].at(-1)[0] - FEST.f[b][5].at(-1)[0]);
+    ids.sort(order);
+    if (!ids.includes(fSel)) fSel = ids.length ? ids[0] : -1;
+    $('fest-sel').innerHTML = [0, 1, 2].map(k => [k, ids.filter(i => festState(FEST.f[i]) === k)]).filter(g => g[1].length)
+      .map(([k, xs]) => `<optgroup label="${k === 2 ? '끝남 (다음 일정 미등록)' : FST[k]}">${xs.map(i => `<option value="${i}">${esc(FEST.f[i][2])} (${edSpan(FEST.f[i][5].at(-1)).slice(2)})</option>`).join('')}</optgroup>`).join('');
+    $('fest-sel').disabled = !ids.length;
+    if (fSel >= 0) $('fest-sel').value = String(fSel);
+    const n = [0, 1].map(k => ids.filter(i => festState(FEST.f[i]) === k).length);
+    $('fest-sub').textContent = !ids.length ? `${regionName()}에 등록된 축제가 없습니다.`
+      : `${regionName()} 축제 ${fmt(ids.length)}개 (진행 중 ${fmt(n[0])} · 예정 ${fmt(n[1])}) · 선택 업종의 영업 숙소를 반경별로 셉니다.`;
+    const R = FEST.r;
+    $('fest-list-title').textContent = `${regionName()} 축제 목록`;
+    $('fest-list').innerHTML = `<thead><tr><th>축제</th><th>최근 일정</th><th>상태</th><th>지역</th>${R.map(km => `<th>${kmLabel(km)}</th>`).join('')}</tr></thead><tbody>`
+      + ids.map(i => { const f = FEST.f[i];
+        return `<tr data-i="${i}" aria-selected="${i === fSel}"><td>${esc(f[2])}</td><td>${edSpan(f[5].at(-1))}</td><td>${FST[festState(f)]}</td><td>${esc(festPlace(f))}</td>${R.map((_, k) => `<td>${fmt(festCount(f, k))}</td>`).join('')}</tr>`; }).join('') + '</tbody>';
+    festLayer();
+    csvSet('fest-list', ['축제', '시작', '끝', '상태', '지역', '주소', ...R.map(km => `반경 ${kmLabel(km)} 숙소`)],
+      ids.map(i => { const f = FEST.f[i]; return [f[2], ymd(f[5].at(-1)[0]), ymd(f[5].at(-1)[1]), FST[festState(f)], festPlace(f), f[6], ...R.map((_, k) => festCount(f, k))]; }));
+    renderFestOne();
+  }
+  function renderFestOne() {
+    const f = FEST.f[fSel], R = FEST.r;
+    $('fest-list').querySelectorAll('tbody tr').forEach(tr => tr.setAttribute('aria-selected', String(+tr.dataset.i === fSel)));
+    if (!f) { ['fest-info', 'fest-kpis', 'fest-table', 'fest-vis', 'fest-vis-note'].forEach(id => { $(id).innerHTML = ''; }); drawRings(null, false, 'festival'); return; }
+    const st = festState(f), last = f[5].at(-1), dday = Math.round((new Date(ymd(last[0]).replace(/\./g, '-')) - new Date(ymd(today).replace(/\./g, '-'))) / 864e5);
+    $('fest-info').innerHTML = (f[7] ? `<img src="${esc(f[7])}" alt="" loading="lazy" onerror="this.remove()">` : '')
+      + `<div><b style="font-size:15px">${esc(f[2])}</b><br>${edSpan(last)} · <b>${st === 1 ? `D-${dday}` : FST[st]}</b><br>${esc(short(S[f[3]].name))} ${esc(f[6])}${f[8] ? `<br><small style="color:var(--muted)">문의 ${esc(f[8])}</small>` : ''}`
+      + (f[5].length > 1 ? `<br><small style="color:var(--muted)">이전 회차: ${f[5].slice(0, -1).reverse().map(edSpan).join(', ')}</small>` : '') + '</div>';
+    $('fest-kpis').innerHTML = R.map((km, k) => `<div class="kpi"><b>${fmt(festCount(f, k))}</b><span>반경 ${kmLabel(km)} 안 영업 숙소</span></div>`).join('');
+    const rows = f[9].filter(c => state.types.has(c[0])).sort((a, b) => b[R.length] - a[R.length]);
+    $('fest-table-title').textContent = `${f[2]} 업종별 숙소 수`;
+    $('fest-table').innerHTML = `<thead><tr><th>업종</th>${R.map(km => `<th>${kmLabel(km)}</th>`).join('')}</tr></thead><tbody>`
+      + rows.map(c => `<tr><td><span class="sw" style="background:var(--c${catOf[c[0]]})"></span>${esc(T[c[0]].name)}</td>${c.slice(1).map(v => `<td>${fmt(v)}</td>`).join('')}</tr>`).join('')
+      + `<tr><td><b>합계</b></td>${R.map((_, k) => `<td><b>${fmt(festCount(f, k))}</b></td>`).join('')}</tr></tbody>`;
+    csvSet('fest-table', ['축제', '업종', ...R.map(km => `반경 ${kmLabel(km)}`)], rows.map(c => [f[2], T[c[0]].name, ...c.slice(1)]));
+    renderFestVis(f);
+    drawRings(f, false, 'festival');
+  }
+  // 축제 달: 모은 회차는 실제 일정, 모으기 전 해는 가장 최근 회차와 같은 날짜에 열렸다고 추정
+  function festMonths(f, months) {
+    const got = new Map(f[5].map(e => [Math.floor(e[0] / 1e4), e])), [a0, b0] = f[5].at(-1), y0 = Math.floor(a0 / 1e4);
+    const out = new Map();  // 'YYYYMM' → 0 실제, 1 추정
+    const years = [...new Set(months.map(m => +m.slice(0, 4)))];
+    for (const y of years) {
+      const e = got.get(y), est = !e, [a, b] = e || [a0 + (y - y0) * 1e4, b0 + (y - y0) * 1e4];
+      for (let m = Math.floor(a / 100); m <= Math.floor(b / 100); m = m % 100 === 12 ? m + 89 : m + 1) {
+        const k = String(m); if (months.includes(k) && !(out.get(k) === 0)) out.set(k, est ? 1 : 0);
+      }
+    }
+    return out;
+  }
+  function renderFestVis(f) {
+    const ser = visits && visits.msgg ? (f[4] >= 0 ? visits.msgg[f[3]][f[4]] : visits.msido[f[3]]) : null;
+    $('fest-vis-title').textContent = `${festPlace(f)} 월별 외지인 방문객과 축제 달`;
+    if (!ser) { $('fest-vis').innerHTML = ''; $('fest-vis-note').textContent = '이 지역의 월별 방문객 자료가 없습니다.'; return; }
+    const M = visits.m, fm = festMonths(f, M), n = M.length;
+    const W = 900, H = 260, L = 56, Rt = 12, Tp = 14, B = 26, iw = W - L - Rt, ih = H - Tp - B, bw = iw / n;
+    const mx = Math.max(1, ...ser.filter(v => v != null)), step = niceStep(mx / 1e4) * 1e4, top = Math.ceil(mx / step) * step;
+    const Y = v => Tp + ih - v / top * ih, unit = v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만';
+    let svg = '';
+    for (let v = 0; v <= top; v += step) svg += `<line class="grid" x1="${L}" x2="${W - Rt}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${unit(v)}</text>`;
+    M.forEach((m, i) => {
+      const x = L + i * bw + bw * .15, w = bw * .7, v = ser[i], k = fm.get(m);
+      if (k != null) svg += `<rect x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="#e67e22" opacity="${k ? .07 : .14}"/>`;
+      if (v) svg += `<rect x="${x}" y="${Y(v)}" width="${w}" height="${Tp + ih - Y(v)}" fill="${k == null ? 'var(--c0)' : '#e67e22'}" opacity="${(k ? .45 : 1) * (visits.mfull[i] ? 1 : .5)}"/>`;
+      if (i % 3 === (n - 1) % 3) svg += `<text x="${x + w / 2}" y="${H - 8}" text-anchor="middle">${m.slice(2, 4)}.${m.slice(4)}${visits.mfull[i] ? '' : '*'}</text>`;
+      svg += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
+    });
+    $('fest-vis').innerHTML = svg;
+    attachTip($('fest-vis'), $('fest-vis-tip'), i => `<b>${M[i].slice(0, 4)}.${M[i].slice(4)}${visits.mfull[i] ? '' : ' (진행 중)'}</b><br>외지인 ${ser[i] == null ? '자료 없음' : fmt(Math.round(ser[i] / 1e4)) + '만 명'}${fm.has(M[i]) ? `<br>${fm.get(M[i]) ? '축제 달(예년 일정으로 추정)' : '축제 달'}` : ''}`);
+    // 참고: 축제 달 외지인이 같은 기간 나머지 달 평균보다 얼마나 많은지 (다 찬 달만)
+    const full = M.map((_, i) => i).filter(i => visits.mfull[i] && ser[i] != null), on = full.filter(i => fm.has(M[i])), off = full.filter(i => !fm.has(M[i]));
+    const avg = xs => xs.reduce((a, i) => a + ser[i], 0) / xs.length;
+    const up = on.length && off.length ? (avg(on) / avg(off) - 1) * 100 : null;
+    $('fest-vis-note').textContent = (up != null ? `참고: 최근 ${n}개월 중 축제 달(${on.length}개월) 외지인은 나머지 달 평균보다 ${up >= 0 ? '+' : ''}${up.toFixed(1)}%. 계절 요인·다른 행사도 함께 반영된 값이라 축제만의 효과로 읽으면 안 됩니다. ` : '')
+      + `방문객은 ${f[4] >= 0 ? '시군구' : '광역'} 전체 외지인(한국관광공사 데이터랩)입니다. 흐린 주황은 이 사이트가 그 해 일정을 모으기 전이라 가장 최근 회차와 같은 날짜로 추정한 달이고, *는 아직 다 모이지 않은 달입니다.`;
+  }
+  $('fest-sel').onchange = e => { fSel = +e.target.value; renderFestOne(); drawRings(FEST.f[fSel], true, 'festival'); };
+  $('fest-list').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (tr) { fSel = +tr.dataset.i; $('fest-sel').value = String(fSel); renderFestOne(); drawRings(FEST.f[fSel], true, 'festival'); } });
+  searchBox($('fest-q'), $('fest-sugg'), q => {
+    if (!FEST || !q) return null;
+    const nm = i => FEST.f[i][2].replace(/\s/g, ''), hay = i => nm(i) + FEST.f[i][6].replace(/\s/g, '');
+    return suggList(festInReg().filter(i => hay(i).includes(q)), nm, q, i => { const f = FEST.f[i];
+      return `<b>${esc(f[2])}</b><small>${edSpan(f[5].at(-1))} · ${FST[festState(f)]} · ${esc(festPlace(f))}</small>`; },
+    '축제가', () => FEST.f.filter((_, i) => hay(i).includes(q)).length);
+  }, i => { fSel = i; renderFest(); drawRings(FEST.f[i], true, 'festival'); });
+  function festLayer() {
+    if (!mapReady || !FEST) return;
+    map.getSource('fest').setData({ type: 'FeatureCollection', features: festInReg().map(i => ({ type: 'Feature', properties: { i, s: festState(FEST.f[i]) },
+      geometry: { type: 'Point', coordinates: [FEST.f[i][1], FEST.f[i][0]] } })) });
+  }
+  getJSON('data/festivals.json', null).then(d => { FEST = d || { r: [], f: [] }; renderFest(); if (tab === 'festival') drawRings(FEST.f[fSel], true, 'festival'); });
 
   /* ---------- 방한 외래관광객 (전국, 월별·국적별) ---------- */
   // 월별 값(YYYYMM)을 분기·연도로 합산. 마지막 기간에 달이 덜 찼으면 진행 중(점선·*)으로 표시
@@ -1443,14 +1575,15 @@
   });
 
   /* ---------- 탭 ---------- */
-  const TABS = ['summary', 'now', 'demand', 'trend', 'minbak', 'compare', 'transit'];
+  const TABS = ['summary', 'now', 'demand', 'festival', 'trend', 'minbak', 'compare', 'transit'];
   let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'now';
   function setTab(t) {
     tab = t;
     document.querySelectorAll('[data-tab]').forEach(el => el.classList.toggle('tab-off', el.dataset.tab !== t));
     document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
     if (t === 'now' && mapReady) map.resize();
-    if (STN) drawRings(STN.st[stnSel], t === 'transit');
+    drawRings(t === 'transit' && STN ? STN.st[stnSel] : t === 'festival' && FEST ? FEST.f[fSel] : null, true, t);
+    if (mapReady) map.setLayoutProperty('fest', 'visibility', t === 'festival' ? 'visible' : 'none');
     if (t === 'summary') renderOverview();
     writeHash();
   }
