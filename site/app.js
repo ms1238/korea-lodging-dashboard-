@@ -983,8 +983,8 @@
     ['station', '역세권 숙소 비율', v => (v * 100).toFixed(1) + '%', '숙소가 역 가까이 있음', '역(지하철·광역·간선) 1km 안 영업 숙소 ÷ 위치가 정확한 영업 숙소', '대중교통 도보권(반경 1km) 접근성 지표'],
     ['rsr', '지역 고유 성장 효과', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', '전국 추세·업종 구성으로 설명되지 않는 이 지역만의 성장이 큼', `변이할당분석: Σ 기준재고ᵢ×(지역 업종 성장률ᵢ − 전국 업종 성장률ᵢ) ÷ 기준재고 (${SS_Y0}→${SS_Y1}년 말 재고)`, 'Dunn(1960) 변이할당분석(Shift-share)'],
     ['hansen', '역 접근성 점수', v => v.toFixed(2), '걸어서 닿는 역이 많고 가까움', '숙소마다 Σ exp(−2·d) (d: 3km 안 역까지 km)의 평균', 'Hansen(1959) 중력형 접근성. 거리 감쇠 β=2/km는 가정값(0.5km 역=0.37, 1km=0.14)'],
-    ['tfi', '주민 1천 명당 숙소', v => v.toFixed(2) + '곳', '주민 수에 비해 숙박 기능이 큼(관광 의존 지역)', `영업 숙소 ÷ (주민등록인구 ÷ 1천), 인구는 ${meta.pop_year || '-'}년 통계연보`, 'Defert(1967) 관광기능지수(원식은 병상 수 기준; 객실 자료가 부정확해 시설 수로 대체). 광역 단위만'],
-    ['tpi', '주민 1천 명당 하루 외지인', v => v.toFixed(1) + '명', '주민에 비해 방문객 부담이 큼', '(연간 외지인 방문객 ÷ 365) ÷ (주민등록인구 ÷ 1천)', 'McElroy·de Albuquerque(1998) 관광 침투도 지수(TPI)의 방문객 밀도 항목. 광역 단위만'],
+    ['tfi', '주민 1천 명당 숙소', v => v.toFixed(2) + '곳', '주민 수에 비해 숙박 기능이 큼(관광 의존 지역)', `영업 숙소 ÷ (주민등록인구 ÷ 1천), 인구는 ${meta.pop_ym ? meta.pop_ym.slice(0, 4) + '.' + meta.pop_ym.slice(4) : '-'} 말 기준`, 'Defert(1967) 관광기능지수(원식은 병상 수 기준; 객실 자료가 부정확해 시설 수로 대체). 인구: 행정안전부 행정동별 주민등록 인구'],
+    ['tpi', '주민 1천 명당 하루 외지인', v => v.toFixed(1) + '명', '주민에 비해 방문객 부담이 큼', '(연간 외지인 방문객 ÷ 365) ÷ (주민등록인구 ÷ 1천)', 'McElroy·de Albuquerque(1998) 관광 침투도 지수(TPI)의 방문객 밀도 항목'],
     ['fshare', '외국인 방문객 비중', v => (v * 100).toFixed(1) + '%', '외국인 수요 비중이 큼', '연간 외국인 ÷ (외지인 + 외국인)', '한국관광데이터랩 방문객(이동통신)'],
     ['k21', '관광 체류 강도', v => v.toFixed(1), '체류형 방문이 많음', '한국관광데이터랩 관광수요지수 세부 지표, 최근 12개월 평균', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
     ['k2102', '숙박 비중 지수', v => v.toFixed(1), '숙박하는 방문객 비중이 큼', '위와 같음', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
@@ -1000,8 +1000,9 @@
     const natMon = visits && visits.msido ? visits.m.map((_, i) => S.reduce((a, _s, si) => a == null || msido(si)?.[i] == null ? null : a + msido(si)[i], 0)) : null;
     const me = ovStats(keysOf(r), natA, r.si < 0 ? natMon : r.gi < 0 && r.grp == null ? msido(r.si) : null, nat);
     me.k21 = kixAvg(r, '21'); me.k2102 = kixAvg(r, '2102');
-    // 인구는 광역 단위(통계연보)만 있음: 전국·광역에서만 계산
-    const popOf = q => q.si < 0 ? (S.every(sd => sd.pop) ? S.reduce((a, sd) => a + sd.pop, 0) : null) : q.gi < 0 && q.grp == null ? S[q.si].pop || null : null;
+    // 주민등록인구(월말): 전국·광역은 광역 값, 기초·묶음은 시군구 값의 합
+    const sumOr = xs => xs.every(x => x) ? xs.reduce((a, b) => a + b, 0) : null;
+    const popOf = q => q.si < 0 ? sumOr(S.map(sd => sd.pop)) : q.gi < 0 && q.grp == null ? S[q.si].pop || null : sumOr(gisOf(q).map(gi => (S[q.si].popg || [])[gi]));
     // 광역·전국의 방문객은 광역 단위 집계를 씀(시군구 값을 더하면 여러 시군구를 다닌 사람이 중복됨)
     const sidoVis = q => q.si < 0 ? S.reduce((a, sd) => a && sd.vis ? [a[0] + sd.vis[0], a[1] + sd.vis[1]] : null, [0, 0]) : q.gi < 0 && q.grp == null ? S[q.si].vis : undefined;
     const fixVis = (p, q) => { const v = sidoVis(q); if (v === undefined) return p; p.v0 = v ? v[0] : null; p.v1 = v ? v[1] : null;
@@ -1011,7 +1012,7 @@
     // 비교 대상: 기초(또는 묶음)는 전국 시군구, 광역은 광역끼리, 전국은 없음
     const peerLevel = r.si < 0 ? null : r.gi >= 0 || r.grp != null ? 'sgg' : 'sido';
     const peers = !peerLevel ? [] : peerLevel === 'sgg'
-      ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); return p; }))
+      ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); return addPop(p, { si, gi }); }))
       : S.map((_, si) => { const p = ovStats(keysOf({ si, gi: -1 }), natA, msido(si), nat); p.k21 = kixAvg({ si, gi: -1 }, '21'); p.k2102 = kixAvg({ si, gi: -1 }, '2102'); return addPop(p, { si, gi: -1 }); });
     const pctile = (key, v) => { const xs = peers.map(p => p[key]).filter(x => x != null); return v == null || xs.length < 5 ? null : xs.filter(x => x <= v).length / xs.length; };
     const peerName = peerLevel === 'sgg' ? '전국 시군구' : '광역';
@@ -1020,7 +1021,7 @@
     $('sum-sub').textContent = `${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 기준. 막대의 표시는 ${peerLevel ? peerName + ' 중 위치(오른쪽일수록 값이 큼)' : '전국이라 비교 대상 없음'}입니다. 매일 새벽 갱신된 자료로 즉시 계산합니다.`;
     $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small></div>`]
       .concat(OV.map(([k, nm, f, hi]) => { const v = me[k], p = P[k];
-        const why = v != null ? '높을수록 ' + esc(hi) : (k === 'tfi' || k === 'tpi') && r.si >= 0 ? '인구 자료가 광역 단위만 있어 시군구는 계산하지 않음' : '자료 없음';
+        const why = v != null ? '높을수록 ' + esc(hi) : '자료 없음';
         return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}% · 높을수록 ${esc(hi)}</small>` : `<small>${why}</small>`}</div>`; })).join('');
     // 특화 업종(LQ ≥ 1.2, 10곳 이상)
     const spec = me.lq.map((q, i) => [q, i]).filter(([q]) => q != null && q >= 1.2).sort((x, y) => y[0] - x[0]).slice(0, 3);
@@ -1055,7 +1056,7 @@
     $('sum-table').innerHTML = '<thead><tr><th>지표</th><th>값</th><th>' + (peerLevel ? esc(peerName) + ' 중 백분위' : '백분위') + '</th><th style="text-align:left">산식</th><th style="text-align:left">근거</th></tr></thead><tbody>'
       + OV.map(([k, nm, f, , formula, src]) => `<tr><td>${esc(nm)}</td><td>${me[k] == null ? '-' : f(me[k])}</td><td>${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td style="text-align:left;white-space:normal">${esc(formula)}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(src)}</td></tr>`).join('') + '</tbody>';
     $('sum-note').textContent = '백분위는 비교 대상 중 이 값보다 작거나 같은 곳의 비율입니다(100에 가까울수록 값이 큼). 값이 크다고 좋은 것은 아니며, 정책 목적에 따라 해석하세요. '
-      + '인구 기반 지표는 행정안전 통계연보의 광역별 주민등록인구로 계산해 광역·전국에서만 나옵니다.';
+      + '인구 기반 지표는 행정안전부 행정동별 주민등록 인구(월말, 거주불명자·재외국민 포함)로 계산합니다.';
     csvSet('sum-table', ['지역', '지표', '값', '백분위', '산식', '근거'], OV.map(([k, nm, , , formula, src]) => [regLabel(r), nm, me[k] == null ? '' : +me[k].toFixed(4), P[k] == null ? '' : Math.round(P[k] * 100), formula, src]));
   }
   $('sum-print').onclick = () => print();

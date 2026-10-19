@@ -764,37 +764,40 @@ def write_kto_index(sidos, sgg_of):
         json.dump({"months": months, "ix": KTO_IX, "v": out}, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def add_population(sidos, sido_meta):
-    """sido_meta[i]["pop"] = 주민등록인구 of the latest yearbook year whose names match the 시도 (short names such as
-    서울 or full names; 광주+전남 summed for the merged 시도). Returns that year."""
-    path = os.path.join(RAW, "population.json")
+def add_population(sidos, sgg_of, sido_meta):
+    """sido_meta[i]["pop"] / ["popg"]: 주민등록인구 of the latest month (행정안전부 행정동별 주민등록 인구).
+    일반구 rows such as "수원시 장안구" are summed into their 시; a 시군구 that moved between 시도 is matched by its unique name."""
+    path = os.path.join(RAW, "pop_month.json")
     if not os.path.exists(path):
         return None
-    rows = json.load(open(path, encoding="utf-8"))
-
-    def norm(name):
-        name = re.sub(r"\s", "", name)
-        if name in ("광주", "전남", "광주광역시", "전라남도") and MERGED_GWANGJU_JEONNAM in sidos:
-            return MERGED_GWANGJU_JEONNAM
-        return SIDO_ALIASES.get(name, name)
-    by_year = defaultdict(lambda: defaultdict(int))
-    unmatched = defaultdict(set)
-    for r in rows:
-        n = norm(r["region"])
-        if n in sidos:
-            by_year[r["year"]][n] += r["pop"]
-        elif r["region"] not in ("계", "합계", "전국"):
-            unmatched[r["year"]].add(r["region"])
-    if not by_year:
-        print(f"population: no 시도 matched; names e.g. {sorted({r['region'] for r in rows})[:20]}", flush=True)
-        return None
-    year = max(by_year, key=lambda y: (len(by_year[y]), y))
-    for s, sm in zip(sidos, sido_meta):
-        if s in by_year[year]:
-            sm["pop"] = by_year[year][s]
-    print(f"population: {year}, {len(by_year[year])} of {len(sidos)} 시도; unmatched names that year: {sorted(unmatched[year])}; "
-          f"latest year {max(r['year'] for r in rows)} names: {sorted({r['region'] for r in rows if r['year'] == max(x['year'] for x in rows)})[:20]}", flush=True)
-    return year
+    d = json.load(open(path, encoding="utf-8"))
+    norm = lambda n: SIDO_ALIASES.get(n.strip(), n.strip())
+    by_name = defaultdict(list)
+    for sd in sidos:
+        for g in sgg_of[sd]:
+            by_name[g].append(sd)
+    exact, parts, unmatched = {}, defaultdict(int), set()
+    for r in d["sgg"]:
+        sd, name = norm(r["sido"]), r["sgg"].strip()
+        city = name.split(" ")[0]
+        if sd in sidos and name in sgg_of[sd]:
+            exact[(sd, name)] = r["pop"]
+        elif sd in sidos and city in sgg_of[sd]:
+            parts[(sd, city)] += r["pop"]
+        elif len(by_name.get(name, [])) == 1:
+            exact[(by_name[name][0], name)] = r["pop"]
+        else:
+            unmatched.add(f"{r['sido']} {name}")
+    pops = {**parts, **exact}  # a 시 reported itself wins over the sum of its 구
+    sido_pop = {norm(r["sido"]): r["pop"] for r in d["sido"]}
+    for sd, sm in zip(sidos, sido_meta):
+        if sd in sido_pop:
+            sm["pop"] = sido_pop[sd]
+        sm["popg"] = [pops.get((sd, g)) for g in sgg_of[sd]]
+    missing = [f"{sd} {g}" for sd in sidos for g in sgg_of[sd] if (sd, g) not in pops]
+    print(f"population: {d['ym']}, {sum(1 for sd in sidos if sd in sido_pop)} of {len(sidos)} 시도, {len(pops)} 시군구; "
+          f"no population: {' '.join(missing)}; unmatched rows: {' '.join(sorted(unmatched))}", flush=True)
+    return d["ym"]
 
 
 def write_icn():
@@ -1006,7 +1009,7 @@ def main():
                 cnt[r[3]][r[2]] += 1
         sm["tour"] = cnt
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
-    pop_year = add_population(sidos, sido_meta)
+    pop_ym = add_population(sidos, sgg_of, sido_meta)
     write_arrivals()
     write_icn()
     write_kto_index(sidos, sgg_of)
@@ -1036,7 +1039,7 @@ def main():
         "tour": {"types": [n for _, n in TOUR_TYPES], "counts": [tour_n[i] for i in range(len(TOUR_TYPES))]},
         "zones": ZONES, "bldgs": BLDGS,
         "visitors": visitors,
-        "pop_year": pop_year,
+        "pop_ym": pop_ym,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))

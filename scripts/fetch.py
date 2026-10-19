@@ -55,7 +55,7 @@ KTO_INDEX = [
 ]
 KTO_INDEX_AREAS = ("11", "26", "27", "28", "29", "30", "31", "36", "41", "43", "44", "46", "47", "48", "50", "51", "52", "12")  # DataLab 시도 codes
 KTO_INDEX_BUDGET = 800  # requests per service and run (the development quota is 1,000 a day); the rest waits for the next run
-POPULATION = "https://apis.data.go.kr/1741000/RegistrationPopulationByRegion/getRegistrationPopulationByRegion"  # 통계연보 시도별 주민등록인구 (yearly)
+POPULATION = "https://apis.data.go.kr/1741000/admmPpltnHhStus/selectAdmmPpltnHhStus"  # 행정동별 주민등록 인구 및 세대현황 (monthly)
 KORAIL_MAIN = "https://apis.data.go.kr/B551457/issueStatistics/mainLineStationPer"  # 코레일 간선열차 역별 승하차 (daily, about a year)
 METRO_STD = "https://www.data.go.kr/data/15013205/standard.do"  # 전국도시철도역사정보표준데이터 (국가철도공단, yearly file)
 OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
@@ -80,8 +80,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "population"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "population"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -237,7 +237,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "population"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
@@ -245,7 +245,7 @@ def main():
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
-             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "population": fetch_population,
+             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
              "kac_years": fetch_kac}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
@@ -488,21 +488,35 @@ def fetch_kto_index(key):
 
 
 def fetch_population(key):
-    """주민등록인구 per 시도 and year (행정안전 통계연보; 시도 short names such as 서울, 경기, and 계 for the total)."""
-    rows, p = [], 1
-    while True:
-        d = requests.get(POPULATION, params={"ServiceKey": key, "pageNo": p, "numOfRows": 1000, "type": "json"}, timeout=60).json()
-        parts = d.get("RegistrationPopulationByRegion")
-        if not parts:
-            raise RuntimeError(str(d)[:200])
-        total = next(h["totalCount"] for h in parts[0]["head"] if "totalCount" in h)
-        page = parts[1]["row"] if len(parts) > 1 else []
-        rows += [{"year": r["wrttimeid"], "region": r["regi"].strip(), "pop": int(r["population_tot"])} for r in page]
-        if not page or len(rows) >= total:
+    """주민등록인구 of the latest published month: 시도 (lv 1) and the 시군구 of each 시도 (lv 2, admmCd = the 시도 code)."""
+    def call(admm, ym, lv, page=1):
+        params = {"serviceKey": key, "admmCd": admm, "srchFrYm": ym, "srchToYm": ym, "lv": lv, "regSeCd": 1,
+                  "type": "JSON", "numOfRows": 100, "pageNo": page}
+        d = requests.get(POPULATION, params=params, timeout=60).json()["Response"]
+        if d["head"]["resultCode"] != "0":
+            raise RuntimeError(f"{admm} {ym} lv{lv}: {d['head']}")
+        items = (d.get("items") or {}).get("item") or []
+        return ([items] if isinstance(items, dict) else items), int(d["head"]["totalCount"])
+    today = date.today()
+    for k in range(1, 4):  # published after the month ends
+        ym = "%d%02d" % (today.year - (today.month - k <= 0), (today.month - k - 1) % 12 + 1)
+        sido, _ = call("1100000000", ym, 1)
+        if sido:
             break
-        p += 1
-    print(f"population: {len(rows)} rows, years {min(r['year'] for r in rows)}~{max(r['year'] for r in rows)}", flush=True)
-    save_json("population.json", rows)
+    else:
+        raise RuntimeError("no month in the last three has data")
+    sgg = []
+    for r in sido:
+        page = 1
+        while True:
+            items, total = call(r["admmCd"], ym, 2, page)
+            sgg += items
+            if len(items) < 100 or page * 100 >= total:
+                break
+            page += 1
+    keep = lambda r: {"code": r["admmCd"], "sido": r["ctpvNm"], "sgg": r["sggNm"], "pop": int(r["totNmprCnt"])}
+    print(f"population: {ym}, {len(sido)} 시도, {len(sgg)} 시군구 rows", flush=True)
+    save_json("pop_month.json", {"ym": ym, "sido": [keep(r) for r in sido], "sgg": [keep(r) for r in sgg]})
 
 
 def fetch_kac(key):
