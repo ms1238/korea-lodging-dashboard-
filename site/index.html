@@ -81,6 +81,14 @@
     <div class="card"><button class="btn csv" data-csv="share" data-name="업종별_비중">CSV</button><div class="sharelist" id="share"></div><p class="note">세로선은 전국 비중입니다(지역을 골랐을 때).</p></div>
   </section>
 
+  <section data-tab="now" id="rm-sec">
+    <div class="sechead"><h2>업소 수와 객실 수</h2><p class="sub" id="rm-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="rm-table" data-name="업종별_업소_객실">CSV</button><div class="tablewrap"><table id="rm-table"></table></div>
+      <p class="note">객실 수는 인허가 자료의 값입니다(숙박업은 한실+양실, 나머지는 객실수). 입력되지 않은 시설이 많은 업종은 합계가 실제보다 작으니 입력률을 함께 보세요.
+        추정 객실 수는 입력된 시설의 평균을 입력되지 않은 시설에도 적용한 값입니다. 민박·한옥에서 30실을 넘는 값은 오입력으로 보고 뺐습니다.
+        관광숙박업에 객실 수가 없으면 같은 시설의 숙박업 등록 값으로 채웠습니다. 야영장은 객실이 아니라 해당 없음입니다.</p></div>
+  </section>
+
   <section data-tab="trend">
     <div class="sechead"><h2>숙박업 동향 · 연도별 인허가</h2><p class="sub" id="year-sub"></p></div>
     <div class="card"><div class="tlrow" style="margin-bottom:8px"><div class="seg per-seg" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div><div class="legend" id="year-legend" style="margin:0"></div></div><div class="chartwrap"><svg id="year" viewBox="0 0 900 300" role="img" aria-label="연도별 인허가 수"></svg><div class="tip" id="year-tip" hidden></div></div>
