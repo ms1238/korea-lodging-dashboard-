@@ -30,6 +30,21 @@ jobs:
           for name, s in (sp.get("components", {}).get("schemas", {}) or sp.get("definitions", {})).items():
               props = s.get("properties", {})
               print("== SCHEMA", name, {k: (p.get("type"), p.get("description", "")[:60]) for k, p in props.items()})
-          for path in list(sp["paths"])[:3]:
-              r = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": os.environ["KEY"], "page": 1, "perPage": 3, "returnType": "JSON"}, timeout=60)
-              print("== CALL", path, r.status_code, r.text[:1200], flush=True)
+          from collections import Counter, defaultdict
+          for path in sp["paths"]:
+              rows, pg = [], 1
+              while True:
+                  d = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": os.environ["KEY"], "page": pg, "perPage": 5000, "returnType": "JSON"}, timeout=120).json()
+                  rows += d["data"]
+                  if not d["data"] or len(rows) >= d["totalCount"]: break
+                  pg += 1
+              ds = sorted({r["일자"] for r in rows})
+              print("== TABLE", path, len(rows), "rows; dates", len(ds), ds[:5], ds[-5:], flush=True)
+              print("   months:", sorted(Counter(x[:7] for x in ds).items())[:200])
+              print("   parks:", Counter(r["국립공원"] for r in rows).most_common())
+              print("   offices:", Counter(r["사무소"] for r in rows).most_common(60))
+              m = defaultdict(int)
+              for r in rows: m[(r["국립공원"], r["일자"][:7])] += r["전체 탐방객수"] or 0
+              print("   설악산 by month:", sorted((k[1], v) for k, v in m.items() if k[0] == "설악산")[:120])
+              print("   areas 설악산:", sorted({(r["관리지구"], r["탐방지역"]) for r in rows if r["국립공원"] == "설악산"}))
+              print("   keys:", list(rows[0]), flush=True)
