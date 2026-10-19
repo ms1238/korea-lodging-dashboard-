@@ -30,6 +30,7 @@ Steps
 20. park_lodging.json: per national park, lodgings inside it or within 1 / 3 / 5 km of its boundary (every status,
     exact positions) with permit and closing month, for the stock over time.
 21. food.json: 모범음식점 (designated, open) and 백년가게 placed by the 브이월드 geocoder (raw/geocode.json).
+22. admin/<si>.json: 시도 and 시군구 outlines (OpenStreetMap) for drawing the selected region.
 """
 import calendar
 import difflib
@@ -456,6 +457,56 @@ def write_park_areas():
     with open(os.path.join(OUT, "park_areas.json"), "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
     return best
+
+
+def write_admin(sidos, sido_meta, merged):
+    """시도 / 시군구 outlines (OpenStreetMap) per 시도: admin/<si>.json = {"sido": [rings], "sgg": [[rings] or null per 시군구]}.
+    A 시군구 relation is matched by name and by containing the median position of that 시군구's lodgings (중구 exists
+    in six cities). Rings under 0.05 km² (islets) are dropped and the rest simplified (~50 m)."""
+    os.makedirs(os.path.join(OUT, "admin"), exist_ok=True)
+    for f in glob.glob(os.path.join(OUT, "admin", "*.json")):
+        os.remove(f)
+    path = os.path.join(RAW, "admin_osm.json")
+    if not os.path.exists(path):
+        return
+    els = json.load(open(path, encoding="utf-8"))
+    cache = {}
+
+    def rings(el):
+        if el["id"] not in cache:
+            rs = _rings([w for r, w in el["ways"] if r != "inner"])[0] + _rings([w for r, w in el["ways"] if r == "inner"])[0]
+            cache[el["id"]] = [_simplify(r, 0.0005) for r in rs if _km2(r) >= 0.05]
+        return cache[el["id"]]
+
+    def inside(lon, lat, rs):
+        return sum(1 for r in rs for (x1, y1), (x2, y2) in zip(r, r[1:])
+                   if (y1 > lat) != (y2 > lat) and x1 + (lat - y1) / (y2 - y1) * (x2 - x1) > lon) % 2 == 1
+    sido_rings = defaultdict(list)
+    for el in els:
+        name = SIDO_ALIASES.get(el["name"], el["name"])
+        if merged and name in ("광주광역시", "전라남도"):
+            name = MERGED_GWANGJU_JEONNAM
+        if el["level"] == 4 and name in sidos:
+            sido_rings[name] += rings(el)
+    by_name = defaultdict(list)
+    for el in els:
+        if el["level"] == 6:
+            by_name[el["name"]].append(el)
+    missing = []
+    for si, s in enumerate(sidos):
+        sm, out = sido_meta[si], []
+        for gi, g in enumerate(sm["sgg"]):
+            if g == s:  # 세종: the 시도 is its only 시군구
+                out.append(sido_rings.get(s))
+                continue
+            c, cands = sm["sggc"][gi], by_name.get(g, [])
+            pick = [el for el in cands if c and inside(c[1], c[0], rings(el))] or (cands if len(cands) == 1 else [])
+            out.append(rings(pick[0]) if pick else None)
+            if not pick:
+                missing.append(f"{s} {g}")
+        with open(os.path.join(OUT, "admin", f"{si}.json"), "w", encoding="utf-8") as f:
+            json.dump({"sido": sido_rings.get(s), "sgg": out}, f, separators=(",", ":"))
+    print(f"admin: 시도 {sum(1 for s in sidos if sido_rings.get(s))} of {len(sidos)} outlined; 시군구 without an outline: {' '.join(missing) or '-'}", flush=True)
 
 
 PARK_BANDS = (1, 3, 5)  # km from a national park's boundary
@@ -1174,6 +1225,7 @@ def main():
     write_festivals(rows, sidos, sgg_of, tidx, merged)
     write_park_lodging(rows, parks, sidos, sgg_of, tidx)
     write_food()
+    write_admin(sidos, sido_meta, merged)
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))

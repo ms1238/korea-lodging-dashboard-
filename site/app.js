@@ -256,6 +256,12 @@
         map.getSource('subway').setData(g);
         if (map.getLayer('rail-line')) map.setFilter('rail-line', ['all', ['==', ['get', 'class'], 'rail'], ['!', ['has', 'service']]]);
       });
+      // 고른 지역의 행정구역 경계(흰 테두리 위 진한 선)
+      map.addSource('admin', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'admin-casing', type: 'line', source: 'admin', layout: { 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-opacity': .85,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 4.5, 12, 7] } });
+      map.addLayer({ id: 'admin-line', type: 'line', source: 'admin', layout: { 'line-join': 'round' }, paint: { 'line-color': '#1f2d3d',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 6, 2, 12, 3.5] } });
       map.addSource('areas', { type: 'geojson', data: empty });
       map.addLayer({ id: 'areas', type: 'circle', source: 'areas', paint: {
         'circle-radius': ['interpolate', ['linear'], ['sqrt', ['get', 'n']], 0, 0, 10, 6, 60, 26],
@@ -338,6 +344,19 @@
       update(!!D);  // 공유 링크로 지역이 이미 골라져 있으면 그 지역으로
       if (state.cmp.length && !unionOn()) fitRegs(state.cmp);
     });
+  }
+  // 행정구역 경계: 고른 광역·기초(묶음·합쳐 보기는 그 기초들). OpenStreetMap 경계, build.py → admin/<si>.json
+  const adminCache = {};
+  let adminTok = 0;
+  async function drawAdmin() {
+    if (!mapReady) return;
+    const tok = ++adminTok, regs = U ? U.regs : state.sido >= 0 ? [curReg()] : [], feats = [];
+    for (const r of regs) {
+      const a = await (adminCache[r.si] ||= getJSON(`data/admin/${r.si}.json`, null));
+      if (!a) continue;
+      for (const rs of gisOf(r) ? gisOf(r).map(gi => a.sgg[gi]) : [a.sido]) if (rs) feats.push({ type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: rs } });
+    }
+    if (tok === adminTok) map.getSource('admin').setData({ type: 'FeatureCollection', features: feats });
   }
   /* ---------- timeline ---------- */
   function tlRowOK(r) {
@@ -534,6 +553,7 @@
     writeHash();
     drawTimeline();
     drawMap(fly);
+    drawAdmin();
   }
   // 상위 8개 업종은 각자 색, 나머지는 '기타'로 묶음 (지역별 막대·교차표 공용)
   const TYPE_PAL = ['var(--c0)', 'var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)', '#e04f5f'];

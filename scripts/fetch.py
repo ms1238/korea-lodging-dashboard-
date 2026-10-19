@@ -75,6 +75,10 @@ PARKS_QUERY = """[out:json][timeout:240];
  relation["boundary"="protected_area"]["protect_class"="2"](33.0,124.5,38.7,131.0);
  way["boundary"="national_park"](33.0,124.5,38.7,131.0););
 out geom;"""
+# 시도 (admin_level 4) and 시군구 (6; a 시 with 일반구 is level 6, its 구 level 7) boundaries, one query per level
+ADMIN_QUERY = """[out:json][timeout:300];
+relation["boundary"="administrative"]["admin_level"="{}"](33.0,124.5,38.7,131.0);
+out geom;"""
 # subway / light-rail stations; 수도권 전철 stations run by Korail are often railway=station + subway=yes
 STATIONS_QUERY = """[out:json][timeout:180];
 (nwr["railway"="station"]["station"~"^(subway|light_rail|monorail)$"](33.0,124.5,38.7,131.0);
@@ -86,8 +90,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"geocode", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode", "admin_osm"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"admin_osm", "geocode", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -187,18 +191,32 @@ def save_json(name, data):
     os.replace(path + ".tmp", path)
 
 
+def osm_ways(el):
+    """[[role, [[lon, lat], …]], …] of a relation's member ways, or of a closed way."""
+    if el["type"] == "way" and el.get("geometry"):
+        return [["outer", [[round(p["lon"], 5), round(p["lat"], 5)] for p in el["geometry"]]]]
+    return [[m.get("role") or "outer", [[round(p["lon"], 5), round(p["lat"], 5)] for p in m["geometry"]]]
+            for m in el.get("members", []) if m.get("type") == "way" and m.get("geometry")]
+
+
+def fetch_admin_osm(_key):
+    """시도 and 시군구 boundaries (OpenStreetMap) with their Korean names, for outlining the selected region."""
+    out = []
+    for level in (4, 6):
+        els = overpass(ADMIN_QUERY.format(level))
+        out += [{"id": el["id"], "level": level, "name": (el.get("tags", {}).get("name:ko") or el.get("tags", {}).get("name") or "").strip(),
+                 "ways": osm_ways(el)} for el in els]
+        print(f"admin_osm: level {level}: {len(els)} boundaries", flush=True)
+    save_json("admin_osm.json", out)
+
+
 def fetch_parks_osm(_key):
     """National-park boundaries: relations (outer/inner member ways) and closed ways, with name tags."""
     out = []
     for el in overpass(PARKS_QUERY):
         tags = el.get("tags", {})
         name = tags.get("name:ko") or tags.get("name") or ""
-        if el["type"] == "way" and el.get("geometry"):
-            ways = [["outer", [[round(p["lon"], 5), round(p["lat"], 5)] for p in el["geometry"]]]]
-        else:
-            ways = [[m.get("role") or "outer", [[round(p["lon"], 5), round(p["lat"], 5)] for p in m["geometry"]]]
-                    for m in el.get("members", []) if m.get("type") == "way" and m.get("geometry")]
-        out.append({"id": f"{el['type']}/{el['id']}", "name": name, "ways": ways})
+        out.append({"id": f"{el['type']}/{el['id']}", "name": name, "ways": osm_ways(el)})
     print(f"parks_osm: {len(out)} boundaries ({sum('국립공원' in p['name'] for p in out)} named …국립공원)", flush=True)
     if not out:
         raise RuntimeError("no boundaries returned")
@@ -243,7 +261,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode", "admin_osm"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and (have or ep == "geocode"):  # geocoding takes long; the daily run does it
@@ -252,7 +270,7 @@ def main():
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "geocode": fetch_geocode}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "geocode": fetch_geocode, "admin_osm": fetch_admin_osm}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
