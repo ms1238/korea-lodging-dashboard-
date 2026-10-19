@@ -29,6 +29,7 @@ Steps
     0.5 / 1 / 3 / 5 km, as for stations.
 20. park_lodging.json: per national park, lodgings inside it or within 1 / 3 / 5 km of its boundary (every status,
     exact positions) with permit and closing month, for the stock over time.
+21. food.json: 모범음식점 (designated, open) and 백년가게 placed by the Kakao address search (raw/geocode.json).
 """
 import calendar
 import difflib
@@ -742,6 +743,40 @@ def write_festivals(rows, sidos, sgg_of, tidx, merged):
         json.dump({"r": RADII, "f": out}, f, ensure_ascii=False, separators=(",", ":"))
 
 
+def write_food():
+    """모범음식점 (still designated and open) and 백년가게 with the coordinates fetch.py looked up (raw/geocode.json).
+    Without coordinates nothing is written, and the page shows no restaurant layer."""
+    path = os.path.join(RAW, "geocode.json")
+    if not os.path.exists(path):
+        return
+    geo = json.load(open(path, encoding="utf-8"))
+    query = lambda a: re.sub(r"\s*\(.*?\)", "", a.split(",")[0]).strip()  # same key as fetch.py geo_query
+    out, missing = [], Counter()
+    ex = os.path.join(RAW, "excellent_restaurant_info.jsonl")
+    for line in open(ex, encoding="utf-8") if os.path.exists(ex) else []:
+        r = json.loads(line)
+        if r.get("DSGN_RTRCN_YMD") or r.get("SALS_STTS_NM") != "영업":
+            continue
+        addr = clean(r.get("ROAD_NM_ADDR") or r.get("LCTN_ADDR"))
+        ll = geo.get(query(addr))
+        if not ll:
+            missing[0] += 1
+            continue
+        out.append([*ll, 0, clean(r.get("BSNSSP_NM")), addr, " · ".join(x for x in (clean(r.get("FD_OF_TYPE")), clean(r.get("PRINC_FD_KND"))) if x), clean(r.get("TELNO"))])
+    cen = os.path.join(RAW, "century_shops.json")
+    for r in json.load(open(cen, encoding="utf-8")) if os.path.exists(cen) else []:
+        addr = clean(r.get("업체주소"))
+        ll = geo.get(query(addr))
+        if not ll:
+            missing[1] += 1
+            continue
+        out.append([*ll, 1, clean(r.get("업체명")), addr, "", clean(r.get("연락처"))])
+    print(f"food: 모범음식점 {sum(1 for x in out if x[2] == 0)}, 백년가게 {sum(1 for x in out if x[2] == 1)} placed; "
+          f"no coordinates: 모범음식점 {missing[0]}, 백년가게 {missing[1]}", flush=True)
+    with open(os.path.join(OUT, "food.json"), "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def add_main(out, srcs):
     """Append [[boardings], [alightings]] of 간선열차 for the latest 12 months to stations taken from the 간선 table."""
     path = os.path.join(RAW, "korail_main.jsonl")
@@ -1138,6 +1173,7 @@ def main():
     write_stations(rows, sidos, sgg_of, tidx)
     write_festivals(rows, sidos, sgg_of, tidx, merged)
     write_park_lodging(rows, parks, sidos, sgg_of, tidx)
+    write_food()
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))

@@ -39,6 +39,8 @@ BASE = "https://apis.data.go.kr/1741000/{}/info"
 TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2/areaBasedList2"
 TOUR_TYPES = {"12": "관광지", "14": "문화시설", "28": "레포츠"}  # TourAPI contentTypeId
 FESTIVALS = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"  # TourAPI 행사·축제
+CENTURY_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15132695/v1"  # 소상공인시장진흥공단 백년가게 (odcloud, one table per publication)
+KAKAO_ADDR = "https://dapi.kakao.com/v2/local/search/address.json"  # address → coordinates (needs KAKAO_REST_KEY)
 FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
@@ -82,8 +84,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"geocode", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -239,7 +241,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
@@ -248,7 +250,7 @@ def main():
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "geocode": fetch_geocode}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -354,6 +356,70 @@ def fetch_festivals(key):
     # an earlier year of a listed festival stays; the same year again is a correction of its dates
     rows = [r for r in old if r["eventstartdate"][:4] < year.get(r["contentid"], "9999")] + new
     write_rows("festivals", sorted(rows, key=lambda r: (r["eventstartdate"], r["contentid"])))
+
+
+def fetch_century(key):
+    """백년가게: the latest table of the odcloud dataset (업체명, 업체주소, 연락처)."""
+    spec = requests.get(CENTURY_SPEC, timeout=60).json()
+    path = max(spec["paths"], key=lambda p: spec["paths"][p]["get"].get("summary", "")[-8:])  # titles end with the publication date
+    rows, page = [], 1
+    while True:
+        d = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": page, "perPage": 1000, "returnType": "JSON"}, timeout=90).json()
+        if "data" not in d:
+            raise RuntimeError(str(d)[:200])
+        rows += d["data"]
+        if not d["data"] or len(rows) >= int(d.get("totalCount") or 0):
+            break
+        page += 1
+    print(f"century_shops: {spec['paths'][path]['get'].get('summary')}: {len(rows)} rows", flush=True)
+    save_json("century_shops.json", rows)
+
+
+def restaurant_addrs():
+    """Addresses to place on the map: 모범음식점 still designated and open, and 백년가게."""
+    out = []
+    path = os.path.join(RAW_DIR, "excellent_restaurant_info.jsonl")
+    for line in open(path, encoding="utf-8") if os.path.exists(path) else []:
+        r = json.loads(line)
+        if not r.get("DSGN_RTRCN_YMD") and r.get("SALS_STTS_NM") == "영업":
+            out.append(r.get("ROAD_NM_ADDR") or r.get("LCTN_ADDR") or "")
+    path = os.path.join(RAW_DIR, "century_shops.json")
+    out += [r.get("업체주소") or "" for r in (json.load(open(path, encoding="utf-8")) if os.path.exists(path) else [])]
+    return out
+
+
+def geo_query(addr):
+    """Road address without the building detail after a comma or in parentheses, which the geocoder does not need."""
+    return re.sub(r"\s*\(.*?\)", "", addr.split(",")[0]).strip()
+
+
+def fetch_geocode(_key):
+    """Coordinates of the restaurant addresses via the Kakao address search, cached in raw/geocode.json
+    ({query: [lat, lon] or null}) so each address is looked up once."""
+    kakao = os.environ.get("KAKAO_REST_KEY")
+    if not kakao:
+        raise RuntimeError("KAKAO_REST_KEY is not set")
+    path = os.path.join(RAW_DIR, "geocode.json")
+    cache = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    todo = sorted({geo_query(a) for a in restaurant_addrs() if a.strip()} - set(cache))
+
+    def one(q):
+        for attempt in range(4):
+            try:
+                r = requests.get(KAKAO_ADDR, params={"query": q}, headers={"Authorization": f"KakaoAK {kakao}"}, timeout=30)
+                if r.status_code in (401, 403):
+                    raise RuntimeError(f"Kakao refused the key: {r.text[:200]}")
+                docs = r.json().get("documents") or []
+                return q, [round(float(docs[0]["y"]), 5), round(float(docs[0]["x"]), 5)] if docs else None
+            except (requests.RequestException, ValueError):
+                time.sleep(2 + attempt * 2)
+        return q, "retry"
+    with ThreadPoolExecutor(WORKERS) as pool:
+        got = list(pool.map(one, todo))
+    cache.update({q: v for q, v in got if v != "retry"})
+    print(f"geocode: {len(todo)} new addresses, {sum(1 for _, v in got if v and v != 'retry')} found, "
+          f"{sum(1 for _, v in got if v is None)} not found, {sum(1 for _, v in got if v == 'retry')} failed (next run)", flush=True)
+    save_json("geocode.json", cache)
 
 
 def fetch_icn(key):

@@ -289,6 +289,18 @@
         pop(e.lngLat, `${f[7] ? `<img src="${esc(f[7])}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(f[2])}</b><br>${edSpan(f[5].at(-1))} · ${FST[festState(f)]}<br>${esc(f[6])}<br>영업 숙소 반경 1km ${fmt(festCount(f, 1))}곳 · 3km ${fmt(festCount(f, 2))}곳<br><small>출처: 한국관광공사 TourAPI</small>`);
         fSel = i; $('fest-sel').value = String(i); renderFestOne();
       });
+      // 맛집: 백년가게(자주색) 전국 보기부터, 모범음식점(노랑)은 많아서 12레벨부터 (build.py → food.json, 주소를 좌표로 바꾼 위치)
+      map.addSource('food', { type: 'geojson', data: empty });
+      for (const [k, col, minzoom] of [[0, '#d4a017', 12], [1, '#8e2c48', 6]]) map.addLayer({ id: 'food' + k, type: 'circle', source: 'food', minzoom, filter: ['==', ['get', 'k'], k],
+        paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 5, 16, 7], 'circle-color': col, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.2 } });
+      getJSON('data/food.json', null).then(rows => {
+        if (!rows || !rows.length) { $('food-note').textContent = '맛집 위치 자료가 아직 없습니다(주소를 좌표로 바꾸는 키를 설정하면 다음 갱신 때 나옵니다).'; return; }
+        map.getSource('food').setData({ type: 'FeatureCollection', features: rows.map(r => ({ type: 'Feature', properties: { k: r[2], n: r[3], a: r[4], m: r[5], t: r[6] },
+          geometry: { type: 'Point', coordinates: [r[1], r[0]] } })) });
+        [0, 1].forEach(k => { $('n-food' + k).textContent = fmt(rows.filter(r => r[2] === k).length) + '곳'; });
+      });
+      for (const k of [0, 1]) map.on('click', 'food' + k, e => { const p = e.features[0].properties;
+        pop(e.lngLat, `<b>${esc(p.n)}</b><br>${k ? '백년가게' : '모범음식점'}${p.m ? ' · ' + esc(p.m) : ''}<br>${esc(p.a)}${p.t ? '<br>' + esc(p.t) : ''}<br><small>출처: ${k ? '소상공인시장진흥공단' : '행정안전부'} · 위치는 주소 기준</small>`); });
       map.on('click', 'pts', e => {
         const p = e.features[0].properties;
         new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(e.lngLat).setHTML(
@@ -307,16 +319,16 @@
       });
       map.on('click', 'subway', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'park-fill', e => {
-        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'fest', 'areas', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'fest', 'food0', 'food1', 'areas', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties;
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
       map.on('click', 'rail-st', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']]]) {
+      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-food0', ['food0']], ['ck-food1', ['food1']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
-      for (const l of ['pts', 'areas', 'tour', 'fest', 'airports', 'rail-st', 'subway', 'park-fill']) {
+      for (const l of ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'airports', 'rail-st', 'subway', 'park-fill']) {
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
