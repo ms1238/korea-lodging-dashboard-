@@ -974,21 +974,40 @@
       growth: base ? (nw - cl) / base : null, surv: co >= 20 ? 1 - c3 / co : null, even: n && K > 1 ? H / Math.log(K) : null,
       gini: g, station: ne >= 20 ? n1 / ne : null };
   }
-  const OV = [  // [키, 이름, 표시, 높을수록 뜻, 산식, 근거]
-    ['dens', '외지인 100만 명당 숙소', v => v.toFixed(1) + '곳', '방문객에 비해 숙소가 많음(공급 과잉 쪽)', '영업 숙소 ÷ (연간 외지인 방문객 ÷ 100만)', 'Defert(1967) 관광기능지수의 변형: 원식은 병상÷주민 수이나, 인구·병상 자료 대신 방문객과 시설 수를 씀'],
-    ['growth', '최근 3년 순증률', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', '숙소가 빠르게 늘어남', '(최근 3년 신규 − 최근 3년 폐업) ÷ 3년 전 영업 숙소', '순증가율(공급 증가 속도)'],
-    ['surv', '3년 생존율', v => (v * 100).toFixed(1) + '%', '새로 연 숙소가 오래 버팀', `${yNow - 6}~${yNow - 4}년 인허가 중 허가 후 3년 안에 폐업하지 않은 비율`, '통계청 기업생멸행정통계의 생존율 개념(연 단위 근사)'],
-    ['even', '업종 균등도', v => v.toFixed(2), '여러 업종이 고르게 섞임', 'Pielou J = −Σpᵢ ln pᵢ ÷ ln K (pᵢ 업종 비중, K 전국 업종 수)', 'Shannon 다양도 지수, Pielou(1966) 균등도'],
-    ['gini', '계절 편중', v => v.toFixed(3), '방문객이 특정 달에 몰림', '최근 12개월 외지인 방문객의 지니계수', 'Lundtorp(2001) 관광 계절성 지니계수'],
-    ['station', '역세권 숙소 비율', v => (v * 100).toFixed(1) + '%', '숙소가 역 가까이 있음', '역(지하철·광역·간선) 1km 안 영업 숙소 ÷ 위치가 정확한 영업 숙소', '대중교통 도보권(반경 1km) 접근성 지표'],
-    ['rsr', '지역 고유 성장 효과', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', '전국 추세·업종 구성으로 설명되지 않는 이 지역만의 성장이 큼', `변이할당분석: Σ 기준재고ᵢ×(지역 업종 성장률ᵢ − 전국 업종 성장률ᵢ) ÷ 기준재고 (${SS_Y0}→${SS_Y1}년 말 재고)`, 'Dunn(1960) 변이할당분석(Shift-share)'],
-    ['hansen', '역 접근성 점수', v => v.toFixed(2), '걸어서 닿는 역이 많고 가까움', '숙소마다 Σ exp(−2·d) (d: 3km 안 역까지 km)의 평균', 'Hansen(1959) 중력형 접근성. 거리 감쇠 β=2/km는 가정값(0.5km 역=0.37, 1km=0.14)'],
-    ['tfi', '주민 1천 명당 숙소', v => v.toFixed(2) + '곳', '주민 수에 비해 숙박 기능이 큼(관광 의존 지역)', `영업 숙소 ÷ (주민등록인구 ÷ 1천), 인구는 ${meta.pop_ym ? meta.pop_ym.slice(0, 4) + '.' + meta.pop_ym.slice(4) : '-'} 말 기준`, 'Defert(1967) 관광기능지수(원식은 병상 수 기준; 객실 자료가 부정확해 시설 수로 대체). 인구: 행정안전부 행정동별 주민등록 인구'],
-    ['tpi', '주민 1천 명당 하루 외지인', v => v.toFixed(1) + '명', '주민에 비해 방문객 부담이 큼', '(연간 외지인 방문객 ÷ 365) ÷ (주민등록인구 ÷ 1천)', 'McElroy·de Albuquerque(1998) 관광 침투도 지수(TPI)의 방문객 밀도 항목'],
-    ['fshare', '외국인 방문객 비중', v => (v * 100).toFixed(1) + '%', '외국인 수요 비중이 큼', '연간 외국인 ÷ (외지인 + 외국인)', '한국관광데이터랩 방문객(이동통신)'],
-    ['k21', '관광 체류 강도', v => v.toFixed(1), '체류형 방문이 많음', '한국관광데이터랩 관광수요지수 세부 지표, 최근 12개월 평균', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
-    ['k2102', '숙박 비중 지수', v => v.toFixed(1), '숙박하는 방문객 비중이 큼', '위와 같음', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
+  const OV = [  // [키, 이름, 표시, 산식, 근거] (쉬운 설명은 OV_EASY)
+    ['dens', '외지인 100만 명당 숙소', v => v.toFixed(1) + '곳', '영업 숙소 ÷ (연간 외지인 방문객 ÷ 100만)', 'Defert(1967) 관광기능지수의 변형: 원식은 병상÷주민 수이나, 인구·병상 자료 대신 방문객과 시설 수를 씀'],
+    ['growth', '최근 3년 순증률', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', '(최근 3년 신규 − 최근 3년 폐업) ÷ 3년 전 영업 숙소', '순증가율(공급 증가 속도)'],
+    ['surv', '3년 생존율', v => (v * 100).toFixed(1) + '%', `${yNow - 6}~${yNow - 4}년 인허가 중 허가 후 3년 안에 폐업하지 않은 비율`, '통계청 기업생멸행정통계의 생존율 개념(연 단위 근사)'],
+    ['even', '업종 균등도', v => v.toFixed(2), 'Pielou J = −Σpᵢ ln pᵢ ÷ ln K (pᵢ 업종 비중, K 전국 업종 수)', 'Shannon 다양도 지수, Pielou(1966) 균등도'],
+    ['gini', '계절 편중', v => v.toFixed(3), '최근 12개월 외지인 방문객의 지니계수', 'Lundtorp(2001) 관광 계절성 지니계수'],
+    ['station', '역세권 숙소 비율', v => (v * 100).toFixed(1) + '%', '역(지하철·광역·간선) 1km 안 영업 숙소 ÷ 위치가 정확한 영업 숙소', '대중교통 도보권(반경 1km) 접근성 지표'],
+    ['rsr', '지역 고유 성장 효과', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', `변이할당분석: Σ 기준재고ᵢ×(지역 업종 성장률ᵢ − 전국 업종 성장률ᵢ) ÷ 기준재고 (${SS_Y0}→${SS_Y1}년 말 재고)`, 'Dunn(1960) 변이할당분석(Shift-share)'],
+    ['hansen', '역 접근성 점수', v => v.toFixed(2), '숙소마다 Σ exp(−2·d) (d: 3km 안 역까지 km)의 평균', 'Hansen(1959) 중력형 접근성. 거리 감쇠 β=2/km는 가정값(0.5km 역=0.37, 1km=0.14)'],
+    ['tfi', '주민 1천 명당 숙소', v => v.toFixed(2) + '곳', `영업 숙소 ÷ (주민등록인구 ÷ 1천), 인구는 ${meta.pop_ym ? meta.pop_ym.slice(0, 4) + '.' + meta.pop_ym.slice(4) : '-'} 말 기준`, 'Defert(1967) 관광기능지수(원식은 병상 수 기준; 객실 자료가 부정확해 시설 수로 대체). 인구: 행정안전부 행정동별 주민등록 인구'],
+    ['tpi', '주민 1천 명당 하루 외지인', v => v.toFixed(1) + '명', '(연간 외지인 방문객 ÷ 365) ÷ (주민등록인구 ÷ 1천)', 'McElroy·de Albuquerque(1998) 관광 침투도 지수(TPI)의 방문객 밀도 항목'],
+    ['fshare', '외국인 방문객 비중', v => (v * 100).toFixed(1) + '%', '연간 외국인 ÷ (외지인 + 외국인)', '한국관광데이터랩 방문객(이동통신)'],
+    ['k21', '관광 체류 강도', v => v.toFixed(1), '한국관광데이터랩 관광수요지수 세부 지표, 최근 12개월 평균', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
+    ['k2102', '숙박 비중 지수', v => v.toFixed(1), '위와 같음', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
   ];
+  // 지표마다 쉬운 설명 (카드와 정의 표에 함께 표시)
+  const OV_EASY = {
+    n: '지금 문을 열고 영업 중인 숙박시설 수입니다(휴업·폐업한 곳은 뺐습니다).',
+    dens: '이 지역을 찾는 외지 방문객 100만 명에 숙소가 몇 곳 있는지입니다. 높으면 방문객에 비해 숙소가 많아 경쟁이 치열하고, 낮으면 숙소가 모자랄 수 있습니다.',
+    growth: '최근 3년 동안 새로 연 숙소에서 문 닫은 숙소를 뺀 뒤, 3년 전 숙소 수와 비교한 증가율입니다. 높을수록 숙소가 빠르게 늘고 있습니다.',
+    surv: '몇 해 전에 문을 연 숙소 가운데 3년 넘게 영업을 이어간 비율입니다. 낮으면 생겼다가 금방 사라지는 숙소가 많다는 뜻입니다.',
+    even: '호텔·여관·민박 같은 숙소 종류가 얼마나 골고루 섞여 있는지를 0~1로 나타낸 값입니다. 1에 가까우면 다양하고, 0에 가까우면 한두 종류에 몰려 있습니다.',
+    gini: '한 해 동안 방문객이 특정 달에 얼마나 몰리는지를 0~1로 나타낸 값입니다. 높을수록 성수기와 비수기 차이가 큽니다.',
+    station: '역(지하철·광역철도·기차역)에서 1km, 걸어서 15분 안팎 거리에 있는 숙소의 비율입니다. 높을수록 대중교통으로 숙소에 가기 편합니다.',
+    rsr: '숙소 증감 가운데 전국적인 흐름이나 숙소 종류 구성으로는 설명되지 않는, 이 지역만의 몫입니다. 플러스면 관광 수요·개발·정책 같은 지역 자체 요인으로 더 늘었다는 뜻입니다.',
+    hansen: '숙소 주변에 역이 얼마나 많고 가까운지를 점수로 나타낸 값입니다. 가까운 역일수록 크게 쳐서 더하므로, 높을수록 걸어서 이용할 수 있는 역이 많습니다.',
+    tfi: '주민 1천 명당 숙소가 몇 곳인지입니다. 높을수록 주민 수에 비해 숙박업이 큰, 관광 중심 지역입니다.',
+    tpi: '하루 평균 외지 방문객이 주민 1천 명당 몇 명인지입니다. 높을수록 주민이 느끼는 관광객 밀도(혼잡·생활 불편)가 클 수 있습니다.',
+    fshare: '이 지역을 찾는 방문객 가운데 외국인의 비율입니다. 높을수록 외국인 관광 수요의 영향이 큽니다.',
+    k21: '방문객이 잠깐 들르기보다 머물다 가는 정도를 한국관광공사가 지수로 만든 값입니다. 높을수록 체류형 관광지에 가깝습니다(실제 일수가 아닌 상대 지수).',
+    k2102: '방문객 가운데 숙박하고 가는 사람의 비중을 지수로 나타낸 값입니다. 높을수록 숙박 수요가 큰 지역입니다(실제 비율이 아닌 상대 지수).',
+    lq: '전국 평균과 비교해 이 지역에 특히 많은 숙소 종류입니다. 2.0이면 그 종류의 비중이 전국 평균의 2배라는 뜻입니다.',
+    ss: '늘어난(줄어든) 숙소를 원인별로 나눈 것입니다. 전국이 다 같이 늘어서 생긴 몫, 늘어나는 종류의 숙소가 많아서 생긴 몫, 이 지역만의 요인으로 생긴 몫으로 나눕니다.',
+  };
   function renderOverview() {
     if (tab !== 'summary') return;  // 시군구 전체를 계산하므로 탭을 열었을 때만
     const r = U ? null : curReg();  // 읍·면·동을 골랐으면 그 시군구
@@ -1019,18 +1038,18 @@
     const P = {}; for (const [k] of OV) P[k] = pctile(k, me[k]);
     $('sum-title').textContent = `종합 · ${regLabel(r)}`;
     $('sum-sub').textContent = `${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 기준. 막대의 표시는 ${peerLevel ? peerName + ' 중 위치(오른쪽일수록 값이 큼)' : '전국이라 비교 대상 없음'}입니다. 매일 새벽 갱신된 자료로 즉시 계산합니다.`;
-    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small></div>`]
-      .concat(OV.map(([k, nm, f, hi]) => { const v = me[k], p = P[k];
-        const why = v != null ? '높을수록 ' + esc(hi) : '자료 없음';
-        return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}% · 높을수록 ${esc(hi)}</small>` : `<small>${why}</small>`}</div>`; })).join('');
+    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><p class="easy">${OV_EASY.n}</p><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small></div>`]
+      .concat(OV.map(([k, nm, f]) => { const v = me[k], p = P[k];
+        const why = v != null ? '' : '자료 없음';
+        return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b><p class="easy">${esc(OV_EASY[k] || '')}</p>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}</div>`; })).join('');
     // 특화 업종(LQ ≥ 1.2, 10곳 이상)
     const spec = me.lq.map((q, i) => [q, i]).filter(([q]) => q != null && q >= 1.2).sort((x, y) => y[0] - x[0]).slice(0, 3);
-    $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>특화 업종 (입지계수 LQ)</h4>${spec.length ? spec.map(([q, i]) => `<div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(T[i].name)}</span><b style="font-size:16px;display:inline">${q.toFixed(2)}</b></div>`).join('') : '<b>-</b>'}<small>LQ = (지역 업종 비중) ÷ (전국 업종 비중). 1.2 이상·10곳 이상만. Isard(1960) 지역분석의 입지계수</small></div>`);
+    $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>특화 업종 (입지계수 LQ)</h4>${spec.length ? spec.map(([q, i]) => `<div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(T[i].name)}</span><b style="font-size:16px;display:inline">${q.toFixed(2)}</b></div>`).join('') : '<b>-</b>'}<p class="easy">${OV_EASY.lq}</p><small>LQ = (지역 업종 비중) ÷ (전국 업종 비중). 1.2 이상·10곳 이상만. Isard(1960) 지역분석의 입지계수</small></div>`);
     if (me.ss) {
       const sg = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(Math.round(v)));
       $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>숙소 증감 분해 (변이할당분석, ${SS_Y0}→${SS_Y1}년 말)</h4><b>${sg(me.ss.d)}곳</b>
         <div style="font-size:13px;line-height:1.7;margin-top:6px">전국 성장 효과 ${sg(me.ss.ns)}<br>업종 구성 효과 ${sg(me.ss.im)}<br>지역 고유 효과 ${sg(me.ss.rs)}</div>
-        <small>기준 재고 ${fmt(me.ss.b0)}곳(휴업 포함). 전국이 같은 속도로 늘었다면 + 업종 구성 때문에 + 이 지역만의 요인. Dunn(1960)</small></div>`);
+        <p class="easy">${OV_EASY.ss}</p><small>기준 재고 ${fmt(me.ss.b0)}곳(휴업 포함). Dunn(1960) 변이할당분석</small></div>`);
     }
     // 한눈에 보기 문장
     const F = Object.fromEntries(OV.map(o => [o[0], o[2]]));
@@ -1053,11 +1072,11 @@
     if (hiP('tpi')) L.push(`주민 1천 명당 하루 외지인이 ${me.tpi.toFixed(1)}명으로 주민 대비 관광객 부담이 큰 편입니다(${top('tpi')}).`);
     if (hiP('fshare')) L.push(`외국인 방문객 비중이 ${F.fshare(me.fshare)}로 높습니다.`);
     $('sum-text').innerHTML = L.map(x => `<li>${esc(x)}</li>`).join('');
-    $('sum-table').innerHTML = '<thead><tr><th>지표</th><th>값</th><th>' + (peerLevel ? esc(peerName) + ' 중 백분위' : '백분위') + '</th><th style="text-align:left">산식</th><th style="text-align:left">근거</th></tr></thead><tbody>'
-      + OV.map(([k, nm, f, , formula, src]) => `<tr><td>${esc(nm)}</td><td>${me[k] == null ? '-' : f(me[k])}</td><td>${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td style="text-align:left;white-space:normal">${esc(formula)}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(src)}</td></tr>`).join('') + '</tbody>';
+    $('sum-table').innerHTML = '<thead><tr><th>지표</th><th>값</th><th>' + (peerLevel ? esc(peerName) + ' 중 백분위' : '백분위') + '</th><th style="text-align:left">무슨 뜻인가요</th><th style="text-align:left">산식</th><th style="text-align:left">근거</th></tr></thead><tbody>'
+      + OV.map(([k, nm, f, formula, src]) => `<tr><td>${esc(nm)}</td><td>${me[k] == null ? '-' : f(me[k])}</td><td>${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td style="text-align:left;white-space:normal;min-width:240px">${esc(OV_EASY[k] || '')}</td><td style="text-align:left;white-space:normal">${esc(formula)}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(src)}</td></tr>`).join('') + '</tbody>';
     $('sum-note').textContent = '백분위는 비교 대상 중 이 값보다 작거나 같은 곳의 비율입니다(100에 가까울수록 값이 큼). 값이 크다고 좋은 것은 아니며, 정책 목적에 따라 해석하세요. '
       + '인구 기반 지표는 행정안전부 행정동별 주민등록 인구(월말, 거주불명자·재외국민 포함)로 계산합니다.';
-    csvSet('sum-table', ['지역', '지표', '값', '백분위', '산식', '근거'], OV.map(([k, nm, , , formula, src]) => [regLabel(r), nm, me[k] == null ? '' : +me[k].toFixed(4), P[k] == null ? '' : Math.round(P[k] * 100), formula, src]));
+    csvSet('sum-table', ['지역', '지표', '값', '백분위', '설명', '산식', '근거'], OV.map(([k, nm, , formula, src]) => [regLabel(r), nm, me[k] == null ? '' : +me[k].toFixed(4), P[k] == null ? '' : Math.round(P[k] * 100), OV_EASY[k] || '', formula, src]));
   }
   $('sum-print').onclick = () => print();
 
