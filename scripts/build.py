@@ -24,8 +24,6 @@ Steps
     boardings / alightings of 코레일 광역철도 and 간선열차 stations matched by name (latest 12 months).
 16. icn.json: 인천공항 arriving / departing passengers per month and the top countries of the route.
 17. kac.json: passengers per airport and year, domestic / international (한국공항공사 공항별 여객실적).
-19. rooms.json: [sido, sgg, type, status, facilities, rooms, facilities with rooms, implausible, filled from 숙박업] for the
-    rooms table; pts rows carry rooms and a flag too (객실 수: 숙박업 한실+양실, others 객실수; campgrounds have none).
 18. kto_index.json: 관광수요지수 세부 지표 (체류·소비 강도, 다양성) per 시도 / 시군구 and month (한국관광데이터랩, indices).
 """
 import difflib
@@ -191,33 +189,6 @@ def similar(a, b):
     return difflib.SequenceMatcher(None, a, b).ratio() >= 0.6
 
 
-CAMP_SRC = ("general_campgrounds", "auto_campgrounds")  # sites, not rooms
-SMALL_SRC = ("rural_homestays", "foreigner_city_homestays", "hanok_experience")  # small houses by law
-ROOM_MAX_SMALL = 30  # more rooms than this in a 민박 / 한옥 record is an entry error (e.g. 494 for a 농어촌민박)
-
-
-def rooms_of(ep, rec):
-    """(rooms, flag): rooms None when not entered or not applicable; flag 1 = implausible value left out."""
-    def n(c):
-        v = clean(rec.get(c)).replace(",", "")
-        try:
-            return int(float(v)) if v else None
-        except ValueError:
-            return None
-    if ep in CAMP_SRC:
-        return None, 0
-    if ep == "lodgings":
-        k, w = n("KSRM_CNT"), n("WSRM_CNT")
-        rooms = None if k is None and w is None else (k or 0) + (w or 0)
-    else:
-        rooms = n("GSRM_CNT")
-    if not rooms:  # 0 is how some registries leave it blank
-        return None, 0
-    if ep in SMALL_SRC and rooms > ROOM_MAX_SMALL:
-        return None, 1
-    return rooms, 0
-
-
 def load():
     rows = []
     for ep, (cat, cols, default) in SOURCES.items():
@@ -238,7 +209,6 @@ def load():
                     "zone": zone_of(rec.get("RGN_SE_NM")) if ep == "foreigner_city_homestays" else -1,
                     "bldg": bldg_of(rec.get("BLDG_USG_NM")) if ep == "foreigner_city_homestays" else -1,
                 })
-                rows[-1]["rooms"], rows[-1]["room_flag"] = rooms_of(ep, rec)
     return rows
 
 
@@ -257,8 +227,6 @@ def dedupe(rows):
             cands = by_addr.get(addr_key(r["road"]), []) + by_addr.get(addr_key(r["lot"]), [])
             hit = next((t for t in cands if similar(r["name"], t["name"])), None)
             if hit:
-                if hit["rooms"] is None and r["rooms"]:  # 관광숙박업 record without rooms: take them from its 숙박업 twin
-                    hit["rooms"], hit["room_flag"] = r["rooms"], 2
                 removed += 1
                 if len(examples) < 20:
                     examples.append([r["name"], r["type"], hit["name"], hit["type"], r["road"] or r["lot"]])
@@ -862,7 +830,6 @@ def main():
     def quarter(d):
         return (int(d[5:7]) - 1) // 3 + 1 if d[5:7].isdigit() and 1 <= int(d[5:7]) <= 12 else 1
     minbak = Counter()
-    roomcube = defaultdict(lambda: [0, 0, 0, 0, 0])  # (si, gi, type, status) -> [facilities, rooms, with rooms, implausible, filled from 숙박업]
     sido_meta = []
     for si, s in enumerate(sidos):
         sggs = sgg_of[s]
@@ -895,13 +862,7 @@ def main():
             lat, lon = r["ll"] if r["ll"] else (None, None)
             out.append([lat, lon, tidx[r["type"]], g, d, q, r["status"], y, cy,
                         r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0),
-                        r["zone"], r["bldg"], r["rooms"], r["room_flag"]])
-            rc = roomcube[(si, g, tidx[r["type"]], r["status"])]
-            rc[0] += 1
-            if r["rooms"]:
-                rc[1] += r["rooms"]; rc[2] += 1
-            rc[3] += r["room_flag"] == 1
-            rc[4] += r["room_flag"] == 2
+                        r["zone"], r["bldg"]])
             if r["ll"]:
                 cen[r["sgg"]].append(r["ll"])
         with open(os.path.join(OUT, "pts", f"{si}.json"), "w", encoding="utf-8") as f:
@@ -923,8 +884,6 @@ def main():
     for name, data in (("cubeq.json", cubeq), ("closeq.json", closeq)):
         with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
             json.dump([[*k, v] for k, v in sorted(data.items())], f, separators=(",", ":"))
-    with open(os.path.join(OUT, "rooms.json"), "w", encoding="utf-8") as f:
-        json.dump([[*k, *v] for k, v in sorted(roomcube.items())], f, separators=(",", ":"))
     with open(os.path.join(OUT, "minbak.json"), "w", encoding="utf-8") as f:
         json.dump([[*k, v] for k, v in sorted(minbak.items())], f, separators=(",", ":"))
 

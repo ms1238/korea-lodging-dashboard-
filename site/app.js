@@ -490,7 +490,6 @@
     renderCompare();
     renderDemandVis();
     renderKix();
-    renderRooms();
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
@@ -898,36 +897,6 @@
     csvSet('arr-top', ['국적', '최근 12개월', '직전 12개월', '증감률(%)', '비중(%)'], rows.map(r => [r.name, r.v, r.p, r.p ? ((r.v / r.p - 1) * 100).toFixed(2) : '', (r.v / l12 * 100).toFixed(2)]));
   }
   const pc1 = x => (x * 100).toFixed(1) + '%';
-
-  /* ---------- 업소 수와 객실 수 (build.py → rooms.json, 상세 행의 16·17번째 값) ---------- */
-  let roomCube = null;
-  const CAMP_CAT = CATS.indexOf('야영장업');
-  function renderRooms() {
-    if (!roomCube) return;
-    const by = T.map(() => [0, 0, 0, 0, 0]);  // 업소, 객실, 객실 입력 업소, 오입력, 숙박업 값으로 보충
-    const add = (t, s, v) => { if (!state.types.has(t) || (state.status >= 0 && s !== state.status)) return; for (let i = 0; i < 5; i++) by[t][i] += v[i]; };
-    if (!D) for (const r of roomCube) add(r[2], r[3], r.slice(4));
-    else for (const r of D.rows) if (inDetail(r)) add(r[2], r[6], [1, r[16] || 0, r[16] ? 1 : 0, r[17] === 1 ? 1 : 0, r[17] === 2 ? 1 : 0]);
-    const ts = T.map((_, i) => i).filter(i => by[i][0]).sort((a, b) => by[b][0] - by[a][0]);
-    const camp = t => catOf[t] === CAMP_CAT, est = v => v[2] ? Math.round(v[1] / v[2] * v[0]) : 0;
-    const tot = [0, 0, 0, 0, 0], totE = [0, 0];
-    ts.filter(t => !camp(t)).forEach(t => { by[t].forEach((x, i) => { tot[i] += x; }); totE[0] += est(by[t]); });
-    const rate = v => v[0] ? v[2] / v[0] : 0, pc0 = x => Math.round(x * 100) + '%';
-    const warn = v => rate(v) < .7 ? ' style="color:var(--closed);font-weight:600"' : '';
-    const note = v => [v[3] ? `오입력 ${fmt(v[3])}곳 제외` : '', v[4] ? `숙박업 값으로 보충 ${fmt(v[4])}곳` : ''].filter(Boolean).join(' · ');
-    $('rm-table').innerHTML = '<thead><tr><th>업종</th><th>업소 수</th><th>객실 수 (입력분)</th><th>객실 입력률</th><th>업소당 객실</th><th>추정 객실 수</th><th>비고</th></tr></thead><tbody>'
-      + ts.map(t => { const v = by[t];
-        return camp(t) ? `<tr><td><span class="sw" style="background:var(--c${catOf[t]})"></span>${esc(T[t].name)}</td><td>${fmt(v[0])}</td><td colspan="4" style="text-align:center;color:var(--muted)">해당 없음 (객실이 아닌 야영 사이트)</td><td></td></tr>`
-          : `<tr><td><span class="sw" style="background:var(--c${catOf[t]})"></span>${esc(T[t].name)}</td><td>${fmt(v[0])}</td><td>${fmt(v[1])}</td><td${warn(v)}>${pc0(rate(v))}</td><td>${v[2] ? (v[1] / v[2]).toFixed(1) : '-'}</td><td>${v[2] ? fmt(est(v)) : '-'}</td><td style="text-align:left;color:var(--muted)">${note(v)}</td></tr>`; }).join('')
-      + `<tr class="sum"><td><b>합계 (야영장 제외)</b></td><td><b>${fmt(tot[0])}</b></td><td><b>${fmt(tot[1])}</b></td><td><b>${pc0(rate(tot))}</b></td><td><b>${tot[2] ? (tot[1] / tot[2]).toFixed(1) : '-'}</b></td><td><b>${fmt(totE[0])}</b></td><td></td></tr></tbody>`;
-    const low = ts.filter(t => !camp(t) && by[t][0] >= 10 && rate(by[t]) < .7).map(t => `${T[t].name} ${pc0(rate(by[t]))}`);
-    $('rm-sub').textContent = `${regionName()} · ${state.status < 0 ? '전체 상태' : ST[state.status]} 숙소(야영장 제외) ${fmt(tot[0])}곳, 입력된 객실 ${fmt(tot[1])}실(입력률 ${pc0(rate(tot))}), 보정 추정 약 ${fmt(totE[0])}실.`
-      + (low.length ? ` 객실 입력률이 낮은 업종: ${low.join(', ')}.` : '')
-      + (ts.some(t => !camp(t) && !by[t][2]) ? ` 객실이 하나도 입력되지 않은 업종(${ts.filter(t => !camp(t) && !by[t][2]).map(t => T[t].name).join(', ')})은 추정에서도 빠집니다.` : '');
-    csvSet('rm-table', ['업종', '업소 수', '객실 수(입력분)', '객실 입력 업소', '객실 입력률(%)', '업소당 객실', '추정 객실 수', '오입력 제외', '숙박업 값으로 보충'],
-      ts.map(t => { const v = by[t]; return camp(t) ? [T[t].name, v[0], '', '', '', '', '', '', ''] : [T[t].name, v[0], v[1], v[2], (rate(v) * 100).toFixed(1), v[2] ? (v[1] / v[2]).toFixed(2) : '', v[2] ? est(v) : '', v[3], v[4]]; }));
-  }
-  getJSON('data/rooms.json', null).then(d => { roomCube = d || []; renderRooms(); });
 
   /* ---------- 관광수요지수 세부 지표 (한국관광데이터랩, build.py → kto_index.json) ---------- */
   let kix = null;
