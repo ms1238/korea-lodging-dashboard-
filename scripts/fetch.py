@@ -59,8 +59,13 @@ STATIONS_QUERY = """[out:json][timeout:180];
  nwr["railway"="station"]["subway"="yes"](33.0,124.5,38.7,131.0);
  nwr["railway"="station"]["light_rail"="yes"](33.0,124.5,38.7,131.0););
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "icn", "korail_wide", "kac_years"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"subway", "parks_osm", "stations", "korail_wide", "kac_years"}  # raw/<name>.json; the others are .jsonl
+# every railway station: 광역철도 lines run by Korail (경의중앙, 경춘, 수인분당, 서해, 동해선, 대경선 ...) are tagged as
+# ordinary railway stations, so the build adds those whose name appears in the 코레일 광역철도 table
+RAIL_STATIONS_QUERY = """[out:json][timeout:180];
+nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
+out center tags;"""
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "kac_years"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"subway", "parks_osm", "stations", "rail_stations", "korail_wide", "kac_years"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -178,18 +183,18 @@ def fetch_parks_osm(_key):
     save_json("parks_osm.json", out)
 
 
-def fetch_stations(_key):
+def fetch_stations(_key, query=STATIONS_QUERY, name="stations"):
     """Station points (node, or the centre of a way/relation) with their Korean name."""
     out = []
-    for el in overpass(STATIONS_QUERY):
+    for el in overpass(query):
         tags, c = el.get("tags", {}), el.get("center") or el
         name = tags.get("name:ko") or tags.get("name") or ""
         if name and "lat" in c:
             out.append({"id": f"{el['type']}/{el['id']}", "name": name, "lat": round(c["lat"], 5), "lon": round(c["lon"], 5)})
-    print(f"stations: {len(out)} stations", flush=True)
+    print(f"{name}: {len(out)} stations", flush=True)
     if not out:
         raise RuntimeError("no stations returned")
-    save_json("stations.json", out)
+    save_json(f"{name}.json", out)
 
 
 def fetch_subway(_key):
@@ -215,14 +220,15 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "icn", "korail_wide", "kac_years"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "kac_years"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have:
             continue
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
-             "parks_osm": fetch_parks_osm, "stations": fetch_stations, "icn": fetch_icn, "korail_wide": fetch_korail_wide,
+             "parks_osm": fetch_parks_osm, "stations": fetch_stations,
+             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide,
              "kac_years": fetch_kac}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
