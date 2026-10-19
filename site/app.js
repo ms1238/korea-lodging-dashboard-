@@ -778,7 +778,7 @@
     $('stn-sel').innerHTML = groups.map(([name, xs]) => `<optgroup label="${esc(name)}">${xs.map(i => `<option value="${i}">${esc(STN.st[i][2])}</option>`).join('')}</optgroup>`).join('');
     $('stn-sel').disabled = !ids.length;
     if (stnSel >= 0) $('stn-sel').value = String(stnSel);
-    $('stn-sub').textContent = !inR.length ? `${regionName()}에는 지하철·광역철도·KTX역이 없습니다.`
+    $('stn-sub').textContent = !inR.length ? `${regionName()}에는 지하철·도시철도역이 없습니다.`
       : q ? `${regionName()} 역 ${fmt(inR.length)}곳 중 "${$('stn-q').value}" 검색 결과 ${fmt(ids.length)}곳`
       : `${regionName()} 역 ${fmt(inR.length)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.`;
     renderStation();
