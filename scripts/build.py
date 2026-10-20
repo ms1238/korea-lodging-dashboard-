@@ -33,6 +33,7 @@ Steps
 22. admin/<si>.json: 시도 and 시군구 outlines merged from 행정동 boundaries (vuski/admdongkor, 통계청 SGIS) for drawing the selected region.
 23. meta.json "decl": 인구감소지역 / 관심지역 per 시군구 (scripts/static/decline_areas.json, 2026-10-07 지정).
 24. pts/<si>.json "dpop": population per 법정 읍·면·동 (국립환경과학원 생활계 인구현황, latest year).
+25. survival.json: Kaplan-Meier survival by 업종 대분류 for the nation, 시도 and 시군구 (permits since 2010).
 """
 import calendar
 import difflib
@@ -1072,6 +1073,61 @@ def write_arrivals():
                   f, ensure_ascii=False, separators=(",", ":"))
 
 
+SURV_FROM = "2010-01-01"  # cohort for the survival curves: permits since then (older closings are less complete)
+
+
+def write_survival(rows, sidos, sgg_of):
+    """Kaplan-Meier survival of lodgings by 업종 대분류 (and all together) for the nation, each 시도 and 시군구:
+    survival.json = {"t": [1..10 years], "cats": [...], "v": {key: [[S(t) % or null] per group]}, "n": {key: [n per group]}}.
+    Start = permit date (since SURV_FROM); event = closing (폐업 with a date); 영업·휴업 are censored at today;
+    폐업 without a date is left out. S(t) is null when fewer than 20 remain at risk at t."""
+    today = datetime.now(KST).date()
+    months = lambda a, b: (b - a).days / 30.4375
+    groups = defaultdict(list)  # (key, group) -> [(months, event)]
+    gi_of = {s: {g: i for i, g in enumerate(sgg_of[s])} for s in sidos}
+    ci = {c: i for i, c in enumerate(CATEGORIES)}
+    for r in rows:
+        if not r["date"] or r["date"] < SURV_FROM:
+            continue
+        try:
+            start = datetime.strptime(r["date"], "%Y-%m-%d").date()
+            if r["status"] == 2:
+                if not r["closed"]:
+                    continue
+                end, ev = datetime.strptime(r["closed"], "%Y-%m-%d").date(), 1
+            else:
+                end, ev = today, 0
+        except ValueError:
+            continue
+        if end < start or start > today:
+            continue
+        si = sidos.index(r["sido"])
+        for key in ("nat", str(si), f"{si}:{gi_of[r['sido']][r['sgg']]}"):
+            for g in (0, 1 + ci[r["cat"]]):  # 0 = 전체
+                groups[(key, g)].append((months(start, end), ev))
+    T = list(range(1, 11))
+    out_v, out_n = defaultdict(lambda: [None] * (1 + len(CATEGORIES))), defaultdict(lambda: [0] * (1 + len(CATEGORIES)))
+    for (key, g), obs in groups.items():
+        obs.sort()
+        at_risk, surv, k, curve = len(obs), 1.0, 0, []
+        for t in T:
+            while k < len(obs) and obs[k][0] <= t * 12:  # events and censorings up to t years, ties counted together
+                tm, d, c = obs[k][0], 0, 0
+                while k < len(obs) and obs[k][0] == tm:
+                    d += obs[k][1]
+                    c += 1 - obs[k][1]
+                    k += 1
+                if d:
+                    surv *= 1 - d / at_risk
+                at_risk -= d + c
+            curve.append(round(surv * 100, 1) if at_risk >= 20 else None)
+        out_v[key][g], out_n[key][g] = curve, len(obs)
+    with open(os.path.join(OUT, "survival.json"), "w", encoding="utf-8") as f:
+        json.dump({"t": T, "from": SURV_FROM[:4], "cats": CATEGORIES, "v": out_v, "n": out_n}, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"survival: {len(out_v)} areas; national 3/5-year survival "
+          f"{out_v['nat'][0][2] if out_v.get('nat') else '-'}% / {out_v['nat'][0][4] if out_v.get('nat') else '-'}%", flush=True)
+
+
 def load_dong_pop(merged):
     """Population per 법정 읍·면·동 (국립환경과학원 생활계 인구현황, 리 summed) keyed by (시도, 시군구, 읍면동), 일반구 counted
     in their 시, plus a (시도, 읍면동) index for names whose 구 changed after the survey year (인천 2026). Returns
@@ -1334,6 +1390,7 @@ def main():
     write_festivals(rows, sidos, sgg_of, tidx, merged)
     write_park_lodging(rows, parks, sidos, sgg_of, tidx)
     write_food()
+    write_survival(rows, sidos, sgg_of)
     admin_ver = write_admin(sidos, sido_meta, merged)
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:

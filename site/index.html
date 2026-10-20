@@ -116,6 +116,14 @@
       <p class="note" id="recent-note">줄을 누르면 지도가 그 시설로 이동합니다. 인허가·폐업 일자는 지자체가 등록한 날짜라, 실제 개업·폐업과 며칠에서 몇 주 차이가 날 수 있고 등록이 늦게 반영되기도 합니다.</p></div>
   </section>
 
+  <section data-tab="trend" id="surv-sec">
+    <div class="sechead"><h2>업종별 생존 곡선</h2><p class="sub" id="surv-sub"></p></div>
+    <div class="card"><div class="legend" id="surv-legend"></div>
+      <div class="chartwrap"><svg id="surv" viewBox="0 0 900 280" role="img" aria-label="업종별 생존 곡선"></svg><div class="tip" id="surv-tip" hidden></div></div>
+      <p class="note" id="surv-note"></p></div>
+    <div class="card"><button class="btn csv" data-csv="surv-table" data-name="업종별_생존율">CSV</button><h3 style="margin-bottom:10px">업종별 1·3·5·10년 생존율</h3><div class="tablewrap"><table id="surv-table"></table></div></div>
+  </section>
+
   <section data-tab="trend">
     <div class="sechead"><h2>숙박업 동향 · 연도별 인허가</h2><p class="sub" id="year-sub"></p></div>
     <div class="card"><div class="tlrow" style="margin-bottom:8px"><div class="seg per-seg" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div><div class="legend" id="year-legend" style="margin:0"></div></div><div class="chartwrap"><svg id="year" viewBox="0 0 900 300" role="img" aria-label="연도별 인허가 수"></svg><div class="tip" id="year-tip" hidden></div></div>

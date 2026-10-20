@@ -200,3 +200,9 @@ th:first-child,td:first-child{text-align:left}
 .mix .n{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
 #kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media (max-width:900px){#kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.radbtn{font:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;color:#14202b;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.radbtn[aria-pressed="true"]{background:#c0392b;border-color:#c0392b;color:#fff;font-weight:700}
+.radpop table{font-size:12px;margin:6px 0;border-collapse:collapse}
+.radpop td,.radpop th{padding:2px 6px;text-align:right;border-bottom:1px solid #eee}
+.radpop td:first-child,.radpop th:first-child{text-align:left}
+.radpop small{color:#566370;display:block;line-height:1.4}

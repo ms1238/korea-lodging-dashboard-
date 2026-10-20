@@ -196,7 +196,7 @@
   if (typeof maplibregl === 'undefined') $('map').innerHTML = '<p class="note" style="padding:16px">지도 라이브러리를 불러오지 못했습니다. 새로고침해 주세요.</p>';
   const map = typeof maplibregl === 'undefined' ? null : new maplibregl.Map({
     container: 'map', style: 'https://tiles.openfreemap.org/styles/positron', center: [127.8, 36.2], zoom: 5.6, attributionControl: { compact: true } });
-  let mapReady = false;
+  let mapReady = false, radiusOn = false;  // radiusOn: 반경 분석 모드(지도 클릭 = 반경 숙소 세기)
   const empty = { type: 'FeatureCollection', features: [] };
   if (map) {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -279,7 +279,7 @@
         }));
         map.getSource('decl').setData({ type: 'FeatureCollection', features: feats });
       };
-      map.on('click', 'decl-fill', e => {
+      map.on('click', 'decl-fill', e => { if (radiusOn) return;
         if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'areas', 'tour', 'fest', 'food0', 'food1'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties, r = { si: p.si, gi: p.gi };
         new maplibregl.Popup({ maxWidth: '240px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(regLabel(r))}</b><br>${p.d === 1 ? '인구감소지역' : '인구감소관심지역'}${(S[r.si].declp || []).includes(r.gi) ? ' · 인구활력 플러스' : ''}<br><small>행정안전부 2026.10.7 지정</small>`).addTo(map);
@@ -321,7 +321,7 @@
       map.addSource('fest', { type: 'geojson', data: empty });
       map.addLayer({ id: 'fest', type: 'symbol', source: 'fest', layout: { visibility: tab === 'festival' ? 'visible' : 'none',
         'icon-image': ['concat', 'star', ['to-string', ['get', 's']]], 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, .55, 12, 1] } });
-      map.on('click', 'fest', e => {
+      map.on('click', 'fest', e => { if (radiusOn) return;
         const i = e.features[0].properties.i, f = FEST.f[i];
         pop(e.lngLat, `${f[7] ? `<img src="${esc(f[7])}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(f[2])}</b><br>${edSpan(f[5].at(-1))} · ${FST[festState(f)]}<br>${esc(f[6])}<br>영업 숙소 반경 1km ${fmt(festCount(f, 1))}곳 · 3km ${fmt(festCount(f, 2))}곳<br><small>출처: 한국관광공사 TourAPI</small>`);
         fSel = i; $('fest-sel').value = String(i); renderFestOne();
@@ -336,20 +336,20 @@
           geometry: { type: 'Point', coordinates: [r[1], r[0]] } })) });
         [0, 1].forEach(k => { $('n-food' + k).textContent = fmt(rows.filter(r => r[2] === k).length) + '곳'; });
       });
-      for (const k of [0, 1]) map.on('click', 'food' + k, e => { const p = e.features[0].properties;
+      for (const k of [0, 1]) map.on('click', 'food' + k, e => { if (radiusOn) return; const p = e.features[0].properties;
         pop(e.lngLat, `<b>${esc(p.n)}</b><br>${k ? '백년가게' : '모범음식점'}${p.m ? ' · ' + esc(p.m) : ''}<br>${esc(p.a)}${p.t ? '<br>' + esc(p.t) : ''}<br><small>출처: ${k ? '소상공인시장진흥공단' : '행정안전부'} · 위치는 일반음식점 인허가 좌표</small>`); });
-      map.on('click', 'pts', e => {
+      map.on('click', 'pts', e => { if (radiusOn) return;
         const p = e.features[0].properties;
         new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(e.lngLat).setHTML(
           `<b>${esc(p.name)}</b><br>${esc(T[p.t].name)} · ${ST[p.s]}<br>${esc(p.addr)}<br><small>인허가 ${esc(p.date)}${p.closed ? ' · 폐업 ' + esc(p.closed) : ''}${p.ap ? ' · 위치는 동 단위 근사' : ''}</small>`).addTo(map);
       });
-      map.on('click', 'tour', e => {
+      map.on('click', 'tour', e => { if (radiusOn) return;
         const p = e.features[0].properties;
         new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(
           `${p.img ? `<img src="${esc(p.img)}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(p.name)}</b><br>${esc(TOUR.types[p.t])}<br>${esc(p.addr)}<br>${p.n3 != null ? `영업 숙소 반경 1km ${fmt(p.n1)}곳 · 3km ${fmt(p.n3)}곳<br>` : ''}<small>출처: 한국관광공사 TourAPI</small>`).addTo(map);
       });
       // 전국 보기의 시군구 원: 그 지역으로 가거나 비교 목록에 담기
-      map.on('click', 'areas', e => {
+      map.on('click', 'areas', e => { if (radiusOn) return;
         const { si, gi, n } = e.features[0].properties, r = { si, gi };
         const pp = new maplibregl.Popup({ maxWidth: '240px', className: 'areapop' }).setLngLat(e.lngLat).setHTML(
           `<b>${esc(regLabel(r))}</b><br>시설 ${fmt(n)}곳<br><button class="btn" data-a="go">이 지역 보기</button><button class="btn" data-a="cmp">＋ 비교에 담기</button>`).addTo(map);
@@ -360,17 +360,17 @@
         });
       });
       const pop = (ll, html) => new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(ll).setHTML(html).addTo(map);
-      map.on('click', 'airports', e => {
+      map.on('click', 'airports', e => { if (radiusOn) return;
         const p = e.features[0].properties, nm = p['name:ko'] || p.name, k = kacOf(nm), n = k ? kac.years.length - 1 : 0;
         pop(e.lngLat, `<b>${esc(nm)}</b>${p.iata ? ` (${esc(p.iata)})` : ''}<br>${k ? `${kac.years[n]}년 여객 ${fmt(k.dom[n] + k.intl[n])}명 (국내선 ${fmt(k.dom[n])} · 국제선 ${fmt(k.intl[n])})<br>` : ''}<small>출처: OpenStreetMap${k ? ', 한국공항공사' : ''}</small>`);
       });
-      map.on('click', 'subway', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
-      map.on('click', 'park-fill', e => {
+      map.on('click', 'subway', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
+      map.on('click', 'park-fill', e => { if (radiusOn) return;
         if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'fest', 'food0', 'food1', 'areas', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties;
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
-      map.on('click', 'rail-st', e => { const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
+      map.on('click', 'rail-st', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
       for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-food0', ['food0']], ['ck-food1', ['food1']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
@@ -379,6 +379,45 @@
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
+      // 반경 분석: 버튼을 켜고 지도를 누르면 그 지점 반경 0.5·1·3km 안 영업 숙소를 업종별로 셈(근처 광역의 시설 목록 사용)
+      map.addSource('pick-ring', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'pick-ring', type: 'line', source: 'pick-ring', filter: ['==', ['geometry-type'], 'LineString'], paint: { 'line-color': '#c0392b', 'line-width': 1.8, 'line-dasharray': [3, 2] } });
+      map.addLayer({ id: 'pick-ring-label', type: 'symbol', source: 'pick-ring', filter: ['==', ['geometry-type'], 'Point'],
+        layout: { 'text-field': ['get', 'l'], 'text-font': font, 'text-size': 11, 'text-anchor': 'bottom' }, paint: { 'text-color': '#922b21', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
+      const radBtn = document.createElement('button');
+      radBtn.className = 'radbtn'; radBtn.type = 'button'; radBtn.textContent = '📍 반경 분석'; radBtn.setAttribute('aria-pressed', 'false');
+      radBtn.title = '켜고 지도를 누르면 그 지점 반경 0.5·1·3km 안 영업 숙소를 셉니다';
+      map.addControl({ onAdd: () => { const d = document.createElement('div'); d.className = 'maplibregl-ctrl'; d.appendChild(radBtn); return d; }, onRemove: () => {} }, 'top-left');
+      let radPop = null;
+      radBtn.onclick = () => { radiusOn = !radiusOn; radBtn.setAttribute('aria-pressed', String(radiusOn)); map.getCanvas().style.cursor = radiusOn ? 'crosshair' : '';
+        if (!radiusOn && radPop) radPop.remove(); };
+      map.on('mousemove', () => { if (radiusOn) map.getCanvas().style.cursor = 'crosshair'; });
+      map.on('click', async e => {
+        if (!radiusOn) return;
+        const { lat, lng: lon } = e.lngLat, kx = 111.32 * Math.cos(lat * Math.PI / 180), RR = [0.5, 1, 3];
+        const near = S.map((sd, si) => si).filter(si => S[si].sggc.some(c => c && Math.hypot((c[0] - lat) * 110.95, (c[1] - lon) * kx) < 45));
+        const det = await Promise.all(near.map(loadDetail)), cnt = new Map();
+        for (const d of det) for (const r of d.rows) {
+          if (r[0] == null || r[13] || r[6] !== 0 || !state.types.has(r[2])) continue;
+          const d2 = ((r[0] - lat) * 110.95) ** 2 + ((r[1] - lon) * kx) ** 2;
+          if (d2 > 9) continue;
+          const c = cnt.get(r[2]) || cnt.set(r[2], [0, 0, 0]).get(r[2]);
+          RR.forEach((km, k) => { if (d2 <= km * km) c[k]++; });
+        }
+        const rows = [...cnt].sort((a, b) => b[1][1] - a[1][1] || b[1][2] - a[1][2]), tot = RR.map((_, k) => rows.reduce((a, [, c]) => a + c[k], 0));
+        const feats = RR.flatMap(km => { const g = []; for (let k = 0; k <= 72; k++) { const a = k / 72 * 2 * Math.PI; g.push([lon + km / kx * Math.sin(a), lat + km / 110.95 * Math.cos(a)]); }
+          return [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: g } }, { type: 'Feature', properties: { l: km < 1 ? km * 1000 + 'm' : km + 'km' }, geometry: { type: 'Point', coordinates: [lon, lat + km / 110.95] } }]; });
+        map.getSource('pick-ring').setData({ type: 'FeatureCollection', features: feats });
+        if (radPop) radPop.remove();
+        const top = rows.slice(0, 8), rest = rows.slice(8);
+        radPop = new maplibregl.Popup({ maxWidth: '320px', className: 'radpop' }).setLngLat(e.lngLat).setHTML(
+          `<b>이 지점 주변 영업 숙소</b><table><thead><tr><th>업종</th><th>500m</th><th>1km</th><th>3km</th></tr></thead><tbody>`
+          + top.map(([t, c]) => `<tr><td><span class="sw" style="background:var(--c${catOf[t]})"></span>${esc(T[t].name)}</td>${c.map(v => `<td>${fmt(v)}</td>`).join('')}</tr>`).join('')
+          + (rest.length ? `<tr><td>그 밖의 ${rest.length}개 업종</td>${RR.map((_, k) => `<td>${fmt(rest.reduce((a, [, c]) => a + c[k], 0))}</td>`).join('')}</tr>` : '')
+          + `<tr><td><b>합계</b></td>${tot.map(v => `<td><b>${fmt(v)}</b></td>`).join('')}</tr></tbody></table>`
+          + `<small>선택 업종 · 좌표가 정확한 시설만(동 단위 근사 위치 제외) · 직선거리. 반경 분석을 끄려면 지도 왼쪽 위 버튼.</small>`).addTo(map);
+        radPop.on('close', () => map.getSource('pick-ring').setData(empty));
+      });
       update(!!D);  // 공유 링크로 지역이 이미 골라져 있으면 그 지역으로
       if (state.cmp.length && !unionOn()) fitRegs(state.cmp);
     });
@@ -590,6 +629,7 @@
     renderMinbak(names);
     renderStations();
     renderRecent();
+    renderSurv();
     syncMore();
     renderFest();
     renderPark();
@@ -946,6 +986,28 @@
   }
   $('recent-per').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { recentDays = +b.dataset.v; renderRecent(); } });
   $('recent-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { recentKind = b.dataset.v; renderRecent(); } });
+
+  /* ---------- 업종별 생존 곡선: 카플란-마이어, 인허가 후 n년 뒤에도 영업(휴업 포함) 중일 확률 (build.py → survival.json) ---------- */
+  let surv = null;
+  function renderSurv() {
+    $('surv-sec').hidden = !surv;
+    if (!surv) return;
+    const r = U ? null : curReg(), key = !r || r.si < 0 ? 'nat' : r.grp != null || r.gi < 0 ? String(r.si) : `${r.si}:${r.gi}`;
+    const v = surv.v[key], n = surv.n[key];
+    const name = key === 'nat' ? '전국' : regLabel(key.includes(':') ? { si: r.si, gi: r.gi } : { si: r.si, gi: -1 });
+    if (!v) { $('surv').innerHTML = ''; $('surv-table').innerHTML = ''; $('surv-sub').textContent = `${name}: 자료가 부족합니다.`; return; }
+    const groups = [['전체', 'var(--fg)', 0], ...surv.cats.map((c, i) => [c, `var(--c${i})`, i + 1])].filter(([, , g]) => n[g] >= 100 && v[g] && v[g].some(x => x != null));
+    $('surv-legend').innerHTML = groups.map(([nm, col]) => `<span><i style="background:${col}"></i>${esc(nm)}</span>`).join('');
+    lineChart($('surv'), $('surv-tip'), surv.t.map(t => t + '년'), groups.map(([nm, col, g]) => ({ name: nm, color: col, vals: v[g] })),
+      { partial: surv.t.map(() => false), div: 1, unit: x => x + '%', tip: x => x.toFixed(1) + '%' });
+    $('surv-sub').textContent = `${name}${U ? ' (합쳐 보기 중에는 전국)' : r && r.grp != null ? ' (묶음은 광역 기준)' : !U && state.dong >= 0 ? ' (읍·면·동은 시군구 기준)' : ''} · ${surv.from}년 이후 인허가 ${fmt(n[0])}곳`;
+    const at = [1, 3, 5, 10];
+    $('surv-table').innerHTML = `<thead><tr><th>업종</th><th>대상</th>${at.map(t => `<th>${t}년</th>`).join('')}</tr></thead><tbody>`
+      + groups.map(([nm, col, g]) => `<tr><td style="text-align:left"><span class="sw" style="background:${col}"></span>${esc(nm)}</td><td>${fmt(n[g])}</td>${at.map(t => `<td>${v[g][t - 1] == null ? '-' : v[g][t - 1].toFixed(1) + '%'}</td>`).join('')}</tr>`).join('') + '</tbody>';
+    csvSet('surv-table', ['지역', '업종', '대상', ...surv.t.map(t => `${t}년 생존율(%)`)], groups.map(([nm, , g]) => [name, nm, n[g], ...v[g].map(x => x ?? '')]));
+    $('surv-note').textContent = `인허가 후 n년 뒤에도 문을 열고 있을(휴업 포함) 확률을 카플란-마이어 방식으로 추정했습니다. ${surv.from}년 이후 인허가만 쓰고, 아직 영업 중인 시설은 지금까지만 관찰된 것으로 처리합니다. 폐업일이 없는 폐업은 뺐습니다. 업종은 대분류이며 위의 업종 선택과 관계없이 계산합니다. 남은 시설이 20곳 미만인 해는 그리지 않고, 대상이 100곳 미만인 업종은 뺐습니다. '지역 진단'의 3년 생존율은 특정 해 인허가만 따로 본 값이라 이 곡선과 조금 다릅니다.`;
+  }
+  getJSON('data/survival.json', null).then(d => { surv = d; renderSurv(); });
 
   /* ---------- 데이터 기준일 (build.py → meta.fresh) ---------- */
   $('fresh-table').innerHTML = '<thead><tr><th>자료</th><th>최신 기준</th><th>갱신</th></tr></thead><tbody>'
