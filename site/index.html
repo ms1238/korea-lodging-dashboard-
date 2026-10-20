@@ -4,26 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>전국 숙박시설 현황</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap">
-  <header>
+  <header><div class="hero"><div class="hero-main">
+    <p class="eyebrow">KOREA LODGING DASHBOARD</p>
     <h1>전국 숙박시설 현황</h1>
     <p class="sub">행정안전부 인허가 API 8종과 한국관광공사 관광지 정보를 매일 자동으로 모읍니다. <span id="updated"></span></p>
-    <details class="fresh" id="fresh"><summary>데이터 기준일</summary><div class="tablewrap"><table id="fresh-table"></table></div>
+    <div class="meta"><details class="fresh" id="fresh"><summary>데이터 기준일</summary><div class="tablewrap"><table id="fresh-table"></table></div>
       <p class="note">자료마다 공개 주기가 달라 최신 시점이 다릅니다. 인용할 때는 이 기준일을 함께 적어 주세요.</p></details>
-    <p class="dl">전체 시설 내려받기: <a href="data/download/lodging.csv.gz" download>CSV (gzip, 약 5MB)</a> · <a href="codebook.html">코드북</a> · <a href="https://github.com/ms1238/korea-lodging-dashboard-/releases">월별 스냅샷</a></p>
+    <p class="dl">전체 시설 내려받기: <a href="data/download/lodging.csv.gz" download>CSV (gzip, 약 5MB)</a> · <a href="codebook.html">코드북</a> · <a href="https://github.com/ms1238/korea-lodging-dashboard-/releases">월별 스냅샷</a></p></div></div>
     <div class="intro" id="intro"><button class="x" id="intro-x" type="button" aria-label="안내 닫기">×</button>
       <b>이렇게 써 보세요</b>
-      <ol><li>위에서 <b>지역을 고르면</b> '지역 진단'에 그 지역 숙박업 상태가 한 장으로 나옵니다.</li>
+      <ol><li>아래에서 <b>지역을 고르면</b> '지역 진단'에 그 지역 숙박업 상태가 한 장으로 나옵니다.</li>
         <li><b>'입지 분석'·'관광 수요'</b>에서 역·축제·국립공원 주변 숙소 수와 방문객을 봅니다.</li>
         <li><b>'＋ 비교에 추가'</b>로 여러 지역을 담아 '지역 비교'에서 나란히 봅니다.</li></ol>
       <div class="ex">예시로 보기: <button class="btn" data-ex="강원특별자치도/강릉시">강릉시</button><button class="btn" data-ex="부산광역시/해운대구">부산 해운대구</button><button class="btn" data-ex="전북특별자치도/전주시">전주시</button><button class="btn" data-ex="제주특별자치도/제주시">제주시</button></div></div>
-  </header>
+  </div></header>
 
   <div class="controls" role="group" aria-label="필터">
     <span class="suggwrap rsearch"><input type="search" id="reg-q" placeholder="지역 검색 (예: 강릉, 해운대)" autocomplete="off" role="combobox" aria-controls="reg-sugg" aria-label="지역 검색"><span class="sugg" id="reg-sugg" role="listbox" hidden></span></span>
@@ -42,7 +42,7 @@
         <button role="tab" data-g="place" aria-selected="false">입지 분석</button>
         <button role="tab" data-g="cmp" aria-selected="false">지역 비교</button>
       </nav>
-      <button class="btn" id="share-link" title="지금 보고 있는 탭·지역·비교 목록을 담은 주소를 복사합니다">🔗 링크 복사</button>
+      <button class="btn" id="share-link" title="지금 보고 있는 탭·지역·비교 목록을 담은 주소를 복사합니다" aria-label="링크 복사">🔗<span class="lbl"> 링크 복사</span></button>
     </div>
     <nav class="subtabs" id="subtabs" aria-label="세부 보기" hidden></nav>
   </div>

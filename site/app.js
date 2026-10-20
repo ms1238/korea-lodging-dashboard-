@@ -1472,6 +1472,16 @@
     lq: '전국 평균과 비교해 이 지역에 특히 많은 숙소 종류입니다. 2.0이면 그 종류의 비중이 전국 평균의 2배라는 뜻입니다.',
     ss: '늘어난(줄어든) 숙소를 원인별로 나눈 것입니다. 전국이 다 같이 늘어서 생긴 몫, 늘어나는 종류의 숙소가 많아서 생긴 몫, 이 지역만의 요인으로 생긴 몫으로 나눕니다.',
   };
+  // 카드 설명은 'i' 단추에 넣어 숫자가 먼저 보이게 함(마우스를 올리거나 눌러서 읽음)
+  const tip = t => `<button type="button" class="info" aria-label="설명: ${esc(t)}" data-tip="${esc(t)}">i</button>`;
+  // 휴대폰 Safari는 단추를 눌러도 포커스가 가지 않아 눌러서 여닫게 함
+  document.addEventListener('click', e => { const t = e.target.closest('.info');
+    document.querySelectorAll('.info.on').forEach(x => { if (x !== t) x.classList.remove('on'); }); if (t) t.classList.toggle('on'); });
+  function spark(vals) {  // 작은 추세선: 최근 값들을 0~최댓값 축에 그림
+    const W = 120, H = 30, mx = Math.max(1, ...vals), x = i => (i / (vals.length - 1) * W).toFixed(1), y = v => (H - 2 - v / mx * (H - 4)).toFixed(1);
+    const pts = vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,${H} ${pts} ${W},${H}"/><polyline points="${pts}"/></svg>`;
+  }
   function renderOverview() {
     if (tab !== 'summary') return;  // 시군구 전체를 계산하므로 탭을 열었을 때만
     const r = U ? null : curReg();  // 읍·면·동을 골랐으면 그 시군구
@@ -1512,19 +1522,22 @@
     const P = {}; for (const [k] of OV) P[k] = pctile(k, me[k]);
     $('sum-title').innerHTML = `종합 · ${esc(regLabel(r))}${declBadge(r)}`;
     $('sum-sub').textContent = `${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 기준. 막대의 표시는 ${peerLevel ? peerName + ' 중 위치(오른쪽일수록 값이 큼)' : '전국이라 비교 대상 없음'}입니다. 매일 새벽 갱신된 자료로 즉시 계산합니다.`;
-    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><p class="easy">${OV_EASY.n}</p><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small>${refLine('n', v => fmt(Math.round(v)) + '곳')}</div>`]
+    // 영업 숙소 카드의 추세선: 타임라인과 같은 '그 해 말 운영 중(휴업 포함)' 최근 11개 연말(읍·면·동을 고르면 시군구와 맞지 않아 생략)
+    const tl = state.dong < 0 ? tlSeries().openY.slice(-11) : null, tl0 = tl && tl[0];
+    const trend = tl && tl0 ? `<div class="trend">${spark(tl)}<small>${yNow - 10}년 말 대비 <b>${(tl[10] >= tl0 ? '+' : '−') + Math.abs((tl[10] / tl0 - 1) * 100).toFixed(0)}%</b></small></div>` : '';
+    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소${tip(OV_EASY.n)}</h4><b>${fmt(me.n)}곳</b>${trend}<small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small>${refLine('n', v => fmt(Math.round(v)) + '곳')}</div>`]
       .concat(OV.filter(([k]) => me[k] != null).map(([k, nm, f]) => { const v = me[k], p = P[k];
         const why = v != null ? '' : '자료 없음';
         const approx = /^k21/.test(k) && kixApprox(r) ? '<small>일반구 값의 단순 평균(근사)</small>' : '';
-        return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b><p class="easy">${esc(OV_EASY[k] || '')}</p>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}${refLine(k, f)}${approx}</div>`; })).join('');
+        return `<div class="sumcard"><h4>${esc(nm)}${OV_EASY[k] ? tip(OV_EASY[k]) : ''}</h4><b>${v == null ? '-' : f(v)}</b>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}${refLine(k, f)}${approx}</div>`; })).join('');
     // 특화 업종(LQ ≥ 1.2, 10곳 이상)
     const spec = me.lq.map((q, i) => [q, i]).filter(([q]) => q != null && q >= 1.2).sort((x, y) => y[0] - x[0]).slice(0, 3);
-    $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>특화 업종 (입지계수 LQ)</h4>${spec.length ? spec.map(([q, i]) => `<div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(T[i].name)}</span><b style="font-size:16px;display:inline">${q.toFixed(2)}</b></div>`).join('') : '<b>-</b>'}<p class="easy">${OV_EASY.lq}</p><small>LQ = (지역 업종 비중) ÷ (전국 업종 비중). 1.2 이상·10곳 이상만. Isard(1960) 지역분석의 입지계수</small></div>`);
+    $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>특화 업종 (입지계수 LQ)${tip(OV_EASY.lq)}</h4>${spec.length ? spec.map(([q, i]) => `<div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(T[i].name)}</span><b style="font-size:16px;display:inline">${q.toFixed(2)}</b></div>`).join('') : '<b>-</b>'}<small>LQ = (지역 업종 비중) ÷ (전국 업종 비중). 1.2 이상·10곳 이상만. Isard(1960) 지역분석의 입지계수</small></div>`);
     if (me.ss) {
       const sg = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(Math.round(v)));
-      $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>숙소 증감 분해 (변이할당분석, ${SS_Y0}→${SS_Y1}년 말)</h4><b>${sg(me.ss.d)}곳</b>
+      $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>숙소 증감 분해 (변이할당분석, ${SS_Y0}→${SS_Y1}년 말)${tip(OV_EASY.ss)}</h4><b>${sg(me.ss.d)}곳</b>
         <div style="font-size:13px;line-height:1.7;margin-top:6px">전국 성장 효과 ${sg(me.ss.ns)}<br>업종 구성 효과 ${sg(me.ss.im)}<br>지역 고유 효과 ${sg(me.ss.rs)}</div>
-        <p class="easy">${OV_EASY.ss}</p><small>기준 재고 ${fmt(me.ss.b0)}곳(휴업 포함). Dunn(1960) 변이할당분석</small></div>`);
+        <small>기준 재고 ${fmt(me.ss.b0)}곳(휴업 포함). Dunn(1960) 변이할당분석</small></div>`);
     }
     // 처음에는 핵심 4개(영업 숙소·외지인 대비 숙소·순증률·생존율)만, 나머지는 '더 보기'
     const nCards = $('sum-grid').children.length;
@@ -2064,7 +2077,7 @@
     writeHash();
     try { await navigator.clipboard.writeText(location.href); $('share-link').textContent = '복사됨 ✓'; }
     catch { prompt('이 주소를 복사하세요', location.href); }
-    setTimeout(() => { $('share-link').textContent = '🔗 링크 복사'; }, 1500);
+    setTimeout(() => { $('share-link').innerHTML = '🔗<span class="lbl"> 링크 복사</span>'; }, 1500);
   };
 
   /* ---------- tour / terrain controls, footer ---------- */

@@ -1,41 +1,55 @@
 /* Layout: filter bar, KPI strip, map with type rail, then share / trend / ranking cards. */
 :root{
-  --bg:#f3f4f2; --panel:#fbfbfa; --fg:#14202b; --muted:#566370; --line:#d9ddd9; --accent:#14202b;
+  --bg:#f5f6f8; --panel:#fff; --fg:#0f1b2d; --muted:#5b6778; --line:#e6e9ee; --accent:#0f1b2d; --brand:#2f6bff;
+  --sh:0 1px 2px rgba(15,27,45,.04),0 4px 16px rgba(15,27,45,.06); --r:16px;
   --c0:#2a78d6; --c1:#eb6834; --c2:#1baf7a; --c3:#eda100; --c4:#e87ba4; --c5:#008300; --c6:#6250d6;
   --ok:#2f8a4e; --pause:#d99a00; --closed:#b8473e;
-  --f-body:'Noto Sans KR',-apple-system,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
-  --f-head:'Noto Serif KR','Batang',serif;
+  --f-body:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  --f-head:var(--f-body);
 }
 @media (prefers-color-scheme: dark){:root{
-  --bg:#0f151b; --panel:#171f27; --fg:#e8ecef; --muted:#a2adb7; --line:#2b3641; --accent:#e8ecef;
+  --bg:#0b1220; --panel:#121b2b; --fg:#e9eef6; --muted:#93a1b5; --line:#1f2a3d; --accent:#e9eef6; --brand:#6c9bff;
+  --sh:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
   --c0:#3987e5; --c1:#d95926; --c2:#199e70; --c3:#c98500; --c4:#d55181; --c5:#008300; --c6:#9085e9; --ok:#4caf6e; --pause:#e0a91c; --closed:#d9675c; color-scheme:dark}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 var(--f-body);
-  padding:28px max(16px,env(safe-area-inset-right,0px)) 56px max(16px,env(safe-area-inset-left,0px))}
-.wrap{max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 var(--f-body);letter-spacing:-.01em;overflow-x:clip;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) 56px max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:1200px;margin:0 auto;display:flex;flex-direction:column;gap:24px}
 h1,h2,h3{margin:0;text-wrap:balance}
-h1{font-family:var(--f-head);font-size:clamp(24px,4vw,34px)}
-h2{font-family:var(--f-head);font-size:20px}
+h1{font-family:var(--f-head);font-size:clamp(28px,4.4vw,40px);font-weight:800;letter-spacing:-.03em;line-height:1.2}
+h2{font-family:var(--f-head);font-size:22px;font-weight:800;letter-spacing:-.02em}
 h3{font-size:12px;color:var(--muted);letter-spacing:.06em}
 p{margin:0}.sub{color:var(--muted);max-width:72ch}.note{color:var(--muted);font-size:12.5px;margin-top:10px}
-header{display:flex;flex-direction:column;gap:8px}
+/* 헤더: 화면 폭 전체의 남색 띠. 왼쪽 제목·기준일, 오른쪽 사용 안내(닫으면 다시 안 뜸) */
+header{margin:0 calc(50% - 50vw);padding:36px max(16px,calc(50vw - 600px)) 28px;color:#e9eef6;
+  background:radial-gradient(1200px 400px at 85% -10%,rgba(47,107,255,.45),transparent 60%),linear-gradient(160deg,#0f1b2d,#13284a)}
+.hero{display:flex;flex-wrap:wrap;gap:20px 40px;align-items:flex-start}
+.hero-main{flex:1 1 420px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.18em;color:#8fb0ff}
+header .sub{color:#a9b8cf}
+.meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin-top:4px}
+.meta .fresh[open]{flex-basis:100%}
+header .fresh > summary,header .dl,header .note{color:#a9b8cf}
+header .dl a{color:#dfe7f5}
+header .fresh table{color:#dfe7f5}
+header .fresh td,header .fresh th{border-bottom-color:rgba(255,255,255,.12);color:inherit}
 section{display:flex;flex-direction:column;gap:12px;min-width:0}
 .sechead{display:flex;flex-direction:column;gap:4px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;min-width:0}
-.controls{display:flex;flex-wrap:wrap;gap:12px 18px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 16px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.card{background:var(--panel);border-radius:var(--r);box-shadow:var(--sh);padding:20px;min-width:0}
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px);border-radius:var(--r);box-shadow:var(--sh);padding:14px 18px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
 .controls label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
-select,input[type=search]{font:inherit;font-size:14px;padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--fg);min-width:140px}
+select,input[type=search]{font:inherit;font-size:14px;padding:8px 12px;border:1px solid transparent;border-radius:10px;background:var(--bg);color:var(--fg);min-width:140px}
 select:disabled{opacity:.5}
 select:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
-.kpi{background:var(--panel);padding:14px 16px;min-width:0}
-.kpi b{display:block;font-size:24px;line-height:1.25;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{background:var(--panel);border-radius:var(--r);box-shadow:var(--sh);padding:16px 18px;min-width:0}
+.kpi b{display:block;font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.25;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .kpi span{color:var(--muted);font-size:12.5px}
 .mapgrid{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:14px;align-items:start}
-.map{height:min(72vh,660px);min-height:420px;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.map{height:min(72vh,660px);min-height:420px;border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
 .rail{max-height:min(72vh,660px);overflow:auto}
 .railhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.btn{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:4px;padding:3px 9px;font:inherit;font-size:12px;cursor:pointer;margin-left:4px}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:3px 9px;font:inherit;font-size:12px;cursor:pointer;margin-left:4px}
 .chk{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:3px 0;font-size:13px}
 .chk input{margin:0;width:15px;height:15px;accent-color:var(--accent)}
 .chk label{cursor:pointer;display:flex;align-items:center;min-width:0}
@@ -70,10 +84,9 @@ svg .grid{stroke:var(--line)}
 .stackbar span{height:100%;min-width:1px}
 .kpis + .card,.card + .card{margin-top:0}
 .tlrow{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
-.seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
-.seg button{border:0;border-right:1px solid var(--line);background:var(--panel);color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;cursor:pointer}
-.seg button:last-child{border-right:0}
-.seg button[aria-pressed="true"]{background:var(--accent);color:var(--bg);font-weight:700}
+.seg{display:flex;flex-wrap:wrap;gap:2px;padding:2px;background:var(--bg);border-radius:10px;width:fit-content;max-width:100%}
+.seg button{border:0;border-radius:8px;background:none;color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--fg);font-weight:700;box-shadow:var(--sh)}
 #tl-year{flex:1;min-width:160px;accent-color:var(--accent)}
 .tl-label{font-variant-numeric:tabular-nums;min-width:190px}
 #tl-play{margin:0;padding:6px 12px;font-size:13px}
@@ -99,11 +112,11 @@ th:first-child,td:first-child{text-align:left}
 .unionsw small{color:var(--muted);font-size:12px}
 .unionsw input{accent-color:var(--accent);width:15px;height:15px;margin:0}
 /* tabs */
-.tabbar{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;flex-basis:calc(100% + 32px);border-top:1px solid var(--line);margin:2px -16px -12px;padding:0 16px}
-.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.tabbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-basis:calc(100% + 36px);border-top:1px solid var(--line);margin:0 -18px -14px;padding:8px 14px}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;min-width:0}
 .tabbar{min-width:0}
-.rsearch{flex-basis:100%}
-.rsearch input{width:min(100%,320px)}
+.rsearch{flex:1 1 240px;max-width:340px}
+.rsearch input{width:100%}
 .sugg .srow{display:flex;align-items:center;gap:6px}
 .sugg .srow > button[data-i]{flex:1;min-width:0}
 .sugg .srow .add{margin:0;font-size:11.5px;padding:2px 8px;white-space:nowrap}
@@ -120,34 +133,38 @@ th:first-child,td:first-child{text-align:left}
 .subtabs{display:flex;gap:6px;flex-basis:100%;overflow-x:auto;scrollbar-width:none;padding:8px 0 2px}
 .subtabs button{border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font:inherit;font-size:13px;padding:4px 12px;cursor:pointer;white-space:nowrap}
 .subtabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:700}
-.intro{position:relative;margin-top:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--c0);border-radius:6px;padding:12px 40px 12px 16px;font-size:13.5px;line-height:1.65}
+.intro{position:relative;flex:0 1 460px;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);border-radius:var(--r);padding:14px 40px 14px 18px;font-size:13px;line-height:1.65;color:#dfe7f5}
 .intro ol{margin:4px 0 8px;padding-left:20px}
-.intro .ex{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--muted)}
-.intro .ex .btn{margin:0}
-.intro .x{position:absolute;top:6px;right:8px;border:0;background:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:4px}
+.intro .ex{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:#a9b8cf}
+.intro .ex .btn{margin:0;background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:4px 12px}
+.intro .x{position:absolute;top:6px;right:8px;border:0;background:none;color:#a9b8cf;font-size:20px;line-height:1;cursor:pointer;padding:4px}
 #sum-grid:not(.all) > .sumcard:nth-child(n+5){display:none}
 #sum-def,.card#sum-def:has(> .btn.csv + .tablewrap){padding-top:16px}
 #sum-def > summary{cursor:pointer;list-style:none}
 #sum-def > summary h3{display:inline}
 #sum-def > summary::after{content:' ▾';color:var(--muted)}
 #sum-def[open] > summary::after{content:' ▴'}
-#f-more{display:none}
-/* 휴대폰: 탭은 옆으로 밀어 넘기고(오른쪽 끝을 흐리게 해 더 있다는 표시), 광역·기초만 두고 나머지 필터는 '상세 필터'로 접음 */
+/* 광역·기초만 두고 읍·면·동·리·영업 상태는 '상세 필터'로 접음 */
+.controls:not(.more) > label[for=f-dong],.controls:not(.more) > label[for=f-ri],.controls:not(.more) > label[for=f-status]{display:none}
+#f-more{margin:0}
+.cmpbar{flex-basis:auto}
+/* 휴대폰: 탭은 옆으로 밀어 넘기고(오른쪽 끝을 흐리게 해 더 있다는 표시), 링크 복사는 아이콘만 */
 @media (max-width:520px){
+  .rsearch{max-width:none;flex-basis:100%}
+  #share-link .lbl{display:none}
+  header{padding-top:24px;padding-bottom:20px}
+  .intro ol{display:none}  /* 휴대폰은 예시 단추만 */
   .tabs{mask-image:linear-gradient(90deg,#000 85%,transparent);-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent)}
   .tabs button{padding:10px 11px}
   .controls{gap:10px}
   .controls > label[for=f-sido],.controls > label[for=f-sgg]{flex:1 1 140px;min-width:0}
   .controls > label[for=f-sido] select,.controls > label[for=f-sgg] select{min-width:0;width:100%}
-  .controls:not(.more) > label[for=f-dong],.controls:not(.more) > label[for=f-ri],.controls:not(.more) > label[for=f-status]{display:none}
-  #f-more{display:inline-block;margin:0}
   .controls > label,#share-link{white-space:nowrap}
-  .cmpbar{flex-basis:auto}
 }
-.tabs button{border:0;border-bottom:3px solid transparent;background:none;color:var(--muted);font:inherit;font-size:14px;font-weight:500;padding:10px 14px;cursor:pointer;white-space:nowrap}
-.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent);font-weight:700}
-.tabs button:hover{color:var(--fg)}
-#share-link{margin:0 0 7px}
+.tabs button{border:0;border-radius:999px;background:none;color:var(--muted);font:inherit;font-size:14px;font-weight:500;padding:8px 16px;cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected="true"]{background:var(--fg);color:var(--bg);font-weight:700}
+.tabs button:hover:not([aria-selected="true"]){color:var(--fg);background:color-mix(in srgb,var(--fg) 6%,transparent)}
+#share-link{margin:0;flex:none}
 .tab-off{display:none!important}
 /* folded lists */
 .folded > :nth-child(n+11){display:none}
@@ -162,7 +179,7 @@ th:first-child,td:first-child{text-align:left}
 .fold{border:0;background:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0 2px;width:20px}
 .card:has(> .btn.csv + .sharelist),.card:has(> .btn.csv + .ranklist){padding-top:42px}
 /* summary */
-.summary{border-left:4px solid var(--accent)}
+.summary{background:linear-gradient(135deg,color-mix(in srgb,var(--brand) 9%,var(--panel)),var(--panel) 60%)}
 .summary ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:14.5px;line-height:1.6}
 .summary h3{padding-right:80px}
 .heat{border-collapse:separate;border-spacing:3px}
@@ -179,9 +196,19 @@ th:first-child,td:first-child{text-align:left}
 .sugg .note{padding:6px 8px;margin:0}
 .sumlist{margin:0;padding-left:20px;line-height:1.75;font-size:14px}
 .sumgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
-.sumcard{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;min-width:0}
-.sumcard h4{margin:0 0 4px;font-size:12.5px;font-weight:500;color:var(--muted)}
-.sumcard b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.sumcard{position:relative;background:var(--panel);border-radius:var(--r);box-shadow:var(--sh);padding:18px 20px;min-width:0;overflow:visible}
+.sumcard::before{content:'';position:absolute;left:20px;right:20px;top:0;height:3px;border-radius:0 0 3px 3px;background:linear-gradient(90deg,var(--brand),color-mix(in srgb,var(--brand) 40%,transparent))}
+.sumcard h4{margin:0 0 4px;font-size:13px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:6px}
+.sumcard > b{display:block;font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1.2;margin:2px 0 4px;font-variant-numeric:tabular-nums}
+/* 'i' 단추: 마우스를 올리거나 눌러(포커스) 설명을 카드 위에 띄움 */
+.info{flex:none;width:17px;height:17px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--muted);font:700 10.5px/15px var(--f-body);font-style:italic;padding:0;cursor:help}
+.info:hover,.info:focus-visible{color:var(--fg);border-color:var(--muted)}
+.info:hover::after,.info:focus::after,.info.on::after{content:attr(data-tip);position:absolute;left:12px;right:12px;top:40px;z-index:6;background:var(--fg);color:var(--bg);font:400 12.5px/1.6 var(--f-body);font-style:normal;letter-spacing:0;text-align:left;padding:10px 12px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.25);pointer-events:none}
+.trend{display:flex;align-items:center;gap:10px;margin:2px 0 6px}
+.trend small{white-space:nowrap}
+.spark{width:120px;height:30px;flex:none}
+.spark polyline{fill:none;stroke:var(--brand);stroke-width:2;vector-effect:non-scaling-stroke}
+.spark polygon{fill:var(--brand);opacity:.12}
 .sumcard .pbar{position:relative;height:6px;border-radius:3px;background:color-mix(in srgb,var(--fg) 8%,transparent);margin:10px 0 4px}
 .sumcard .pbar i{position:absolute;top:-3px;width:3px;height:12px;border-radius:2px;background:var(--c0)}
 .sumcard .pbar::before{content:'';position:absolute;left:50%;top:-2px;width:1px;height:10px;background:var(--muted);opacity:.6}  /* 중위(백분위 50) 눈금 */
@@ -189,7 +216,6 @@ th:first-child,td:first-child{text-align:left}
 .sumcard small.ref b{font-size:12px;display:inline;font-weight:700}
 .sumcard small{color:var(--muted);font-size:12px;line-height:1.5;display:block}
 @media print{header,.controls,.mapgrid,section:not(#sum-sec),#sum-print,.btn.csv,footer,.tabs{display:none!important}#sum-sec{display:block!important}body{background:#fff}}
-.sumcard .easy{margin:6px 0 0;font-size:12.5px;line-height:1.55;color:var(--fg)}
 .festinfo{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;font-size:13.5px;line-height:1.6}
 .festinfo:empty{display:none}
 .festinfo img{width:120px;height:80px;object-fit:cover;border-radius:6px;flex:none}
