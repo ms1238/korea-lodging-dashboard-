@@ -71,6 +71,12 @@ OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private
 SUBWAY_QUERY = """[out:json][timeout:240];
 relation["route"~"^(subway|light_rail)$"](33.0,124.5,38.7,131.0);
 out geom;"""
+# 광역·도시철도 tagged route=train (서해선, 경의·중앙선, 수인·분당선, 경춘선, 공항철도, GTX-A, 신분당선, 대경선, 동해선 …) and KTX
+RAIL_ROUTES_QUERY = """[out:json][timeout:300];
+(relation["route"="train"]["colour"](33.0,124.5,38.7,131.0);
+ relation["route"="train"]["name"~"KTX"](33.0,124.5,38.7,131.0);
+ relation["route"="train"]["network"~"^(KTX|고속철도)$"](33.0,124.5,38.7,131.0););
+out geom;"""
 PARKS_QUERY = """[out:json][timeout:240];
 (relation["boundary"="national_park"](33.0,124.5,38.7,131.0);
  relation["boundary"="protected_area"]["protect_class"="2"](33.0,124.5,38.7,131.0);
@@ -89,8 +95,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -243,17 +249,20 @@ def fetch_stations(_key, query=STATIONS_QUERY, name="stations"):
     save_json(f"{name}.json", out)
 
 
-def fetch_subway(_key):
-    """Route relations with member way geometry; kept small: name/ref/colour/network and rounded coordinates."""
-    rels = overpass(SUBWAY_QUERY)
-    out = [{"id": rel["id"], **{k: rel.get("tags", {}).get(k, "") for k in ("route", "name", "ref", "colour", "network")},
+def fetch_subway(_key, query=SUBWAY_QUERY, name="subway"):
+    """Route relations with member way geometry; kept small: name/ref/colour/network/service and rounded coordinates.
+    Only relations with a Korean name (the bounding box also reaches Japan and North Korea, whose names are not Hangul
+    or whose operator is the DPRK railway)."""
+    rels = [r for r in overpass(query) if re.search("[가-힣]", r.get("tags", {}).get("name", ""))
+            and "조선" not in r.get("tags", {}).get("operator", "")]
+    out = [{"id": rel["id"], **{k: rel.get("tags", {}).get(k, "") for k in ("route", "name", "ref", "colour", "network", "service")},
             "ways": [[m["ref"], [[round(p["lon"], 5), round(p["lat"], 5)] for p in m["geometry"]]]
                      for m in rel.get("members", []) if m.get("type") == "way" and m.get("geometry")]}
            for rel in rels]
-    print(f"subway: {len(out)} routes, {sum(len(r['ways']) for r in out)} ways", flush=True)
+    print(f"{name}: {len(out)} routes, {sum(len(r['ways']) for r in out)} ways", flush=True)
     if not out:
         raise RuntimeError("no routes returned")
-    save_json("subway.json", out)
+    save_json(f"{name}.json", out)
 
 
 def main():
@@ -266,13 +275,14 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
             continue
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
+             "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
              "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)

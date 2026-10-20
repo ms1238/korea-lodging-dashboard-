@@ -16,7 +16,7 @@ Steps
    and per quarter since 2018 (visits.json).
 10. Foreign arrivals (한국문화관광연구원 출입국관광통계): national monthly totals and the top nationalities (arrivals.json).
 12. cubeq.json / closeq.json: the last six years by quarter (year*10 + quarter) for the quarterly charts.
-13. subway.json: subway / light-rail lines (OpenStreetMap) as GeoJSON with each line's colour.
+13. subway.json: subway / light-rail and 광역·도시철도 lines (OpenStreetMap) as GeoJSON with each line's colour; KTX as k=1.
 14. park_areas.json: national-park boundaries (OpenStreetMap) as simplified polygons with their map area;
     금정산 falls back to the boundary traced from the designation map (scripts/static/geumjeongsan.json).
 15. stations.json: subway / light-rail, 코레일 광역철도 and 간선열차 stations (OpenStreetMap, gaps filled from 전국도시철도역사정보표준데이터) with their lines, 시도/시군구 and the number of
@@ -348,22 +348,39 @@ def add_visitors(sidos, sgg_of, sido_meta):
     return meta, visits
 
 
+KTX_COLOUR = "#1f2d3d"
+
+
 def write_subway():
     """One LineString per OSM way; a way shared by several routes (both directions, through-running) is drawn once
-    with the colour of the first route that has one."""
+    with the colour of the first route that has one. Subway / light rail first, then 광역·도시철도 tagged route=train
+    with their line colour (rail_routes.json; ITX and other intercity trains left out), then KTX (k=1) on the ways
+    no other line uses, so KTX shows where it has its own track or runs on conventional lines."""
     path = os.path.join(RAW, "subway.json")
     if not os.path.exists(path):
         return
+    rels = json.load(open(path, encoding="utf-8"))
+    extra = os.path.join(RAW, "rail_routes.json")
+    rail = json.load(open(extra, encoding="utf-8")) if os.path.exists(extra) else []
+    is_ktx = lambda r: "KTX" in r["name"] or r.get("network") in ("KTX", "고속철도") or r.get("service") in ("high_speed", "highspeed")
+    ktx = [r for r in rail if is_ktx(r)]
+    rels += [r for r in rail if not is_ktx(r) and not r["name"].startswith("ITX") and r["colour"]]
     ways = {}
-    for rel in json.load(open(path, encoding="utf-8")):
+    for rel in rels:
         colour = rel["colour"] if re.fullmatch(r"#?[0-9A-Fa-f]{6}", rel["colour"] or "") else ""
         colour = ("#" + colour.lstrip("#")) if colour else ""
         name = rel["name"] or rel["ref"]
         for wid, coords in rel["ways"]:
             if wid not in ways or (colour and not ways[wid][0]):
-                ways[wid] = (colour, name, coords)
-    feats = [{"type": "Feature", "properties": {"c": c or "#7f8c8d", "n": n},
-              "geometry": {"type": "LineString", "coordinates": g}} for c, n, g in ways.values() if len(g) > 1]
+                ways[wid] = (colour, name, coords, 0)
+    for rel in ktx:
+        name = re.sub(r":.*", "", rel["name"]).strip() or "KTX"
+        for wid, coords in rel["ways"]:
+            if wid not in ways:
+                ways[wid] = (KTX_COLOUR, name, coords, 1)
+    print(f"subway: {sum(1 for w in ways.values() if not w[3])} line ways, {sum(1 for w in ways.values() if w[3])} KTX ways", flush=True)
+    feats = [{"type": "Feature", "properties": {"c": c or "#7f8c8d", "n": n, **({"k": 1} if k else {})},
+              "geometry": {"type": "LineString", "coordinates": g}} for c, n, g, k in ways.values() if len(g) > 1]
     with open(os.path.join(OUT, "subway.json"), "w", encoding="utf-8") as f:
         json.dump({"type": "FeatureCollection", "features": feats}, f, ensure_ascii=False, separators=(",", ":"))
 

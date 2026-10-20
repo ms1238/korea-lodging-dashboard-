@@ -247,9 +247,11 @@
             'text-offset': [0, 1], 'text-anchor': 'top', 'text-optional': true },
           paint: { 'text-color': '#1f3a93', 'text-halo-color': '#fff', 'text-halo-width': 1.5 } });
       }
-      // 지하철·경전철: OpenStreetMap 노선 관계의 공식 색(build.py → subway.json). 있으면 배경지도의 도시철도 선은 숨김
+      // 지하철·경전철·광역철도: OpenStreetMap 노선 관계의 공식 색, KTX(k=1)는 짙은 점선(build.py → subway.json). 있으면 배경지도의 도시철도 선은 숨김
       map.addSource('subway', { type: 'geojson', data: empty });
-      map.addLayer({ id: 'subway', type: 'line', source: 'subway', layout: { 'line-cap': 'round', 'line-join': 'round' },
+      map.addLayer({ id: 'ktx', type: 'line', source: 'subway', filter: ['==', ['get', 'k'], 1], layout: { 'line-join': 'round' },
+        paint: { 'line-color': ['get', 'c'], 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.6, 11, 3, 15, 5], 'line-dasharray': [2.2, 1.2], 'line-opacity': .85 } }, firstSymbol);
+      map.addLayer({ id: 'subway', type: 'line', source: 'subway', filter: ['!=', ['get', 'k'], 1], layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': ['get', 'c'], 'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 11, 2.6, 15, 5], 'line-opacity': .9 } }, firstSymbol);
       getJSON('data/subway.json', null).then(g => {
         if (!g || !g.features.length) return;
@@ -374,18 +376,18 @@
         const p = e.features[0].properties, nm = p['name:ko'] || p.name, k = kacOf(nm), n = k ? kac.years.length - 1 : 0;
         pop(e.lngLat, `<b>${esc(nm)}</b>${p.iata ? ` (${esc(p.iata)})` : ''}<br>${k ? `${kac.years[n]}년 여객 ${fmt(k.dom[n] + k.intl[n])}명 (국내선 ${fmt(k.dom[n])} · 국제선 ${fmt(k.intl[n])})<br>` : ''}<small>출처: OpenStreetMap${k ? ', 한국공항공사' : ''}</small>`);
       });
-      map.on('click', 'subway', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
+      for (const l of ['subway', 'ktx']) map.on('click', l, e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'park-fill', e => { if (radiusOn) return;
-        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'fest', 'food0', 'food1', 'areas', 'airports', 'rail-st', 'subway'].filter(l => map.getLayer(l)) }).length) return;
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'fest', 'food0', 'food1', 'areas', 'airports', 'rail-st', 'subway', 'ktx'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties;
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
       map.on('click', 'rail-st', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-food0', ['food0']], ['ck-food1', ['food1']]]) {
+      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
-      for (const l of ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'airports', 'rail-st', 'subway', 'park-fill']) {
+      for (const l of ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'airports', 'rail-st', 'subway', 'ktx', 'park-fill']) {
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
