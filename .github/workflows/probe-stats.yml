@@ -1,0 +1,44 @@
+# Temporary: distribution of 식음료 소비액 (1106) and 숙박업 소비액 (1107) per 시군구 from the published kto_index.json.
+name: Probe index distribution
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-stats.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - shell: python
+        run: |
+          import json, statistics as st, urllib.request
+          d = json.load(urllib.request.urlopen("https://ms1238.github.io/korea-lodging-dashboard-/data/kto_index.json", timeout=60))
+          ix = [c for c, _ in d["ix"]]; M = d["months"]
+          print("== months", M[0], M[-1], len(M), "codes", ix, flush=True)
+          for c in ("1106", "1107", "1103", "1110"):
+              j = ix.index(c) if c in ix else -1
+              if j < 0: print("== missing", c); continue
+              filled = sum(1 for v in d["v"].values() for x in v[j] if x is not None)
+              print(f"== {c} filled values {filled}", flush=True)
+          j6, j7 = ix.index("1106"), ix.index("1107")
+          def avg12(v, j):
+              xs = [x for x in v[j][-12:] if x is not None]; return sum(xs) / len(xs) if xs else None
+          rows = [(k, avg12(v, j6), avg12(v, j7)) for k, v in d["v"].items() if ":" in k]
+          rows = [r for r in rows if r[1] is not None and r[2] is not None]
+          a, b = [r[1] for r in rows], [r[2] for r in rows]
+          q = lambda xs: [round(x, 1) for x in st.quantiles(xs, n=4)]
+          ma, mb = st.mean(a), st.mean(b)
+          r = sum((x - ma) * (y - mb) for x, y in zip(a, b)) / (sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b)) ** .5
+          print(f"== 시군구 n={len(rows)} | 식음료 1106: min {min(a):.1f} q1/med/q3 {q(a)} max {max(a):.1f} | 숙박 1107: min {min(b):.1f} q1/med/q3 {q(b)} max {max(b):.1f} | r={r:.2f}", flush=True)
+          above100 = lambda xs: sum(x >= 100 for x in xs) / len(xs)
+          print(f"== share >=100: 식음료 {above100(a):.0%}, 숙박 {above100(b):.0%}", flush=True)
+          md_a, md_b = st.median(a), st.median(b)
+          quad = {"식음료↑숙박↓": 0, "둘다↑": 0, "식음료↓숙박↑": 0, "둘다↓": 0}
+          for _, x, y in rows: quad[("둘다↑" if y >= md_b else "식음료↑숙박↓") if x >= md_a else ("식음료↓숙박↑" if y >= md_b else "둘다↓")] += 1
+          print("== quadrants by median", quad, flush=True)
+          top = sorted(rows, key=lambda r: (r[1] - md_a) - (r[2] - md_b), reverse=True)[:12]
+          meta = json.load(urllib.request.urlopen("https://ms1238.github.io/korea-lodging-dashboard-/data/meta.json", timeout=60))
+          nm = lambda k: (lambda si, gi: f"{meta['sido'][si]['name'][:2]} {meta['sido'][si]['sgg'][gi]}")(*map(int, k.split(":")))
+          print("== top '먹고 가는 곳' (식음료 high, 숙박 low)", [(nm(k), round(x, 1), round(y, 1)) for k, x, y in top], flush=True)
