@@ -1,0 +1,30 @@
+# Temporary: is the 관광수지 service (tour.go.kr EdrcntTourismBalnaceService) answering now that the key is approved?
+name: Probe tourism balance API
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-balance.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, requests
+          K = os.environ["KEY"]; B = "http://openapi.tour.go.kr/openapi/service/"
+          def call(tag, url, **p):
+              try:
+                  r = requests.get(url, params={"serviceKey": K, "numOfRows": 5, "pageNo": 1, **p}, timeout=30)
+                  print(f"== {tag} {r.status_code} {r.headers.get('content-type')} {r.text[:500]!r}", flush=True)
+              except Exception as e:
+                  print(f"== {tag} ERR {e}", flush=True)
+          call("wadl", B + "EdrcntTourismBalnaceService", _wadl="")
+          for op in ("getEdrcntTourismBalnaceList", "getTourismBalnaceList", "getEdrcntTourismBalanceList", "getTourismBalanceList", "getEdrcntTourismBalnaceStatsList"):
+              for p in ({"YM": "202508"}, {"YM": "202508", "_type": "json"}, {}):
+                  call(f"{op} {p}", B + "EdrcntTourismBalnaceService/" + op, **p)
+          call("control: tour.go.kr stats", B + "EdrcntTourismStatsService/getEdrcntTourismStatsList", YM="202508", NAT_CD="112", ED_CD="E")
