@@ -328,8 +328,18 @@
       });
       // 맛집: 백년가게(자주색) 전국 보기부터, 모범음식점(노랑)은 많아서 12레벨부터 (build.py → food.json, 일반음식점 인허가 좌표)
       map.addSource('food', { type: 'geojson', data: empty });
-      for (const [k, col, minzoom] of [[0, '#d4a017', 12], [1, '#8e2c48', 6]]) map.addLayer({ id: 'food' + k, type: 'circle', source: 'food', minzoom, filter: ['==', ['get', 'k'], k],
-        paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 5, 16, 7], 'circle-color': col, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.2 } });
+      // 숙박시설(동그라미)과 헷갈리지 않게 숙소 점보다 조금 작은 세모로
+      const tri = (fill, px) => {
+        const c = document.createElement('canvas'); c.width = c.height = px; const g = c.getContext('2d');
+        g.beginPath(); g.moveTo(px / 2, 2); g.lineTo(px - 2, px - 3); g.lineTo(2, px - 3); g.closePath();
+        g.fillStyle = fill; g.fill(); g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+        return g.getImageData(0, 0, px, px);
+      };
+      for (const [k, col, minzoom] of [[0, '#d4a017', 12], [1, '#8e2c48', 6]]) {
+        map.addImage('tri' + k, tri(col, 24), { pixelRatio: 2 });
+        map.addLayer({ id: 'food' + k, type: 'symbol', source: 'food', minzoom, filter: ['==', ['get', 'k'], k],
+          layout: { 'icon-image': 'tri' + k, 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, .95, 16, 1.2] } });
+      }
       getJSON('data/food.json', null).then(rows => {
         if (!rows || !rows.length) { $('food-note').textContent = '맛집 위치 자료가 아직 없습니다. 일반음식점 인허가와 맞추는 중이라 며칠에 걸쳐 채워집니다.'; return; }
         map.getSource('food').setData({ type: 'FeatureCollection', features: rows.map(r => ({ type: 'Feature', properties: { k: r[2], n: r[3], a: r[4], m: r[5], t: r[6] },
