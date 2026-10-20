@@ -23,23 +23,17 @@ jobs:
                   print(f"== {tag} {r.status_code} {r.headers.get('content-type')} {r.text[:900]!r}", flush=True)
               except Exception as e:
                   print(f"== {tag} ERR {e}", flush=True)
-          # 1) swagger specs from the catalog (paths and parameters)
-          for cid in (15152138, 15151868, 15158833, 15158830, 15155277, 15101972, 15143913):
-              try:
-                  d = requests.get(f"https://www.data.go.kr/catalog/{cid}/openapi.json", timeout=60).json()
-                  print(f"## spec {cid} {d.get('info', {}).get('title')} host={d.get('host')} base={d.get('basePath')} servers={[s.get('url') for s in d.get('servers', [])]}")
-                  for path, v in d.get("paths", {}).items():
-                      for m, op in v.items():
-                          print("   ", path, op.get("summary"), [(x.get("name"), x.get("required"), (x.get("description") or "")[:40]) for x in op.get("parameters", [])])
-              except Exception as e:
-                  print(f"## spec {cid} ERR {e}")
-          # 2) guessed calls
+          # round 2: parameters for the two AreaTarResDemService operations, operation names of 관광수지
           A = "https://apis.data.go.kr/B551011/AreaTarResDemService/"
-          for op in ("areaTarSvcDemList", "areaCulResDemList", "areaTarResDemList", "areaBasedList"):
-              show("AreaTarResDem " + op, A + op, MobileOS="ETC", MobileApp="probe", _type="json", numOfRows=3, pageNo=1, baseYm="202508", areaCd="11", signguCd="11110")
-          T = "http://openapi.tour.go.kr/openapi/service/"
-          for path in ("EdrcntTourismBalnaceService/getEdrcntTourismBalnaceList", "EdrcntTourismBalnaceService/getTourismBalnaceList",
-                       "TourismResourceStatsService/getPchrgTrrsrtVisitorList", "EdrcntTourismStatsService/getEdrcntTourismStatsList"):
-              show("tour.go.kr " + path, T + path, YM="202508", SIDO="서울특별시", GUNGU="", RES_NM="", NAT_CD="112", ED_CD="E", numOfRows=3, pageNo=1, _type="json")
-          for path in ("EdrcntTourismBalnaceService/getEdrcntTourismBalnaceList", "TourismResourceStatsService/getPchrgTrrsrtVisitorList"):
-              show("B551940 " + path, "https://apis.data.go.kr/B551940/" + path, YM="202508", numOfRows=3, pageNo=1, _type="json")
+          base = dict(MobileOS="ETC", MobileApp="probe", _type="json", numOfRows=5, pageNo=1, baseYm="202508", areaCd="11")
+          for op, prm in (("areaTarSvcDemList", "tarSvcDemIxCd"), ("areaCulResDemList", "culResDemIxCd")):
+              for code in ("1", "11", "12", "13", "1101", "1102", "1103", "1201", "1202", "1301"):
+                  show(f"{op} {prm}={code}", A + op, **base, **{prm: code})
+          show("areaTarSvcDemList no code", A + "areaTarSvcDemList", **base)
+          show("areaTarSvcDemList signgu", A + "areaTarSvcDemList", **{**base, "signguCd": "11110"}, tarSvcDemIxCd="11")
+          T = "http://openapi.tour.go.kr/openapi/service/EdrcntTourismBalnaceService/"
+          for op in ("getEdrcntTourismBalnaceList", "getEdrcntTourismBalanceList", "getTourismBalnaceList", "getTourismBalanceList", "getEdrcntTourismBalnace", "getBalnaceList"):
+              for p in ({"YM": "202508"}, {"YM": "202508", "_type": "json"}, {"YEAR": "2025"}, {}):
+                  show(f"balance {op} {p}", T + op, **p)
+          for path in ("TourismResourceStatsService/getPchrgTrrsrtVisitorList", "TourismIndustStatsService/getTourismBsnesTrendIndexList", "TourismAccdtService/getTourismTotqyList"):
+              show("tour.go.kr " + path, "http://openapi.tour.go.kr/openapi/service/" + path, YM="202508", numOfRows=3, pageNo=1)
