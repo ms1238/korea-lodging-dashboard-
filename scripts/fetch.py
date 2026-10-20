@@ -60,6 +60,12 @@ KTO_INDEX = [
     ("AreaTarDivService/areaExpDivList", "expDivIxCd", ("32",)),
     ("AreaTarDivService/areaIntlDivList", "intlDivIxCd", ("33",)),
 ]
+# 관광 자원 수요 (same family, own raw file so a code push fetches it when missing): 관광서비스 수요, 숙박업 소비액,
+# 내비게이션 숙박유형 검색량, 문화자연자원 수요
+KTO_RES = [
+    ("AreaTarResDemService/areaTarSvcDemList", "tarSvcDemIxCd", ("11", "1107", "1110")),
+    ("AreaTarResDemService/areaCulResDemList", "culResDemIxCd", ("12",)),
+]
 KTO_INDEX_AREAS = ("11", "26", "27", "28", "29", "30", "31", "36", "41", "43", "44", "46", "47", "48", "50", "51", "52", "12")  # DataLab 시도 codes
 KTO_INDEX_BUDGET = 800  # requests per service and run (the development quota is 1,000 a day); the rest waits for the next run
 POPULATION = "https://apis.data.go.kr/1741000/admmPpltnHhStus/selectAdmmPpltnHhStus"  # 행정동별 주민등록 인구 및 세대현황 (monthly)
@@ -95,7 +101,7 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"}  # the page works without these, so a failed first fetch does not stop the deploy
+OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"}  # the page works without these, so a failed first fetch does not stop the deploy
 JSON_FILES = {"rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
@@ -275,7 +281,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
@@ -284,7 +290,7 @@ def main():
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
-             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
+             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "pop_month": fetch_population,
              "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
@@ -604,26 +610,26 @@ def fetch_metro_std(_key):
     save_json("metro_std.json", rows)
 
 
-def fetch_kto_index(key):
-    """관광 수요 강도 / 관광 다양성 indicators per 시도 (with its 시군구) and month, latest 13 months, newest first.
+def fetch_kto_index(key, spec=KTO_INDEX, name="kto_index"):
+    """관광 수요 강도 / 관광 다양성 (or, with KTO_RES, 관광 자원 수요) indicators per 시도 (with its 시군구) and month, latest 13 months, newest first.
     One request per (month, indicator, 시도). Months already fetched are reused except the latest REFRESH_MONTHS;
     an empty answer is remembered too, so it is not asked again until it falls in the refresh window."""
     today = date.today()
     months = ["%d%02d" % (today.year - (today.month - k <= 0), (today.month - k - 1) % 12 + 1) for k in range(13)]
-    path, cut = os.path.join(RAW_DIR, "kto_index.jsonl"), months[REFRESH_MONTHS - 1]
+    path, cut = os.path.join(RAW_DIR, f"{name}.jsonl"), months[REFRESH_MONTHS - 1]
     kept = [json.loads(l) for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
     kept = [r for r in kept if months[-1] <= r["ym"] < cut]
     have = {(r["ym"], r["ix"], r["area"]) for r in kept}
     todo, used = [], defaultdict(int)
     for ym in months:
-        for op, param, codes in KTO_INDEX:
+        for op, param, codes in spec:
             svc = op.split("/")[0]
             for ix in codes:
                 for area in KTO_INDEX_AREAS:
                     if (ym, ix, area) not in have and used[svc] < KTO_INDEX_BUDGET:
                         used[svc] += 1
                         todo.append((ym, op, param, ix, area))
-    fields = ("tarSjrnDsIx", "tarExpDsIx", "touDivIx", "expDivIx", "intlDivIx")
+    fields = ("tarSjrnDsIx", "tarExpDsIx", "touDivIx", "expDivIx", "intlDivIx", "tarSvcDemIx", "culResDemIx")
     spent = set()  # services that answered "daily request limit exceeded": the rest of their requests wait for tomorrow
 
     def one(t):
@@ -638,7 +644,7 @@ def fetch_kto_index(key):
                 d = requests.get("https://apis.data.go.kr/B551011/" + op, params=params, timeout=60).json()
                 if "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in str(d):
                     spent.add(op.split("/")[0])
-                    print(f"  kto_index: {op.split('/')[0]} daily limit reached, stopping it for this run", flush=True)
+                    print(f"  {name}: {op.split('/')[0]} daily limit reached, stopping it for this run", flush=True)
                     return None
                 if d.get("response", {}).get("header", {}).get("resultCode") != "0000":
                     raise RuntimeError(str(d)[:200])
@@ -649,18 +655,18 @@ def fetch_kto_index(key):
             except Exception as e:  # noqa: BLE001
                 last = e
                 time.sleep(3 + attempt * 3)
-        print(f"  kto_index {ym} {ix} {area}: {last}", flush=True)
+        print(f"  {name} {ym} {ix} {area}: {last}", flush=True)
         return None
     with ThreadPoolExecutor(4) as pool:
         got = list(pool.map(one, todo))
     failed = sum(g is None for g in got)
     rows = kept + [r for g in got if g for r in g]
-    total = len(months) * sum(len(c) for _, _, c in KTO_INDEX) * len(KTO_INDEX_AREAS)
-    print(f"kto_index: {len(todo)} requests {dict(used)}, {failed} failed, {sum(1 for r in rows if not r.get('empty'))} values; "
+    total = len(months) * sum(len(c) for _, _, c in spec) * len(KTO_INDEX_AREAS)
+    print(f"{name}: {len(todo)} requests {dict(used)}, {failed} failed, {sum(1 for r in rows if not r.get('empty'))} values; "
           f"{total - len({(r['ym'], r['ix'], r['area']) for r in rows})} of {total} (month, indicator, 시도) still to fetch", flush=True)
     if todo and failed == len(todo):
         raise RuntimeError("every request failed")
-    write_rows("kto_index", sorted(rows, key=lambda r: (r["ym"], r["ix"], r["area"])))
+    write_rows(name, sorted(rows, key=lambda r: (r["ym"], r["ix"], r["area"])))
 
 
 def fetch_population(key):

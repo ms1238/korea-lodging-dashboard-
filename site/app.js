@@ -634,7 +634,7 @@
     renderStatus(a, names);
     renderCompare();
     renderDemandVis();
-    renderKix();
+    renderKix(); renderLodem();
     renderOverview();
     renderSupply();
     renderSummary(a, renderTrend(names));
@@ -1487,6 +1487,7 @@
     ['fdens', '외국인 100만 명당 숙소', v => v.toFixed(0) + '곳', '영업 숙소(선택 업종 전체) ÷ (연간 외국인 방문객 ÷ 100만)', '외지인 100만 명당 숙소와 같은 방식을 외국인 방문객에 적용(Defert 1967의 변형). 외국인 전용이 아닌 모든 숙박업종 기준'],
     ['k21', '관광 체류 강도', v => v.toFixed(1), '한국관광데이터랩 관광수요지수 세부 지표, 최근 12개월 평균', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
     ['k2102', '숙박 비중 지수', v => v.toFixed(1), '위와 같음', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
+    ['k1107', '숙박업 소비액 지수', v => v.toFixed(1), '관광수요지수 관광 자원 수요 중 숙박업 소비액, 최근 12개월 평균', '한국관광공사 관광수요지수(신용카드 소비 기반 지수, 금액 아님)'],
   ];
   // 지표마다 쉬운 설명 (카드와 정의 표에 함께 표시)
   const OV_EASY = {
@@ -1505,6 +1506,7 @@
     fdens: '이 지역을 찾는 외국인 방문객 100만 명에 모든 업종의 숙소가 몇 곳 있는지입니다. 낮으면 외국인 수요에 비해 숙박 공급이 빠듯하고, 높으면 외국인이 적게 오는데 숙소는 많은 지역입니다.',
     k21: '방문객이 잠깐 들르기보다 머물다 가는 정도를 한국관광공사가 지수로 만든 값입니다. 높을수록 체류형 관광지에 가깝습니다(실제 일수가 아닌 상대 지수).',
     k2102: '방문객 가운데 숙박하고 가는 사람의 비중을 지수로 나타낸 값입니다. 높을수록 숙박 수요가 큰 지역입니다(실제 비율이 아닌 상대 지수).',
+    k1107: '숙박업종에서 쓴 신용카드 소비를 지수로 나타낸 값입니다. 가격·가동률 자료가 없을 때 숙박 시장의 매출 흐름을 가늠하는 대리 지표입니다(금액이 아닌 상대 지수).',
     lq: '전국 평균과 비교해 이 지역에 특히 많은 숙소 종류입니다. 2.0이면 그 종류의 비중이 전국 평균의 2배라는 뜻입니다.',
     ss: '늘어난(줄어든) 숙소를 원인별로 나눈 것입니다. 전국이 다 같이 늘어서 생긴 몫, 늘어나는 종류의 숙소가 많아서 생긴 몫, 이 지역만의 요인으로 생긴 몫으로 나눕니다.',
   };
@@ -1528,7 +1530,7 @@
     const msido = si => visits && visits.msido ? visits.msido[si] : null;
     const natMon = visits && visits.msido ? visits.m.map((_, i) => S.reduce((a, _s, si) => a == null || msido(si)?.[i] == null ? null : a + msido(si)[i], 0)) : null;
     const me = ovStats(keysOf(r), natA, r.si < 0 ? natMon : r.gi < 0 && r.grp == null ? msido(r.si) : null, nat);
-    me.k21 = kixAvg(r, '21'); me.k2102 = kixAvg(r, '2102');
+    me.k21 = kixAvg(r, '21'); me.k2102 = kixAvg(r, '2102'); me.k1107 = kixAvg(r, '1107');
     // 주민등록인구(월말): 전국·광역은 광역 값, 기초·묶음은 시군구 값의 합
     const sumOr = xs => xs.every(x => x) ? xs.reduce((a, b) => a + b, 0) : null;
     const popOf = q => q.si < 0 ? sumOr(S.map(sd => sd.pop)) : q.gi < 0 && q.grp == null ? S[q.si].pop || null : sumOr(gisOf(q).map(gi => (S[q.si].popg || [])[gi]));
@@ -1545,8 +1547,8 @@
     document.querySelectorAll('#peer-seg button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === peerDecl)));
     const peers = !peerLevel ? [] : peerLevel === 'sgg'
       ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => [si, gi])).filter(([si, gi]) => !declPeers || declOf({ si, gi }) === 1)
-        .map(([si, gi]) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); return addPop(p, { si, gi }); })
-      : S.map((_, si) => { const p = ovStats(keysOf({ si, gi: -1 }), natA, msido(si), nat); p.k21 = kixAvg({ si, gi: -1 }, '21'); p.k2102 = kixAvg({ si, gi: -1 }, '2102'); return addPop(p, { si, gi: -1 }); });
+        .map(([si, gi]) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); p.k1107 = kixAvg({ si, gi }, '1107'); return addPop(p, { si, gi }); })
+      : S.map((_, si) => { const p = ovStats(keysOf({ si, gi: -1 }), natA, msido(si), nat); p.k21 = kixAvg({ si, gi: -1 }, '21'); p.k2102 = kixAvg({ si, gi: -1 }, '2102'); p.k1107 = kixAvg({ si, gi: -1 }, '1107'); return addPop(p, { si, gi: -1 }); });
     const pctile = (key, v) => { const xs = peers.map(p => p[key]).filter(x => x != null); return v == null || xs.length < 5 ? null : xs.filter(x => x <= v).length / xs.length; };
     // 기준값: 비교 대상의 중위값(극단값에 덜 흔들림)과 전국 전체 값(전국을 한 지역으로 본 값)
     const median = key => { const xs = peers.map(p => p[key]).filter(x => x != null).sort((a, b) => a - b), m = xs.length >> 1;
@@ -1564,7 +1566,7 @@
     $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소${tip(OV_EASY.n)}</h4><b>${fmt(me.n)}곳</b>${trend}<small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small>${refLine('n', v => fmt(Math.round(v)) + '곳')}</div>`]
       .concat(OV.filter(([k]) => me[k] != null).map(([k, nm, f]) => { const v = me[k], p = P[k];
         const why = v != null ? '' : '자료 없음';
-        const approx = /^k21/.test(k) && kixApprox(r) ? '<small>일반구 값의 단순 평균(근사)</small>' : '';
+        const approx = /^k(21|1107)/.test(k) && kixApprox(r) ? '<small>일반구 값의 단순 평균(근사)</small>' : '';
         return `<div class="sumcard"><h4>${esc(nm)}${OV_EASY[k] ? tip(OV_EASY[k]) : ''}</h4><b>${v == null ? '-' : f(v)}</b>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}${refLine(k, f)}${approx}</div>`; })).join('');
     // 특화 업종(LQ ≥ 1.2, 10곳 이상)
     const spec = me.lq.map((q, i) => [q, i]).filter(([q]) => q != null && q >= 1.2).sort((x, y) => y[0] - x[0]).slice(0, 3);
@@ -1673,16 +1675,68 @@
       + rows.map(([nm, k]) => `<tr${k === ck ? ' class="sum"' : ''}><td>${esc(nm)}${kix.approx && kix.approx.includes(k) ? '*' : ''}</td>${cols.map((j, c) => { const x = val(k, j); return `<td ${heat(x, range[c])}>${x == null ? '·' : x.toFixed(1)}</td>`; }).join('')}</tr>`).join('') + '</tbody>';
     csvSet('kix-table', ['지역', '기준월', ...kix.ix.map(x => x[1])], rows.flatMap(([nm, k]) => M.map((m, i) => [nm, m, ...kix.ix.map((_, j) => row(k)[j][i] ?? '')])));
   }
+  /* ---------- 숙박 수요 신호: 관광 자원 수요의 숙박업 소비액·숙박 검색량 (kto_index.json) ---------- */
+  const LD = ['1107', '1110', '11', '12'];
+  function renderLodem() {
+    const ixi = c => kix ? kix.ix.findIndex(x => x[0] === c) : -1;
+    const ok = kix && kix.months.length && Object.values(kix.v).some(v => v[ixi('1107')] && v[ixi('1107')].some(x => x != null));
+    $('lodem-sec').hidden = !ok; if (!ok) return;
+    const M = kix.months, n = M.length, ym = k => `${k.slice(0, 4)}.${k.slice(4)}`, J = LD.map(ixi);
+    const keyOf = r => r.si < 0 ? null : r.gi >= 0 ? `${r.si}:${r.gi}` : String(r.si);
+    const cur = U ? null : curReg(), ck = cur && cur.grp == null ? keyOf(cur) : null, row = k => k && kix.v[k];
+    let li = n - 1; const vr = row(ck);
+    if (vr) while (li > 0 && vr[J[0]][li] == null) li--;
+    const yo = M.indexOf(String(+M[li] - 100));
+    const yoy = (v, i) => v && v[i] != null && yo >= 0 && v[yo] != null && v[yo] ? (v[i] / v[yo] - 1) * 100 : null;
+    const pc = d => d == null ? '' : `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(0)}%`;
+    $('lodem-kpis').hidden = !vr;
+    $('lodem-kpis').innerHTML = vr ? J.map(j => { const v = vr[j], d = yoy(v, li);
+      return `<div class="kpi"><b>${v[li] == null ? '-' : v[li].toFixed(1)}</b><span>${esc(kix.ix[j][1])}${d == null ? '' : ` (전년 동월 ${pc(d)})`}</span></div>`; }).join('') : '';
+    $('lodem-sub').textContent = vr ? `${regionName()} · ${ym(M[li])} 기준. 숙소 수(공급)와 함께 보면 수요에 비해 숙소가 많은지 적은지 가늠할 수 있습니다.`
+      : '광역이나 기초를 고르면 그 지역의 월별 추이가 나옵니다. 아래 표는 광역별 최근 달 값입니다.';
+    // 월별 추이: 숙박업 소비액(파랑)·숙박 검색량(주황)
+    $('lodem-chart-card').hidden = !vr;
+    if (vr) {
+      const W = 900, H = 220, L = 44, R = 10, Tp = 12, B = 24, iw = W - L - R, ih = H - Tp - B, lines = [[J[0], 'var(--c0)'], [J[1], 'var(--c1)']];
+      const xs = lines.flatMap(([j]) => vr[j].filter(x => x != null)), lo = Math.floor(Math.min(...xs) / 10) * 10, hi = Math.ceil(Math.max(...xs) / 10) * 10 || lo + 10;
+      const X = i => L + (n > 1 ? i / (n - 1) : .5) * iw, Y = v => Tp + ih - (v - lo) / (hi - lo || 1) * ih;
+      let g = '';
+      for (const v of [lo, (lo + hi) / 2, hi]) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${v.toFixed(0)}</text>`;
+      M.forEach((m, i) => { if (i % 2 === (n - 1) % 2) g += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle">${m.slice(2, 4)}.${m.slice(4)}</text>`; });
+      for (const [j, c] of lines) {
+        const pts = vr[j].map((v, i) => v == null ? null : `${X(i)},${Y(v)}`).filter(Boolean).join(' ');
+        g += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2.5"/>` + vr[j].map((v, i) => v == null ? '' : `<circle cx="${X(i)}" cy="${Y(v)}" r="3" fill="${c}"><title>${ym(M[i])} ${esc(kix.ix[j][1])} ${v.toFixed(1)}</title></circle>`).join('');
+      }
+      $('lodem-chart').innerHTML = g;
+      $('lodem-chart-title').textContent = `${regionName()} 월별 숙박 수요 지수`;
+      $('lodem-legend').innerHTML = lines.map(([j, c]) => `<span><i style="background:${c}"></i>${esc(kix.ix[j][1])}</span>`).join('');
+    }
+    // 표: 전국이면 광역, 광역·기초를 골랐으면 그 광역의 시군구 (+ 영업 숙소 수)
+    let rows;
+    if (U) rows = U.regs.map(r => [regLabel(r), keyOf(r), r]);
+    else if (!cur || cur.si < 0) rows = S.map((sd, si) => [sd.name, String(si), { si, gi: -1 }]);
+    else rows = S[cur.si].sgg.map((g, gi) => [g, `${cur.si}:${gi}`, { si: cur.si, gi }]);
+    rows = rows.filter(([, k]) => row(k) && row(k)[J[0]].some(x => x != null));
+    const at = areaTable(), nOf = r => (r.gi >= 0 ? [r.gi] : S[r.si].sgg.map((_, gi) => gi)).reduce((s, gi) => { const x = at[r.si + ':' + gi]; return s + (x ? x.a.reduce((p, q) => p + q, 0) : 0); }, 0);
+    const val = (k, j) => (row(k) || [])[j]?.[li];
+    const range = [0, 1].map(c => { const v = rows.map(([, k]) => val(k, J[c])).filter(x => x != null); return [Math.min(...v), Math.max(...v)]; });
+    const heat = (x, [a, b]) => x == null || b <= a ? '' : `style="background:color-mix(in srgb,var(--c0) ${Math.round(6 + (x - a) / (b - a) * 56)}%,transparent)"`;
+    $('lodem-title').textContent = `${U ? '선택 지역' : !cur || cur.si < 0 ? '광역' : S[cur.si].name + ' 시군구'}별 숙박 수요와 숙소 · ${ym(M[li])}`;
+    $('lodem-table').innerHTML = '<thead><tr><th>지역</th><th>숙박업 소비액</th><th>전년 동월</th><th>숙박 검색량</th><th>전년 동월</th><th>영업 숙소</th></tr></thead><tbody>'
+      + rows.map(([nm, k, r]) => `<tr${k === ck ? ' class="sum"' : ''}><td>${esc(nm)}${kix.approx && kix.approx.includes(k) ? '*' : ''}</td>${[0, 1].map(c => { const x = val(k, J[c]);
+        return `<td ${heat(x, range[c])}>${x == null ? '·' : x.toFixed(1)}</td><td>${pc(yoy(row(k)[J[c]], li)) || '·'}</td>`; }).join('')}<td>${fmt(nOf(r))}</td></tr>`).join('') + '</tbody>';
+    csvSet('lodem-table', ['지역', '기준월', ...LD.map(c => kix.ix[ixi(c)][1]), '영업 숙소(현재)'], rows.flatMap(([nm, k, r]) => M.map((m, i) => [nm, m, ...J.map(j => row(k)[j][i] ?? ''), nOf(r)])));
+  }
   // 일반구로만 제공되는 시(수원·고양 등)는 일반구 값의 단순 평균(build.py)
   const kixApprox = r => !!(kix && kix.approx && r && r.si >= 0 && r.gi >= 0 && kix.approx.includes(`${r.si}:${r.gi}`));
   // 지역 하나(광역 또는 기초)의 최근 12개월 평균 지수
   function kixAvg(r, code) {
     if (!kix || r.si < 0 || r.grp != null) return null;
     const v = kix.v[r.gi >= 0 ? `${r.si}:${r.gi}` : String(r.si)], j = kix.ix.findIndex(x => x[0] === code);
-    const xs = v ? v[j].slice(-12).filter(x => x != null) : [];
+    const xs = v && j >= 0 ? v[j].slice(-12).filter(x => x != null) : [];
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   }
-  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); renderCompare(); renderOverview(); });
+  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); renderLodem(); renderCompare(); renderOverview(); });
 
   /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
   let icn = null, icnPer = 'm';
