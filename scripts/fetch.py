@@ -40,9 +40,8 @@ TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2/areaBasedList2"
 TOUR_TYPES = {"12": "관광지", "14": "문화시설", "28": "레포츠"}  # TourAPI contentTypeId
 FESTIVALS = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"  # TourAPI 행사·축제
 CENTURY_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15132695/v1"  # 소상공인시장진흥공단 백년가게 (odcloud, one table per publication)
-VWORLD_GEOCODER = "https://api.vworld.kr/req/address"  # 브이월드 지오코더: address → coordinates (needs VWORLD_KEY)
-GEOCODE_BUDGET = 30000  # requests per run (the free key allows about 40,000 a day); the rest waits for the next run
-GEOCODE_MINUTES = 15  # stop looking up after this long, so the job (60 min limit) still saves its cache
+FOOD_MATCH_BUDGET = 3000  # 일반음식점 lookups per run (one per restaurant); the rest waits for the next run
+FOOD_MATCH_MINUTES = 12  # stop after this long so the job still saves what it found
 FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
@@ -88,8 +87,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode", "admin_dong"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"admin_dong", "geocode", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -265,16 +264,16 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode", "admin_dong"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
-        if only_missing and (have or ep == "geocode"):  # geocoding takes long; the daily run does it
+        if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
             continue
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "geocode": fetch_geocode, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -399,70 +398,61 @@ def fetch_century(key):
     save_json("century_shops.json", rows)
 
 
-def restaurant_addrs():
-    """Addresses to place on the map: 모범음식점 still designated and open, and 백년가게."""
-    out = []
-    path = os.path.join(RAW_DIR, "excellent_restaurant_info.jsonl")
-    for line in open(path, encoding="utf-8") if os.path.exists(path) else []:
-        r = json.loads(line)
-        if not r.get("DSGN_RTRCN_YMD") and r.get("SALS_STTS_NM") == "영업":
-            out.append(r.get("ROAD_NM_ADDR") or r.get("LCTN_ADDR") or "")
-    path = os.path.join(RAW_DIR, "century_shops.json")
-    out += [r.get("업체주소") or "" for r in (json.load(open(path, encoding="utf-8")) if os.path.exists(path) else [])]
-    return out
-
-
-def geo_query(addr):
-    """Road address without the building detail after a comma or in parentheses, which the geocoder does not need."""
-    return re.sub(r"\s*\(.*?\)", "", addr.split(",")[0]).strip()
-
-
-def fetch_geocode(_key):
-    """Coordinates of the restaurant addresses via the 브이월드 geocoder (road address first, then 지번), cached in
-    raw/geocode.json ({query: [lat, lon] or null}) so each address is looked up once."""
-    vkey = os.environ.get("VWORLD_KEY")
-    if not vkey:
-        raise RuntimeError("VWORLD_KEY is not set")
-    path = os.path.join(RAW_DIR, "geocode.json")
+def fetch_food_coords(key):
+    """Positions of 모범음식점 (designated, open) and 백년가게 from the 일반음식점 인허가 API, whose records carry
+    coordinates: 모범음식점 by searching the same 지자체 for the name and taking the record with the same 관리번호;
+    백년가게 (no 관리번호) by name, keeping a record whose road address has the shop's street and number.
+    Cached in raw/food_coords.json ({key: [CRD_INFO_X, CRD_INFO_Y] or null}); a few thousand lookups per run."""
+    path = os.path.join(RAW_DIR, "food_coords.json")
     cache = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
-    todo = sorted({geo_query(a) for a in restaurant_addrs() if a.strip()} - set(cache))[:GEOCODE_BUDGET // 2]
-    try:  # 브이월드 refuses some networks (it dropped every request from GitHub's servers): test once before spending the run on it
-        requests.get(VWORLD_GEOCODER, params={"service": "address", "request": "getcoord", "address": "서울특별시 중구 세종대로 110",
-                                              "type": "road", "format": "json", "key": vkey}, timeout=30).json()
-    except (requests.RequestException, ValueError) as e:
-        raise RuntimeError(f"브이월드 지오코더에 접속할 수 없음: {e}") from e
-    deadline = time.time() + GEOCODE_MINUTES * 60
+    todo = []
+    ex = os.path.join(RAW_DIR, "excellent_restaurant_info.jsonl")
+    for line in open(ex, encoding="utf-8") if os.path.exists(ex) else []:
+        r = json.loads(line)
+        if not r.get("DSGN_RTRCN_YMD") and r.get("SALS_STTS_NM") == "영업" and f"ex:{r['MNG_NO']}" not in cache:
+            todo.append((f"ex:{r['MNG_NO']}", {"cond[OPN_ATMY_GRP_CD::EQ]": r["OPN_ATMY_GRP_CD"], "cond[BPLC_NM::LIKE]": r["BSNSSP_NM"]}, r["MNG_NO"], None))
+    cen = os.path.join(RAW_DIR, "century_shops.json")
+    for r in json.load(open(cen, encoding="utf-8")) if os.path.exists(cen) else []:
+        k, addr = f"cen:{r.get('업체명')}|{r.get('업체주소')}", r.get("업체주소") or ""
+        street = re.search(r"(\S+(?:로|길)\S*\s+\d+(?:-\d+)?)", addr)  # e.g. 덕진연못3길 6
+        if k not in cache and street:
+            todo.append((k, {"cond[BPLC_NM::LIKE]": r.get("업체명")}, None, street.group(1).replace(" ", "")))
+    todo = todo[:FOOD_MATCH_BUDGET]
+    deadline, spent = time.time() + FOOD_MATCH_MINUTES * 60, []
 
-    def one(q):
-        if time.time() > deadline:
-            return q, "retry"
-        for kind in ("road", "parcel"):
-            for attempt in range(4):
-                try:
-                    res = requests.get(VWORLD_GEOCODER, params={"service": "address", "request": "getcoord", "version": "2.0", "crs": "epsg:4326",
-                                                               "address": q, "refine": "true", "simple": "false", "format": "json", "type": kind, "key": vkey},
-                                       timeout=30).json()["response"]
-                    break
-                except (requests.RequestException, ValueError, KeyError):
-                    time.sleep(2 + attempt * 2)
-            else:
-                return q, "retry"
-            if res.get("status") == "OK":
-                pt = res["result"]["point"]
-                return q, [round(float(pt["y"]), 5), round(float(pt["x"]), 5)]
-            if res.get("status") == "ERROR":  # a bad key or the daily limit: stop, the cache keeps what was found
-                raise RuntimeError(f"브이월드: {json.dumps(res.get('error'), ensure_ascii=False)[:200]}")
-        return q, None
+    def one(t):
+        k, cond, mng, street = t
+        if spent or time.time() > deadline:
+            return k, "retry"
+        params = {"serviceKey": key, "pageNo": 1, "numOfRows": 100, "returnType": "json", **cond}
+        for attempt in range(3):
+            try:
+                d = requests.get(BASE.format("general_restaurants"), params=params, timeout=60).json()
+                break
+            except (requests.RequestException, ValueError):
+                time.sleep(3 + attempt * 3)
+        else:
+            return k, "retry"
+        if "response" not in d:  # e.g. the daily limit or a key the service has not approved yet: stop this run
+            spent.append(json.dumps(d, ensure_ascii=False)[:200])
+            return k, "retry"
+        for it in items_of(d["response"]["body"]):
+            same = it.get("MNG_NO") == mng if mng else street in (it.get("ROAD_NM_ADDR") or "").replace(" ", "")
+            if same and it.get("CRD_INFO_X") and it.get("CRD_INFO_Y"):
+                return k, [it["CRD_INFO_X"], it["CRD_INFO_Y"]]
+        return k, None
     got = []
     try:
-        with ThreadPoolExecutor(WORKERS) as pool:
-            for item in pool.map(one, todo):
-                got.append(item)
-    finally:  # save what was found even when the key stops working midway
-        cache.update({q: v for q, v in got if v != "retry"})
-        print(f"geocode: {len(got)} of {len(todo)} new addresses, {sum(1 for _, v in got if v and v != 'retry')} found, "
-              f"{sum(1 for _, v in got if v is None)} not found, {sum(1 for _, v in got if v == 'retry')} failed (next run)", flush=True)
-        save_json("geocode.json", cache)
+        with ThreadPoolExecutor(4) as pool:
+            got = list(pool.map(one, todo))
+    finally:
+        cache.update({k: v for k, v in got if v != "retry"})
+        print(f"food_coords: {len(todo)} looked up, {sum(1 for _, v in got if v and v != 'retry')} placed, "
+              f"{sum(1 for _, v in got if v is None)} not found, {sum(1 for _, v in got if v == 'retry')} left for the next run; "
+              f"{len(cache)} cached{'; stopped: ' + spent[0] if spent else ''}", flush=True)
+        save_json("food_coords.json", cache)
+    if todo and not any(v != "retry" for _, v in got):
+        raise RuntimeError(f"no lookup succeeded: {spent[0] if spent else 'network'}")
 
 
 def fetch_icn(key):

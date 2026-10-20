@@ -29,7 +29,7 @@ Steps
     0.5 / 1 / 3 / 5 km, as for stations.
 20. park_lodging.json: per national park, lodgings inside it or within 1 / 3 / 5 km of its boundary (every status,
     exact positions) with permit and closing month, for the stock over time.
-21. food.json: 모범음식점 (designated, open) and 백년가게 placed by the 브이월드 geocoder (raw/geocode.json).
+21. food.json: 모범음식점 (designated, open) and 백년가게 at the coordinates of their 일반음식점 인허가 record (raw/food_coords.json).
 22. admin/<si>.json: 시도 and 시군구 outlines merged from 행정동 boundaries (vuski/admdongkor, 통계청 SGIS) for drawing the selected region.
 """
 import calendar
@@ -807,35 +807,33 @@ def write_festivals(rows, sidos, sgg_of, tidx, merged):
 
 
 def write_food():
-    """모범음식점 (still designated and open) and 백년가게 with the coordinates fetch.py looked up (raw/geocode.json).
-    Without coordinates nothing is written, and the page shows no restaurant layer."""
-    path = os.path.join(RAW, "geocode.json")
+    """모범음식점 (still designated and open) and 백년가게 placed at the coordinates of their 일반음식점 인허가 record
+    (fetch.py food_coords; same EPSG:5174 coordinates as the lodging records). Those not matched yet are left out."""
+    path = os.path.join(RAW, "food_coords.json")
     if not os.path.exists(path):
         return
-    geo = json.load(open(path, encoding="utf-8"))
-    query = lambda a: re.sub(r"\s*\(.*?\)", "", a.split(",")[0]).strip()  # same key as fetch.py geo_query
+    pos = {k: coords({"CRD_INFO_X": v[0], "CRD_INFO_Y": v[1]}) for k, v in json.load(open(path, encoding="utf-8")).items() if v}
     out, missing = [], Counter()
     ex = os.path.join(RAW, "excellent_restaurant_info.jsonl")
     for line in open(ex, encoding="utf-8") if os.path.exists(ex) else []:
         r = json.loads(line)
         if r.get("DSGN_RTRCN_YMD") or r.get("SALS_STTS_NM") != "영업":
             continue
-        addr = clean(r.get("ROAD_NM_ADDR") or r.get("LCTN_ADDR"))
-        ll = geo.get(query(addr))
+        ll = pos.get(f"ex:{r['MNG_NO']}")
         if not ll:
             missing[0] += 1
             continue
-        out.append([*ll, 0, clean(r.get("BSNSSP_NM")), addr, " · ".join(x for x in (clean(r.get("FD_OF_TYPE")), clean(r.get("PRINC_FD_KND"))) if x), clean(r.get("TELNO"))])
+        out.append([*ll, 0, clean(r.get("BSNSSP_NM")), clean(r.get("ROAD_NM_ADDR") or r.get("LCTN_ADDR")),
+                    " · ".join(x for x in (clean(r.get("FD_OF_TYPE")), clean(r.get("PRINC_FD_KND"))) if x), clean(r.get("TELNO"))])
     cen = os.path.join(RAW, "century_shops.json")
     for r in json.load(open(cen, encoding="utf-8")) if os.path.exists(cen) else []:
-        addr = clean(r.get("업체주소"))
-        ll = geo.get(query(addr))
+        ll = pos.get(f"cen:{r.get('업체명')}|{r.get('업체주소')}")
         if not ll:
             missing[1] += 1
             continue
-        out.append([*ll, 1, clean(r.get("업체명")), addr, "", clean(r.get("연락처"))])
+        out.append([*ll, 1, clean(r.get("업체명")), clean(r.get("업체주소")), "", clean(r.get("연락처"))])
     print(f"food: 모범음식점 {sum(1 for x in out if x[2] == 0)}, 백년가게 {sum(1 for x in out if x[2] == 1)} placed; "
-          f"no coordinates: 모범음식점 {missing[0]}, 백년가게 {missing[1]}", flush=True)
+          f"not placed (yet): 모범음식점 {missing[0]}, 백년가게 {missing[1]}", flush=True)
     with open(os.path.join(OUT, "food.json"), "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
