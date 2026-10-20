@@ -1,0 +1,32 @@
+# Temporary: why every 브이월드 geocoder call failed in the daily run.
+name: Probe vworld geocoder
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-vworld.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.VWORLD_KEY }}
+        shell: python
+        run: |
+          import os, requests
+          K = os.environ.get("KEY", "")
+          print("key length", len(K))
+          base = {"service": "address", "request": "getcoord", "version": "2.0", "crs": "epsg:4326", "address": "서울특별시 서초구 서래로 50",
+                  "refine": "true", "simple": "false", "format": "json", "type": "road", "key": K}
+          for label, url, extra, headers in [
+              ("https", "https://api.vworld.kr/req/address", {}, {}),
+              ("http", "http://api.vworld.kr/req/address", {}, {}),
+              ("https+domain", "https://api.vworld.kr/req/address", {"domain": "https://ms1238.github.io"}, {}),
+              ("https+referer", "https://api.vworld.kr/req/address", {}, {"Referer": "https://ms1238.github.io/korea-lodging-dashboard-/"})]:
+              try:
+                  r = requests.get(url, params={**base, **extra}, headers=headers, timeout=30)
+                  print("==", label, r.status_code, r.headers.get("content-type"), repr(r.text[:600]), flush=True)
+              except Exception as e:
+                  print("==", label, "EXC", type(e).__name__, str(e)[:300], flush=True)
