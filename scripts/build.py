@@ -145,6 +145,9 @@ def region(addr, merged):
     if sido == "세종특별자치시":
         return sido, "세종특별자치시"
     sgg = toks[1] if len(toks) > 1 else ""
+    m = re.fullmatch(r"(\S+시)\S+구", sgg)  # 일반구를 붙여 쓴 주소(전주시완산구)는 시로
+    if m:
+        sgg = m.group(1)
     if not re.search(r"(시|군|구)$", sgg):
         return sido, None
     return sido, sgg  # 일반구(예: 수원시 영통구)는 시 단위로 묶음
