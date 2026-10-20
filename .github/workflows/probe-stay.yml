@@ -31,4 +31,12 @@ jobs:
                       except Exception as e:
                           print("ERR", y, m, a, str(e)[:100], flush=True)
           print(f"== rows {len(out)}", flush=True)
-          print("== DATA " + json.dumps(out, ensure_ascii=False, separators=(",", ":")), flush=True)
+          from collections import defaultdict
+          acc = defaultdict(list)
+          for ym, area, sgg, v in out:
+              acc[(area, sgg, ym[:4])].append(v)
+          keys = sorted({(a, g) for a, g, _ in acc})
+          print("== MEANS area|sgg|2022|2025 (mean of Jan/Apr/Jul/Oct)", flush=True)
+          for a, g in keys:
+              m = lambda y: (f"{sum(acc[(a, g, y)]) / len(acc[(a, g, y)]):.2f}" if acc.get((a, g, y)) else "")
+              print(f"{a}|{g}|{m('2022')}|{m('2025')}", flush=True)
