@@ -20,9 +20,9 @@ jobs:
           lst = requests.get(B, timeout=60).text
           print("== services", sorted(set(re.findall(r"openapi/service/(\w+)", lst))), flush=True)
           for svc in ("EdrcntTourismBalnaceService", "EdrcntTourismStatsService"):
-              w = requests.get(f"{B}/{svc}?_wadl", timeout=60).text
+              w = requests.get(f"{B}/{svc}", params={"_wadl": "", "serviceKey": K}, timeout=60).text
               print(f"== wadl {svc} ({len(w)} chars)\n{w[:3000]}", flush=True)
-              ops = re.findall(r'<resource path="/?(\w+)"', w)
+              ops = [o for o in re.findall(r'<resource path="/?([\w/]+)"', w) if o and o != "/"]
               params = sorted(set(re.findall(r'<param name="(\w+)"', w)))
               print("== ops", ops, "params", params, flush=True)
               if svc.startswith("EdrcntTourismBalnace"):
