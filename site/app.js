@@ -1705,9 +1705,15 @@
       M.forEach((m, i) => { if (i % 2 === (n - 1) % 2) g += `<text x="${X(i)}" y="${H - 6}" text-anchor="middle">${m.slice(2, 4)}.${m.slice(4)}</text>`; });
       for (const [j, c] of lines) {
         const pts = vr[j].map((v, i) => v == null ? null : `${X(i)},${Y(v)}`).filter(Boolean).join(' ');
-        g += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2.5"/>` + vr[j].map((v, i) => v == null ? '' : `<circle cx="${X(i)}" cy="${Y(v)}" r="3" fill="${c}"><title>${ym(M[i])} ${esc(kix.ix[j][1])} ${v.toFixed(1)}</title></circle>`).join('');
+        g += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2.5"/>` + vr[j].map((v, i) => v == null ? '' : `<circle cx="${X(i)}" cy="${Y(v)}" r="3" fill="${c}"/>`).join('');
       }
+      // 마우스를 올린 달의 두 지표 값(전년 동월 대비)
+      const cw = n > 1 ? iw / (n - 1) : iw;
+      M.forEach((_, i) => { g += `<rect data-i="${i}" x="${X(i) - cw / 2}" y="${Tp}" width="${cw}" height="${ih}" fill="transparent"/>`; });
       $('lodem-chart').innerHTML = g;
+      const yoyAt = (v, i) => { const p = M.indexOf(String(+M[i] - 100)); return p >= 0 && v[i] != null && v[p] ? (v[i] / v[p] - 1) * 100 : null; };
+      attachTip($('lodem-chart'), $('lodem-tip'), i => `<b>${ym(M[i])}</b><br>` + lines.map(([j, c]) => { const v = vr[j][i], d = yoyAt(vr[j], i);
+        return `<span class="sw" style="background:${c}"></span>${esc(kix.ix[j][1])} ${v == null ? '-' : v.toFixed(1)}${d == null ? '' : ` <small>(전년 동월 ${pc(d)})</small>`}`; }).join('<br>'));
       $('lodem-chart-title').textContent = `${regionName()} 월별 숙박 수요 지수`;
       $('lodem-legend').innerHTML = lines.map(([j, c]) => `<span><i style="background:${c}"></i>${esc(kix.ix[j][1])}</span>`).join('');
     }
