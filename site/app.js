@@ -519,6 +519,7 @@
       [topT && topT[0] ? esc(T[topT[1]].name) : '-', topT && a.total ? `최다 업종 (${pct(topT[0], a.total)})` : '최다 업종'],
       [fmt(recent), `${yNow - 2}~${yNow}년 인허가`],
       [topA ? esc(names[topA[0]] ?? '-') : '-', topA ? `가장 많은 ${childLabel()} (${fmt(topA[1])})` : '하위 지역 없음'],
+      (pop => [pop ? fmt(pop) + '명' : '-', pop ? `주민등록 인구 (${popYm()}${!U && state.dong >= 0 ? ', 시군구 전체' : ''})${!U && state.dong >= 0 ? '' : ` · 주민 1천 명당 숙소 ${(a.total / (pop / 1e3)).toFixed(1)}곳`}` : '주민등록 인구 자료 없음'])(curPop()),
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
 
     // share by sub-type
@@ -637,6 +638,11 @@
   const short = n => n.replace(/(통합특별시|특별자치시|특별자치도|특별시|광역시)$/, '').replace(/^(.).(.)도$/, '$1$2');
   // 지역 = {si, gi} 또는 묶음 {si, gi: -1, grp}. gisOf: 해당 기초 목록 (null = 광역 전체)
   const gisOf = r => r.grp != null ? S[r.si].groups[r.grp].gis : r.gi >= 0 ? [r.gi] : null;
+  // 주민등록 인구(월말): 광역은 광역 값, 기초·묶음은 시군구 값의 합, 합쳐 보기는 담은 지역의 합. 읍·면·동은 시군구 값
+  const popOfReg = r => { const sum = xs => xs.every(x => x) ? xs.reduce((a, b) => a + b, 0) : null;
+    return r.si < 0 ? sum(S.map(sd => sd.pop)) : r.gi < 0 && r.grp == null ? S[r.si].pop || null : sum(gisOf(r).map(gi => (S[r.si].popg || [])[gi])); };
+  const curPop = () => U ? (s => s.every(x => x) ? s.reduce((a, b) => a + b, 0) : null)(U.regs.map(popOfReg)) : popOfReg(curReg());
+  const popYm = () => meta.pop_ym ? `${meta.pop_ym.slice(0, 4)}.${meta.pop_ym.slice(4)} 말` : '';
   const regLabel = r => r.si < 0 ? '전국' : r.grp != null ? `${short(S[r.si].name)} ${S[r.si].groups[r.grp].name}` : r.gi < 0 || S[r.si].sgg[r.gi] === S[r.si].name ? S[r.si].name : `${short(S[r.si].name)} ${S[r.si].sgg[r.gi]}`;
   const inReg = (r, si, gi) => r.si < 0 || (si === r.si && (!gisOf(r) || gisOf(r).includes(gi)));
   const curReg = () => state.sido < 0 ? { si: -1, gi: -1 } : state.grp >= 0 ? { si: state.sido, gi: -1, grp: state.grp } : { si: state.sido, gi: state.sgg };
@@ -825,6 +831,8 @@
     const N = a.st[0], top = T.map((_, i) => i).filter(i => state.types.has(i)).sort((x, y) => a.stType[y][0] - a.stType[x][0])[0];
     if (!N) { $('summary-title').textContent = `한눈에 보기 · ${regionName()}`; $('summary').innerHTML = '<li>영업 중인 시설이 없습니다.</li>'; return; }
     lines.push(`영업 중 숙소 ${fmt(N)}곳. 가장 많은 업종은 ${T[top].name}(${pc(a.stType[top][0] / N)}${isNat ? '' : `, 전국 ${pc(natT[top] / (nat.st[0] || 1))}`})입니다.`);
+    const pop = curPop();
+    if (pop) lines.push(`주민등록 인구 ${big(pop)}명(${popYm()}${!U && state.dong >= 0 ? ', 시군구 전체' : ''})${!U && state.dong >= 0 ? '' : `, 주민 1천 명당 영업 숙소 ${(N / (pop / 1e3)).toFixed(1)}곳`}입니다.`);
     if (tr.base) {
       const g = (tr.nw - tr.cl) / tr.base, ng = nat.tr.base ? (nat.tr.nw - nat.tr.cl) / nat.tr.base : null;
       lines.push(`${Y3 + 1}년 이후 신규 ${fmt(tr.nw)}곳·폐업 ${fmt(tr.cl)}곳으로, ${Y3}년 말보다 ${sg(g)} ${g >= 0 ? '늘었습니다' : '줄었습니다'}`
@@ -1325,7 +1333,7 @@
     }
     return { n, a, lq, v0: nv ? v0 : null, v1: nv ? v1 : null, ss, rsr: ss ? ss.rs / ss.b0 : null,
       hansen: ne >= 20 ? hs / ne : null,
-      dens: nv && v0 ? n / (v0 / 1e6) : null, fshare: nv && v0 + v1 ? v1 / (v0 + v1) : null,
+      dens: nv && v0 ? n / (v0 / 1e6) : null, fdens: nv && v1 ? n / (v1 / 1e6) : null, fshare: nv && v0 + v1 ? v1 / (v0 + v1) : null,
       growth: base ? (nw - cl) / base : null, surv: co >= 20 ? 1 - c3 / co : null, even: n && K > 1 ? H / Math.log(K) : null,
       gini: g, station: ne >= 20 ? n1 / ne : null };
   }
@@ -1341,6 +1349,7 @@
     ['tfi', '주민 1천 명당 숙소', v => v.toFixed(2) + '곳', `영업 숙소 ÷ (주민등록인구 ÷ 1천), 인구는 ${meta.pop_ym ? meta.pop_ym.slice(0, 4) + '.' + meta.pop_ym.slice(4) : '-'} 말 기준`, 'Defert(1967) 관광기능지수(원식은 병상 수 기준; 객실 자료가 부정확해 시설 수로 대체). 인구: 행정안전부 행정동별 주민등록 인구'],
     ['tpi', '주민 1천 명당 하루 외지인', v => v.toFixed(1) + '명', '(연간 외지인 방문객 ÷ 365) ÷ (주민등록인구 ÷ 1천)', 'McElroy·de Albuquerque(1998) 관광 침투도 지수(TPI)의 방문객 밀도 항목'],
     ['fshare', '외국인 방문객 비중', v => (v * 100).toFixed(1) + '%', '연간 외국인 ÷ (외지인 + 외국인)', '한국관광데이터랩 방문객(이동통신)'],
+    ['fdens', '외국인 100만 명당 숙소', v => v.toFixed(0) + '곳', '영업 숙소(선택 업종 전체) ÷ (연간 외국인 방문객 ÷ 100만)', '외지인 100만 명당 숙소와 같은 방식을 외국인 방문객에 적용(Defert 1967의 변형). 외국인 전용이 아닌 모든 숙박업종 기준'],
     ['k21', '관광 체류 강도', v => v.toFixed(1), '한국관광데이터랩 관광수요지수 세부 지표, 최근 12개월 평균', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
     ['k2102', '숙박 비중 지수', v => v.toFixed(1), '위와 같음', '한국관광공사 관광수요지수(지수, 실제 인원 아님)'],
   ];
@@ -1358,6 +1367,7 @@
     tfi: '주민 1천 명당 숙소가 몇 곳인지입니다. 높을수록 주민 수에 비해 숙박업이 큰, 관광 중심 지역입니다.',
     tpi: '하루 평균 외지 방문객이 주민 1천 명당 몇 명인지입니다. 높을수록 주민이 느끼는 관광객 밀도(혼잡·생활 불편)가 클 수 있습니다.',
     fshare: '이 지역을 찾는 방문객 가운데 외국인의 비율입니다. 높을수록 외국인 관광 수요의 영향이 큽니다.',
+    fdens: '이 지역을 찾는 외국인 방문객 100만 명에 모든 업종의 숙소가 몇 곳 있는지입니다. 낮으면 외국인 수요에 비해 숙박 공급이 빠듯하고, 높으면 외국인이 적게 오는데 숙소는 많은 지역입니다.',
     k21: '방문객이 잠깐 들르기보다 머물다 가는 정도를 한국관광공사가 지수로 만든 값입니다. 높을수록 체류형 관광지에 가깝습니다(실제 일수가 아닌 상대 지수).',
     k2102: '방문객 가운데 숙박하고 가는 사람의 비중을 지수로 나타낸 값입니다. 높을수록 숙박 수요가 큰 지역입니다(실제 비율이 아닌 상대 지수).',
     lq: '전국 평균과 비교해 이 지역에 특히 많은 숙소 종류입니다. 2.0이면 그 종류의 비중이 전국 평균의 2배라는 뜻입니다.',
@@ -1380,7 +1390,7 @@
     // 광역·전국의 방문객은 광역 단위 집계를 씀(시군구 값을 더하면 여러 시군구를 다닌 사람이 중복됨)
     const sidoVis = q => q.si < 0 ? S.reduce((a, sd) => a && sd.vis ? [a[0] + sd.vis[0], a[1] + sd.vis[1]] : null, [0, 0]) : q.gi < 0 && q.grp == null ? S[q.si].vis : undefined;
     const fixVis = (p, q) => { const v = sidoVis(q); if (v === undefined) return p; p.v0 = v ? v[0] : null; p.v1 = v ? v[1] : null;
-      p.dens = v && v[0] ? p.n / (v[0] / 1e6) : null; p.fshare = v && v[0] + v[1] ? v[1] / (v[0] + v[1]) : null; return p; };
+      p.dens = v && v[0] ? p.n / (v[0] / 1e6) : null; p.fdens = v && v[1] ? p.n / (v[1] / 1e6) : null; p.fshare = v && v[0] + v[1] ? v[1] / (v[0] + v[1]) : null; return p; };
     const addPop = (p, q) => { fixVis(p, q); const pop = popOf(q); p.tfi = pop ? p.n / (pop / 1e3) : null; p.tpi = pop && p.v0 != null ? p.v0 / 365 / (pop / 1e3) : null; return p; };
     addPop(me, r);
     // 비교 대상: 기초(또는 묶음)는 전국 시군구, 광역은 광역끼리, 전국은 없음
@@ -1437,6 +1447,7 @@
     }
     if (hiP('tpi')) L.push(`주민 1천 명당 하루 외지인이 ${me.tpi.toFixed(1)}명으로 주민 대비 관광객 부담이 큰 편입니다(${top('tpi')}).`);
     if (hiP('fshare')) L.push(`외국인 방문객 비중이 ${F.fshare(me.fshare)}로 높습니다.`);
+    if (loP('fdens') && me.fshare != null && P.fshare != null && P.fshare >= .5) L.push(`외국인 방문객에 비해 숙소가 적은 편입니다(외국인 100만 명당 ${F.fdens(me.fdens)}, ${peerName} 하위 ${Math.max(1, Math.round(P.fdens * 100))}%).`);
     $('sum-text').innerHTML = L.map(x => `<li>${esc(x)}</li>`).join('');
     $('sum-table').innerHTML = '<thead><tr><th>지표</th><th>값</th><th>' + (peerLevel ? esc(peerName) + ' 중 백분위' : '백분위') + '</th><th>' + (peerLevel ? esc(peerName) + ' 중위' : '중위') + '</th><th>전국 전체</th><th style="text-align:left">무슨 뜻인가요</th><th style="text-align:left">산식</th><th style="text-align:left">근거</th></tr></thead><tbody>'
       + OV.map(([k, nm, f, formula, src]) => `<tr><td>${esc(nm)}</td><td>${me[k] == null ? '-' : f(me[k])}</td><td>${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td>${median(k) == null ? '-' : f(median(k))}</td><td>${(natP || me)[k] == null ? '-' : f((natP || me)[k])}</td><td style="text-align:left;white-space:normal;min-width:240px">${esc(OV_EASY[k] || '')}</td><td style="text-align:left;white-space:normal">${esc(formula)}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(src)}</td></tr>`).join('') + '</tbody>';

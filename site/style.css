@@ -196,3 +196,5 @@ th:first-child,td:first-child{text-align:left}
 .mix .bar{display:flex;height:22px;border-radius:3px;overflow:hidden;background:color-mix(in srgb,var(--fg) 6%,transparent)}
 .mix .bar i{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-style:normal;overflow:hidden;white-space:nowrap}
 .mix .n{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
+#kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media (max-width:900px){#kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
