@@ -16,10 +16,12 @@ jobs:
         shell: python
         run: |
           import os, requests
+          from urllib.parse import quote, unquote
           K = os.environ["KEY"]; U = "http://openapi.tour.go.kr/openapi/service/EdrcntTourismBalnaceService/getTourismBalcList"
-          for p in ({"YM": "201205"}, {"YM": "202508"}, {"YM": "202601"}, {"YM": "202508", "_type": "json"}):
+          print("key looks url-encoded:", "%" in K, flush=True)
+          for tag, k in (("raw", K), ("quoted", quote(unquote(K), safe="")), ("unquoted", unquote(K))):
               try:
-                  r = requests.get(U, params={"serviceKey": K, **p}, timeout=30)
-                  print(f"== {p} {r.status_code} {r.headers.get('content-type')} {r.text[:900]!r}", flush=True)
+                  r = requests.get(f"{U}?YM=202508&serviceKey={k}", timeout=30)
+                  print(f"== {tag} {r.status_code} {r.text[:600]!r}", flush=True)
               except Exception as e:
-                  print(f"== {p} ERR {e}", flush=True)
+                  print(f"== {tag} ERR {e}", flush=True)
