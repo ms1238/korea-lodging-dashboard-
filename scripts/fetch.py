@@ -40,8 +40,8 @@ TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2/areaBasedList2"
 TOUR_TYPES = {"12": "관광지", "14": "문화시설", "28": "레포츠"}  # TourAPI contentTypeId
 FESTIVALS = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"  # TourAPI 행사·축제
 CENTURY_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15132695/v1"  # 소상공인시장진흥공단 백년가게 (odcloud, one table per publication)
-FOOD_MATCH_BUDGET = 3000  # 일반음식점 lookups per run (one per restaurant); the rest waits for the next run
-FOOD_MATCH_MINUTES = 12  # stop after this long so the job still saves what it found
+FOOD_MATCH_BUDGET = 6000  # 일반음식점 lookups per run (one per restaurant); the rest waits for the next run
+FOOD_MATCH_MINUTES = 20  # stop after this long so the job (90 min limit) still saves what it found
 FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
@@ -405,18 +405,18 @@ def fetch_food_coords(key):
     Cached in raw/food_coords.json ({key: [CRD_INFO_X, CRD_INFO_Y] or null}); a few thousand lookups per run."""
     path = os.path.join(RAW_DIR, "food_coords.json")
     cache = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
-    todo = []
-    ex = os.path.join(RAW_DIR, "excellent_restaurant_info.jsonl")
-    for line in open(ex, encoding="utf-8") if os.path.exists(ex) else []:
-        r = json.loads(line)
-        if not r.get("DSGN_RTRCN_YMD") and r.get("SALS_STTS_NM") == "영업" and f"ex:{r['MNG_NO']}" not in cache:
-            todo.append((f"ex:{r['MNG_NO']}", {"cond[OPN_ATMY_GRP_CD::EQ]": r["OPN_ATMY_GRP_CD"], "cond[BPLC_NM::LIKE]": r["BSNSSP_NM"]}, r["MNG_NO"], None))
+    todo = []  # 백년가게 first: fewer, and shown from the national view
     cen = os.path.join(RAW_DIR, "century_shops.json")
     for r in json.load(open(cen, encoding="utf-8")) if os.path.exists(cen) else []:
         k, addr = f"cen:{r.get('업체명')}|{r.get('업체주소')}", r.get("업체주소") or ""
         street = re.search(r"(\S+(?:로|길)\S*\s+\d+(?:-\d+)?)", addr)  # e.g. 덕진연못3길 6
         if k not in cache and street:
             todo.append((k, {"cond[BPLC_NM::LIKE]": r.get("업체명")}, None, street.group(1).replace(" ", "")))
+    ex = os.path.join(RAW_DIR, "excellent_restaurant_info.jsonl")
+    for line in open(ex, encoding="utf-8") if os.path.exists(ex) else []:
+        r = json.loads(line)
+        if not r.get("DSGN_RTRCN_YMD") and r.get("SALS_STTS_NM") == "영업" and f"ex:{r['MNG_NO']}" not in cache:
+            todo.append((f"ex:{r['MNG_NO']}", {"cond[OPN_ATMY_GRP_CD::EQ]": r["OPN_ATMY_GRP_CD"], "cond[BPLC_NM::LIKE]": r["BSNSSP_NM"]}, r["MNG_NO"], None))
     todo = todo[:FOOD_MATCH_BUDGET]
     deadline, spent = time.time() + FOOD_MATCH_MINUTES * 60, []
 
@@ -443,7 +443,7 @@ def fetch_food_coords(key):
         return k, None
     got = []
     try:
-        with ThreadPoolExecutor(4) as pool:
+        with ThreadPoolExecutor(6) as pool:
             got = list(pool.map(one, todo))
     finally:
         cache.update({k: v for k, v in got if v != "retry"})
