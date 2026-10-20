@@ -256,6 +256,34 @@
         map.getSource('subway').setData(g);
         if (map.getLayer('rail-line')) map.setFilter('rail-line', ['all', ['==', ['get', 'class'], 'rail'], ['!', ['has', 'service']]]);
       });
+      // 인구감소지역(주황)·관심지역(노랑): 켜면 행정경계 파일(admin/<si>.json)을 불러와 칠함
+      map.addSource('decl', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'decl-fill', type: 'fill', source: 'decl', filter: ['==', ['geometry-type'], 'Polygon'], layout: { visibility: 'none' },
+        paint: { 'fill-color': ['match', ['get', 'd'], 1, '#d35400', '#f1c40f'], 'fill-opacity': .25 } }, firstSymbol);
+      map.addLayer({ id: 'decl-line', type: 'line', source: 'decl', layout: { visibility: 'none' },
+        paint: { 'line-color': ['match', ['get', 'd'], 1, '#a04000', '#b7950b'], 'line-width': 1.2 } }, firstSymbol);
+      $('n-decl').textContent = S.reduce((a, sd) => a + (sd.decl || []).filter(x => x === 1).length, 0) + '곳';
+      let declLoaded = false;
+      $('ck-decl').onchange = async () => {
+        const on = $('ck-decl').checked;
+        ['decl-fill', 'decl-line'].forEach(l => map.setLayoutProperty(l, 'visibility', on ? 'visible' : 'none'));
+        if (!on || declLoaded) return;
+        declLoaded = true;
+        const feats = [];
+        await Promise.all(S.map(async (sd, si) => {
+          if (!(sd.decl || []).some(x => x)) return;
+          const a = await (adminCache[si] ||= getJSON(`data/admin/${si}.json`, null));
+          (sd.decl || []).forEach((d, gi) => { if (d && a && a.sgg[gi]) for (const l of a.sgg[gi]) {
+            const closed = l.length > 3 && l[0][0] === l[l.length - 1][0] && l[0][1] === l[l.length - 1][1];
+            feats.push({ type: 'Feature', properties: { d, si, gi }, geometry: closed ? { type: 'Polygon', coordinates: [l] } : { type: 'LineString', coordinates: l } }); } });
+        }));
+        map.getSource('decl').setData({ type: 'FeatureCollection', features: feats });
+      };
+      map.on('click', 'decl-fill', e => {
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'areas', 'tour', 'fest', 'food0', 'food1'].filter(l => map.getLayer(l)) }).length) return;
+        const p = e.features[0].properties, r = { si: p.si, gi: p.gi };
+        new maplibregl.Popup({ maxWidth: '240px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(regLabel(r))}</b><br>${p.d === 1 ? '인구감소지역' : '인구감소관심지역'}${(S[r.si].declp || []).includes(r.gi) ? ' · 인구활력 플러스' : ''}<br><small>행정안전부 2026.10.7 지정</small>`).addTo(map);
+      });
       // 고른 지역의 행정구역 경계(흰 테두리 위 진한 선)
       map.addSource('admin', { type: 'geojson', data: empty, attribution: '행정경계: 통계청 SGIS · <a href="https://github.com/vuski/admdongkor" target="_blank">admdongkor</a> (CC BY 4.0)' });
       map.addLayer({ id: 'admin-casing', type: 'line', source: 'admin', layout: { 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-opacity': .85,
@@ -642,6 +670,12 @@
   const popOfReg = r => { const sum = xs => xs.every(x => x) ? xs.reduce((a, b) => a + b, 0) : null;
     return r.si < 0 ? sum(S.map(sd => sd.pop)) : r.gi < 0 && r.grp == null ? S[r.si].pop || null : sum(gisOf(r).map(gi => (S[r.si].popg || [])[gi])); };
   const curPop = () => U ? (s => s.every(x => x) ? s.reduce((a, b) => a + b, 0) : null)(U.regs.map(popOfReg)) : popOfReg(curReg());
+  // 인구감소지역(1)·관심지역(2), 행정안전부 2026.10.7 지정 (build.py → meta.sido[].decl)
+  const declOf = r => r && r.si >= 0 && r.gi >= 0 ? (S[r.si].decl || [])[r.gi] || 0 : 0;
+  const declBadge = r => { const d = declOf(r), plus = d && (S[r.si].declp || []).includes(r.gi);
+    if (d) return `<span class="decl${d === 2 ? ' w' : ''}" title="행정안전부 2026.10.7 지정">${d === 1 ? '인구감소지역' : '인구감소관심지역'}${plus ? ' · 활력 플러스' : ''}</span>`;
+    const n = r && r.si >= 0 && r.gi < 0 && r.grp == null ? (S[r.si].decl || []).filter(x => x === 1).length : 0;
+    return n ? `<span class="decl w">인구감소지역 ${n}곳 포함</span>` : ''; };
   const popYm = () => meta.pop_ym ? `${meta.pop_ym.slice(0, 4)}.${meta.pop_ym.slice(4)} 말` : '';
   const regLabel = r => r.si < 0 ? '전국' : r.grp != null ? `${short(S[r.si].name)} ${S[r.si].groups[r.grp].name}` : r.gi < 0 || S[r.si].sgg[r.gi] === S[r.si].name ? S[r.si].name : `${short(S[r.si].name)} ${S[r.si].sgg[r.gi]}`;
   const inReg = (r, si, gi) => r.si < 0 || (si === r.si && (!gisOf(r) || gisOf(r).includes(gi)));
@@ -850,7 +884,7 @@
       lines.push(`연간 외지인 ${big(vp[0])}·외국인 ${big(vp[1])} 명(연인원). 숙소는 외지인 100만 명당 ${per(N, vp[0]).toFixed(1)}곳, 외국인 100만 명당 ${per(N, vp[1]).toFixed(1)}곳`
         + (isNat ? '입니다.' : `입니다. 외지인 기준으로 전국(${npo.toFixed(1)}곳)${word(per(N, vp[0]), npo)}.`));
     }
-    $('summary-title').textContent = `한눈에 보기 · ${regionName()}`;
+    $('summary-title').innerHTML = `한눈에 보기 · ${esc(regionName())}${U ? '' : declBadge(curReg())}`;
     $('summary').innerHTML = lines.map(l => `<li>${esc(l)}</li>`).join('');
   }
   $('summary-copy').onclick = async () => {
@@ -1395,8 +1429,12 @@
     addPop(me, r);
     // 비교 대상: 기초(또는 묶음)는 전국 시군구, 광역은 광역끼리, 전국은 없음
     const peerLevel = r.si < 0 ? null : r.gi >= 0 || r.grp != null ? 'sgg' : 'sido';
+    const declPeers = peerLevel === 'sgg' && peerDecl;
+    $('peer-seg').hidden = peerLevel !== 'sgg';
+    document.querySelectorAll('#peer-seg button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === peerDecl)));
     const peers = !peerLevel ? [] : peerLevel === 'sgg'
-      ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); return addPop(p, { si, gi }); }))
+      ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => [si, gi])).filter(([si, gi]) => !declPeers || declOf({ si, gi }) === 1)
+        .map(([si, gi]) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); return addPop(p, { si, gi }); })
       : S.map((_, si) => { const p = ovStats(keysOf({ si, gi: -1 }), natA, msido(si), nat); p.k21 = kixAvg({ si, gi: -1 }, '21'); p.k2102 = kixAvg({ si, gi: -1 }, '2102'); return addPop(p, { si, gi: -1 }); });
     const pctile = (key, v) => { const xs = peers.map(p => p[key]).filter(x => x != null); return v == null || xs.length < 5 ? null : xs.filter(x => x <= v).length / xs.length; };
     // 기준값: 비교 대상의 중위값(극단값에 덜 흔들림)과 전국 전체 값(전국을 한 지역으로 본 값)
@@ -1405,9 +1443,9 @@
     const natP = r.si < 0 ? null : addPop(ovStats(keysOf({ si: -1, gi: -1 }), natA, natMon, nat), { si: -1, gi: -1 });
     const refLine = (key, f) => { const md = median(key), nv = natP && key !== 'n' ? natP[key] : null;
       return md == null && nv == null ? '' : `<small class="ref">${md != null ? `${peerName} 중위 <b>${f(md)}</b>` : ''}${md != null && nv != null ? ' · ' : ''}${nv != null ? `전국 전체 <b>${f(nv)}</b>` : ''}</small>`; };
-    const peerName = peerLevel === 'sgg' ? '전국 시군구' : '광역';
+    const peerName = peerLevel === 'sgg' ? (declPeers ? '인구감소지역' : '전국 시군구') : '광역';
     const P = {}; for (const [k] of OV) P[k] = pctile(k, me[k]);
-    $('sum-title').textContent = `종합 · ${regLabel(r)}`;
+    $('sum-title').innerHTML = `종합 · ${esc(regLabel(r))}${declBadge(r)}`;
     $('sum-sub').textContent = `${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 기준. 막대의 표시는 ${peerLevel ? peerName + ' 중 위치(오른쪽일수록 값이 큼)' : '전국이라 비교 대상 없음'}입니다. 매일 새벽 갱신된 자료로 즉시 계산합니다.`;
     $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><p class="easy">${OV_EASY.n}</p><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small>${refLine('n', v => fmt(Math.round(v)) + '곳')}</div>`]
       .concat(OV.filter(([k]) => me[k] != null).map(([k, nm, f]) => { const v = me[k], p = P[k];
@@ -1457,6 +1495,8 @@
       median(k) == null ? '' : +median(k).toFixed(4), (natP || me)[k] == null ? '' : +(natP || me)[k].toFixed(4), OV_EASY[k] || '', formula, src]));
   }
   $('sum-print').onclick = () => print();
+  let peerDecl = false;  // 종합의 비교 대상: 전국 시군구 / 인구감소지역(92곳)끼리
+  $('peer-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { peerDecl = b.dataset.v === 'decl'; renderOverview(); } });
   $('sum-more').onclick = () => { const all = $('sum-grid').classList.toggle('all'); $('sum-more').textContent = all ? '접기' : `지표 더 보기 (${$('sum-grid').children.length - 4}개)`; };
   // 인쇄할 때는 지표 카드와 정의 표를 모두 펼침
   let printState = null;

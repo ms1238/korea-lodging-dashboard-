@@ -31,6 +31,7 @@ Steps
     exact positions) with permit and closing month, for the stock over time.
 21. food.json: 모범음식점 (designated, open) and 백년가게 at the coordinates of their 일반음식점 인허가 record (raw/food_coords.json).
 22. admin/<si>.json: 시도 and 시군구 outlines merged from 행정동 boundaries (vuski/admdongkor, 통계청 SGIS) for drawing the selected region.
+23. meta.json "decl": 인구감소지역 / 관심지역 per 시군구 (scripts/static/decline_areas.json, 2026-10-07 지정).
 """
 import calendar
 import difflib
@@ -1070,7 +1071,31 @@ def write_arrivals():
                   f, ensure_ascii=False, separators=(",", ":"))
 
 
-def data_dates(admin_ver, pop_ym):
+def add_decline(sidos, sgg_of, sido_meta, merged):
+    """인구감소지역 (1) / 인구감소관심지역 (2) per 시군구 from scripts/static/decline_areas.json: sido_meta[i]["decl"],
+    and the 시군구 indices of 인구활력 플러스 areas in ["declp"]. Returns the designation date."""
+    d = json.load(open(os.path.join(ROOT, "scripts", "static", "decline_areas.json"), encoding="utf-8"))
+    for sm in sido_meta:
+        sm["decl"], sm["declp"] = [0] * len(sm["sgg"]), []
+    unmatched = []
+    for kind, code in (("decline", 1), ("watch", 2), ("plus", 0)):
+        for sido, names in d[kind].items():
+            sido = MERGED_GWANGJU_JEONNAM if merged and sido in ("광주광역시", "전라남도") else SIDO_ALIASES.get(sido, sido)
+            for g in names:
+                if sido not in sidos or g not in sgg_of[sido]:
+                    unmatched.append(f"{sido} {g}")
+                    continue
+                sm, gi = sido_meta[sidos.index(sido)], sgg_of[sido].index(g)
+                if code:
+                    sm["decl"][gi] = code
+                else:
+                    sm["declp"].append(gi)
+    print(f"decline: {sum(x == 1 for sm in sido_meta for x in sm['decl'])} 인구감소지역, {sum(x == 2 for sm in sido_meta for x in sm['decl'])} 관심지역; "
+          f"not found: {' '.join(unmatched) or '-'}", flush=True)
+    return d["designated"]
+
+
+def data_dates(admin_ver, pop_ym, decl_date=None):
     """[[자료, 기준 시점, 갱신]] for the page's '데이터 기준일' panel, read from the files just written."""
     def out(name):
         p = os.path.join(OUT, name)
@@ -1090,7 +1115,8 @@ def data_dates(admin_ver, pop_ym):
             ["코레일 간선열차 승하차", ym((stn.get("mym") or [""])[-1]), "매일(월별 합계)"],
             ["모범음식점·백년가게 (행정안전부·소상공인시장진흥공단)", today, "매일"],
             ["행정구역 경계 (통계청 SGIS·admdongkor)", f"{admin_ver[3:7]}.{admin_ver[7:9]}.{admin_ver[9:]}판" if admin_ver else "-", "새 판이 나오면"],
-            ["철도·역·국립공원 경계 (OpenStreetMap)", today, "매일"]]
+            ["철도·역·국립공원 경계 (OpenStreetMap)", today, "매일"],
+            ["인구감소지역 지정 (행정안전부)", f"{decl_date.replace('-', '.')} 고시" if decl_date else "-", "5년마다 재지정"]]
     return rows
 
 
@@ -1265,6 +1291,7 @@ def main():
         sm["tour"] = cnt
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     pop_ym = add_population(sidos, sgg_of, sido_meta)
+    decl_date = add_decline(sidos, sgg_of, sido_meta, merged)
     write_arrivals()
     write_icn()
     write_kto_index(sidos, sgg_of)
@@ -1299,7 +1326,7 @@ def main():
         "zones": ZONES, "bldgs": BLDGS,
         "visitors": visitors,
         "pop_ym": pop_ym,
-        "fresh": data_dates(admin_ver, pop_ym),
+        "fresh": data_dates(admin_ver, pop_ym, decl_date),
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))

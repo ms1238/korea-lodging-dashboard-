@@ -55,7 +55,8 @@
   <div class="kpis" id="kpis" data-tab="now"></div>
 
   <section data-tab="summary" id="sum-sec">
-    <div class="sechead"><h2 id="sum-title">종합</h2><p class="sub" id="sum-sub"></p></div>
+    <div class="sechead"><h2 id="sum-title">종합</h2><p class="sub" id="sum-sub"></p>
+      <div class="seg" id="peer-seg" role="group" aria-label="비교 대상" hidden style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구와 비교</button><button data-v="decl" aria-pressed="false">인구감소지역끼리 비교</button></div></div>
     <div class="card"><button class="btn csv" id="sum-print" type="button">인쇄 · PDF</button><h3 style="margin-bottom:8px">한눈에 보기</h3><ul class="sumlist" id="sum-text"></ul></div>
     <div class="sumgrid" id="sum-grid"></div>
     <button class="btn more" id="sum-more" type="button" hidden></button>
@@ -86,8 +87,9 @@
         <div class="railhead" style="margin-top:16px"><h3>교통·자연</h3></div>
         <div class="chk"><input type="checkbox" id="ck-park" checked><label for="ck-park"><span class="sw" style="background:#2e7d32"></span>국립공원</label><span class="n" id="n-park"></span></div>
         <div class="chk"><input type="checkbox" id="ck-air" checked><label for="ck-air"><span class="sw" style="background:#1f3a93;border-radius:1px"></span>공항</label><span></span></div>
+        <div class="chk"><input type="checkbox" id="ck-decl"><label for="ck-decl"><span class="sw" style="background:#d35400"></span>인구감소지역</label><span class="n" id="n-decl"></span></div>
         <div class="chk"><input type="checkbox" id="ck-rail" checked><label for="ck-rail"><span class="sw" style="background:linear-gradient(90deg,#0052a4 33%,#00a84d 33% 66%,#ef7c1c 66%)"></span>철도·지하철·역</label><span></span></div>
-        <p class="note" style="margin-top:4px">철도는 회색, 지하철은 노선 색, 역·공항은 네모로 표시합니다. 국립공원 경계·면적은 OpenStreetMap(금정산은 지정 도면 기반 근사), 공항·철도는 배경지도(OpenStreetMap) 자료입니다.</p>
+        <p class="note" style="margin-top:4px">인구감소지역은 주황, 인구감소관심지역은 노랑(행정안전부 2026.10.7 지정). 철도는 회색, 지하철은 노선 색, 역·공항은 네모로 표시합니다. 국립공원 경계·면적은 OpenStreetMap(금정산은 지정 도면 기반 근사), 공항·철도는 배경지도(OpenStreetMap) 자료입니다.</p>
         <div class="railhead" style="margin-top:16px"><h3>맛집</h3></div>
         <div class="chk"><input type="checkbox" id="ck-food1" checked><label for="ck-food1"><span class="sw" style="background:#8e2c48"></span>백년가게</label><span class="n" id="n-food1"></span></div>
         <div class="chk"><input type="checkbox" id="ck-food0" checked><label for="ck-food0"><span class="sw" style="background:#d4a017"></span>모범음식점</label><span class="n" id="n-food0"></span></div>

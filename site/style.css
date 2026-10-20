@@ -114,6 +114,8 @@ th:first-child,td:first-child{text-align:left}
 #recent-table tbody tr{cursor:pointer}
 #recent-table tbody tr:hover{background:color-mix(in srgb,var(--fg) 7%,transparent)}
 .areapop .btn{margin:6px 6px 0 0}
+.decl{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:700;vertical-align:3px;background:#d35400;color:#fff;font-family:var(--f-body)}
+.decl.w{background:#f1c40f;color:#14202b}
 .subtabs{display:flex;gap:6px;flex-basis:100%;overflow-x:auto;scrollbar-width:none;padding:8px 0 2px}
 .subtabs button{border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--muted);font:inherit;font-size:13px;padding:4px 12px;cursor:pointer;white-space:nowrap}
 .subtabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:700}
