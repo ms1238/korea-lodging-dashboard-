@@ -1,0 +1,47 @@
+# Temporary: routes to coordinates for 모범음식점·백년가게 that work from GitHub's servers.
+name: Probe restaurant coordinate routes
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-food2.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, re, json, time, requests
+          K = os.environ["KEY"]; H = {"User-Agent": "Mozilla/5.0"}
+          def get(u, **kw):
+              for a in range(3):
+                  try: return requests.get(u, headers=H, timeout=60, **kw)
+                  except Exception as e: print("  retry", type(e).__name__, flush=True); time.sleep(8)
+          # 1) 일반음식점·휴게음식점 인허가 API names (same 1741000 family as lodging)
+          for ep in ("general_restaurants", "general_restaurant", "general_restaurant_info", "restaurants", "rest_cafes", "rest_restaurants", "light_restaurants", "general_restaurants_info"):
+              r = get(f"https://apis.data.go.kr/1741000/{ep}/info", params={"serviceKey": K, "pageNo": 1, "numOfRows": 1, "returnType": "json"})
+              print("== EP", ep, r.status_code, r.text[:400].replace("\n", " "), flush=True)
+          # 2) data.go.kr datasets: 모범음식점 / 일반음식점 / 백년가게, look for coordinates and filter parameters
+          seen = {}
+          for kw in ("모범음식점", "일반음식점 인허가", "백년가게", "음식점 표준데이터"):
+              for dt in ("API", "FILE", "STD"):
+                  t = get("https://www.data.go.kr/tcs/dss/selectDataSetList.do", params={"keyword": kw, "dType": dt, "perPage": 20}).text
+                  for cid, kind in re.findall(r"/data/(\d{8})/(openapi|fileData|standard)\.do", t):
+                      seen.setdefault(cid, kind)
+          print("== ids", seen, flush=True)
+          for cid, kind in list(seen.items())[:30]:
+              p = get(f"https://www.data.go.kr/data/{cid}/{kind}.do").text
+              title = (re.findall(r"<title>(.*?)</title>", p, re.S) or [""])[0].strip()[:80]
+              if not re.search(r"음식|식당|백년", title): continue
+              coord = sorted(set(re.findall(r"(위도|경도|좌표[^\"<,]{0,10}|CRD_INFO_[XY]|LAT|LOT|x좌표|y좌표)", p)))[:8]
+              m = re.search(r"swaggerJson\s*=\s*`(.*?)`", p, re.S); sw = m.group(1) if m else ""
+              params = list(dict.fromkeys(re.findall(r'"name":"([^"]+)","(?:in|description)', sw)))[:25]
+              print("== DS", cid, kind, title, "| coord words:", coord, "| params:", params, flush=True)
+          # 3) 도로명주소 좌표 API reachability (no key: expect an error answer if reachable)
+          for u in ("https://business.juso.go.kr/addrlink/addrCoordApi.do", "https://business.juso.go.kr/addrlink/addrLinkApi.do"):
+              r = get(u, params={"confmKey": "x", "keyword": "세종대로 110", "resultType": "json"})
+              print("== JUSO", u, None if r is None else (r.status_code, r.text[:300]), flush=True)
