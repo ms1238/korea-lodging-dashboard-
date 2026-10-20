@@ -1,0 +1,34 @@
+# Temporary: the 2026-10-07 re-designated list of 인구감소지역 (행정안전부).
+name: Probe population-decline areas
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-decline.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - shell: python
+        run: |
+          import re, html, time, requests
+          H = {"User-Agent": "Mozilla/5.0"}
+          def get(u, **kw):
+              for a in range(3):
+                  try: return requests.get(u, headers=H, timeout=60, **kw)
+                  except Exception as e: print("  retry", type(e).__name__, flush=True); time.sleep(8)
+          text = lambda t: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"(?s)<(script|style).*?</\1>", "", t))))
+          r = get("https://www.mois.go.kr/frt/bbs/type010/commonSelectBoardArticle.do", params={"bbsId": "BBSMSTR_000000000008", "nttId": "130020"})
+          if r is not None:
+              t = r.text
+              print("== MOIS status", r.status_code, len(t))
+              body = text(t)
+              i = body.find("인구감소지역")
+              print("== MOIS body", body[max(0, i - 200):i + 6000])
+              print("== MOIS attachments", re.findall(r'(fileDown[^"\']+|atchFileId=[^"&\']+[^"\']*|[^"\'>]+\.(?:hwpx?|pdf|xlsx?))', t)[:20])
+          r = get("https://ko.wikipedia.org/w/index.php", params={"title": "인구감소지역", "action": "raw"})
+          if r is not None:
+              print("== WIKI status", r.status_code, len(r.text))
+              print("== WIKI", r.text[:9000])
