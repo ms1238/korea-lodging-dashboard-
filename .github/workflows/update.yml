@@ -9,7 +9,7 @@ on:
     paths: ["site/**", "scripts/**", ".github/workflows/**", "requirements.txt"]
 
 permissions:
-  contents: read
+  contents: write  # monthly snapshot release
   pages: write
   id-token: write
 
@@ -54,6 +54,19 @@ jobs:
           key: raw-${{ github.run_id }}
       - name: Build dashboard data
         run: python scripts/build.py
+      # The permit APIs only give the current state, so keep the first scheduled/manual build of each month.
+      - name: Monthly snapshot (GitHub Release)
+        if: github.event_name != 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="snapshot-$(TZ=Asia/Seoul date +%Y-%m)"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            f="lodging_$(TZ=Asia/Seoul date +%Y-%m-%d).csv.gz"
+            cp site/data/download/lodging.csv.gz "$f"
+            gh release create "$tag" "$f" site/codebook.html --title "숙박시설 스냅샷 $(TZ=Asia/Seoul date +%Y-%m)" \
+              --notes "$(TZ=Asia/Seoul date +%Y-%m-%d) 기준 전국 숙박시설 인허가 데이터(중복 제거·지역 매칭 후). 열 설명은 codebook.html."
+          fi
       - name: Version the page assets so browsers do not mix a new page with cached old scripts
         run: sed -i -E "s/(app\.js|style\.css)\"/\1?v=${GITHUB_SHA::7}\"/g" site/index.html
       - uses: actions/configure-pages@v5

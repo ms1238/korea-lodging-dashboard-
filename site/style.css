@@ -111,6 +111,7 @@ th:first-child,td:first-child{text-align:left}
 .fresh > summary{cursor:pointer;color:var(--muted);display:inline-block}
 .fresh table{margin-top:6px;font-size:12.5px;width:auto}
 .fresh td,.fresh th{text-align:left;padding:4px 10px 4px 0}
+.dl{font-size:13px;color:var(--muted)}.dl a{color:inherit}
 #recent-table tbody tr{cursor:pointer}
 #recent-table tbody tr:hover{background:color-mix(in srgb,var(--fg) 7%,transparent)}
 .areapop .btn{margin:6px 6px 0 0}

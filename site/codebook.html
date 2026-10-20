@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>숙박시설 데이터 코드북</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@700&display=swap">
+<style>
+:root{--bg:#f3f4f2;--panel:#fbfbfa;--fg:#14202b;--muted:#566370;--line:#d9ddd9;--link:#1f5fae;
+  --f-body:'Noto Sans KR',-apple-system,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;--f-head:'Noto Serif KR','Batang',serif}
+@media (prefers-color-scheme: dark){:root{--bg:#0f151b;--panel:#171f27;--fg:#e8ecef;--muted:#a2adb7;--line:#2b3641;--link:#7fb0ef;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.65 var(--f-body);padding:28px 16px 56px}
+main{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+h1,h2{font-family:var(--f-head);margin:0}h1{font-size:clamp(24px,4vw,32px)}h2{font-size:19px;margin-bottom:8px}
+p,ul,ol{margin:0 0 8px}a{color:var(--link)}.muted{color:var(--muted)}
+.tablewrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;vertical-align:top;padding:7px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500;white-space:nowrap}tr:last-child td{border-bottom:0}
+td:first-child{white-space:nowrap;font-weight:500}
+code{font-size:12.5px;background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:0 4px}
+.cite{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>숙박시설 데이터 코드북</h1>
+  <p class="muted"><a href="./">전국 숙박시설 현황 대시보드</a>에서 내려받는 전체 시설 파일의 열 정의, 가공 규칙, 출처와 한계를 적었습니다.</p>
+</header>
+
+<section>
+  <h2>내려받기</h2>
+  <ul>
+    <li><a href="data/download/lodging.csv.gz">lodging.csv.gz</a>: 최신본. 매일 다시 만듭니다. gzip으로 압축한 CSV(UTF-8, BOM 포함)라 압축을 풀면 엑셀에서 바로 열립니다. R은 <code>readr::read_csv()</code>, Python은 <code>pandas.read_csv(..., encoding="utf-8-sig")</code>로 압축째 읽을 수 있습니다.</li>
+    <li><a href="https://github.com/ms1238/korea-lodging-dashboard-/releases">월별 스냅샷</a>: 매달 첫 정기 갱신 때 그날의 파일을 GitHub Release(<code>snapshot-YYYY-MM</code>)로 보관합니다. 인허가 API는 현재 상태만 주므로 특정 시점의 재현이나 패널 분석에는 스냅샷을 쓰세요.</li>
+  </ul>
+  <p>한 행이 한 시설입니다. 영업·휴업·폐업을 모두 담습니다(폐업에는 취소·말소·만료 등이 포함됩니다).</p>
+</section>
+
+<section>
+  <h2>열 정의</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>열</th><th>내용</th></tr></thead>
+    <tbody>
+      <tr><td>관리번호</td><td>행정안전부 인허가 데이터의 관리번호.</td></tr>
+      <tr><td>업소명</td><td>인허가 데이터의 사업장명을 그대로 씁니다.</td></tr>
+      <tr><td>업종대분류</td><td>숙박업, 관광숙박업, 외국인관광 도시민박업, 농어촌민박업, 관광펜션업, 한옥체험업, 야영장업 가운데 하나. 인허가 API 8종을 7개로 묶었습니다(일반·자동차야영장업 → 야영장업).</td></tr>
+      <tr><td>업종</td><td>세부 업종. 숙박업은 위생업태명(일반·생활숙박업 등), 관광숙박업은 관광호텔·호스텔 등 세부명, 야영장업은 일반/자동차 야영장업. 세부명이 비어 있으면 '숙박업(기타)'처럼 적습니다.</td></tr>
+      <tr><td>시도 · 시군구</td><td>도로명주소(없으면 지번주소)에서 읽은 현재 행정구역. 아래 '행정구역 처리'를 보세요.</td></tr>
+      <tr><td>읍면동 · 리</td><td>지번주소(없으면 도로명주소)에서 읽은 법정 읍·면·동과 리. 읽지 못하면 비워 둡니다.</td></tr>
+      <tr><td>영업상태</td><td>영업 / 휴업 / 폐업.</td></tr>
+      <tr><td>인허가일 · 폐업일</td><td>YYYY-MM-DD. 폐업일은 폐업 시설에만 있고, 폐업인데 날짜가 비어 있는 기록도 있습니다.</td></tr>
+      <tr><td>도로명주소 · 지번주소</td><td>인허가 데이터의 주소 그대로.</td></tr>
+      <tr><td>위도 · 경도</td><td>WGS84. 원자료 좌표(EPSG:5174 중부원점 TM)를 변환했습니다. 좌표도 같은 동의 다른 시설도 없으면 비워 둡니다.</td></tr>
+      <tr><td>위치근사</td><td>0 = 원자료 좌표, 1 = 원자료에 좌표가 없어 같은 시군구·동 시설들의 중앙값 위치를 넣음. 반경 분석(역·축제·국립공원·지도 클릭)은 0인 시설만 셉니다.</td></tr>
+      <tr><td>용도지역 · 건물용도</td><td>외국인관광 도시민박업에만 있습니다. 용도지역: 주거·상업·공업·녹지·관리지역·미상. 건물용도: 아파트, 다세대·연립, 단독·다가구, 기타, 미상.</td></tr>
+      <tr><td>인구감소지역</td><td>시설이 있는 시군구가 '인구감소지역' 또는 '인구감소관심지역'이면 그 이름, 아니면 빈칸. 2026-10-07 지정 기준입니다.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>가공 규칙</h2>
+  <ol>
+    <li><b>중복 제거</b>: 숙박업 기록 가운데 주소가 같고 이름이 비슷한 관광숙박업 기록이 있으면 같은 시설로 보고 숙박업 쪽을 뺍니다(호텔이 두 법에 모두 등록된 경우).</li>
+    <li><b>좌표 없는 기록</b>: 야영장업은 좌표가 없으면 뺍니다. 다른 업종은 같은 시군구·동 시설들의 중앙값 위치를 넣고 위치근사 = 1로 표시합니다.</li>
+    <li><b>지역을 읽지 못한 기록</b>: 주소에서 시군구를 알 수 없으면 뺍니다.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>행정구역 처리</h2>
+  <ul>
+    <li>옛 명칭(강원도, 전라북도 등)은 현재 명칭(강원특별자치도, 전북특별자치도)으로 맞춥니다.</li>
+    <li>일반구가 있는 시(수원·고양·전주 등)는 구를 시로 합쳐 하나의 시군구로 셉니다.</li>
+    <li>시도·시군구는 주소에 적힌 대로 읽습니다. 군위군처럼 소속이 바뀐 곳은 주소가 새 시도로 고쳐진 기록부터 새 시도로 셉니다.</li>
+    <li>전남광주통합특별시 주소가 하나라도 나타나면 광주광역시·전라남도 기록을 모두 전남광주통합특별시로 셉니다.</li>
+    <li>2026년 인천광역시 구 개편도 주소에 새 구 이름이 나타나는 대로 따릅니다. 옛 주소로 남은 기록은 옛 구로 분류됩니다.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>출처와 이용 조건</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>자료</th><th>제공</th><th>이용 조건</th></tr></thead>
+    <tbody>
+      <tr><td>숙박 인허가 8종</td><td>행정안전부, 공공데이터포털 API</td><td>공공누리 제1유형(출처 표시)</td></tr>
+      <tr><td>인구감소지역 지정</td><td>행정안전부 고시(대시보드에서 재구성)</td><td>공공저작물</td></tr>
+      <tr><td>시군구 경계(대시보드 지도)</td><td>통계청 SGIS 행정동 경계, vuski/admdongkor</td><td>CC BY 4.0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">대시보드의 방문객·관광수요지수·교통·축제 등 다른 자료는 이 파일에 들어 있지 않습니다. 각 자료의 출처와 기준 시점은 대시보드 상단 '데이터 기준일'에 있습니다.</p>
+</section>
+
+<section>
+  <h2>한계</h2>
+  <ul>
+    <li>인허가 신고 기준입니다. 미신고 숙소, 공유숙박 플랫폼에만 올라온 숙소, 객실 수는 없습니다.</li>
+    <li>지자체 입력에 따라 상태 갱신이 늦을 수 있습니다. 실제로 문을 닫았는데 '영업'으로 남은 기록이 있을 수 있습니다.</li>
+    <li>폐업에는 직권 말소·취소가 섞여 있어 폐업일이 실제 영업 종료일과 다를 수 있습니다. 오래된 폐업 기록은 덜 완전하므로 생존 분석은 2010년 이후 인허가만 씁니다.</li>
+    <li>중복 제거는 주소·이름 유사도에 기댄 규칙이라 일부 중복이 남거나 다른 시설이 빠질 수 있습니다.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>인용</h2>
+  <p class="cite">ms1238 (2026). 전국 숙박시설 현황 대시보드 [데이터셋]. https://ms1238.github.io/korea-lodging-dashboard-/ (접속일: YYYY-MM-DD). 원자료: 행정안전부 인허가 데이터.</p>
+  <p class="muted">스냅샷을 쓴 경우 Release 태그(예: snapshot-2026-11)를 함께 적어 주세요.</p>
+</section>
+</main>
+</body>
+</html>

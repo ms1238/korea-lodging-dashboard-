@@ -34,9 +34,13 @@ Steps
 23. meta.json "decl": 인구감소지역 / 관심지역 per 시군구 (scripts/static/decline_areas.json, 2026-10-07 지정).
 24. pts/<si>.json "dpop": population per 법정 읍·면·동 (국립환경과학원 생활계 인구현황, latest year).
 25. survival.json: Kaplan-Meier survival by 업종 대분류 for the nation, 시도 and 시군구 (permits since 2010).
+26. download/lodging.csv.gz: every facility, for download (columns in site/codebook.html); the workflow keeps a
+    monthly copy as a GitHub Release.
 """
 import calendar
+import csv
 import difflib
+import gzip
 import glob
 import json
 import math
@@ -1073,6 +1077,28 @@ def write_arrivals():
                   f, ensure_ascii=False, separators=(",", ":"))
 
 
+DOWNLOAD_COLS = ["관리번호", "업소명", "업종대분류", "업종", "시도", "시군구", "읍면동", "리", "영업상태", "인허가일", "폐업일",
+                 "도로명주소", "지번주소", "위도", "경도", "위치근사", "용도지역", "건물용도", "인구감소지역"]
+
+
+def write_download(rows, sidos, sido_meta):
+    """Every facility (after duplicate removal and region matching) as data/download/lodging.csv.gz for researchers;
+    the columns are described in site/codebook.html. UTF-8 with BOM so spreadsheet programs read Korean."""
+    os.makedirs(os.path.join(OUT, "download"), exist_ok=True)
+    gi_of = {s: {g: i for i, g in enumerate(sm["sgg"])} for s, sm in zip(sidos, sido_meta)}
+    decl = lambda r: ["", "인구감소지역", "인구감소관심지역"][sido_meta[sidos.index(r["sido"])].get("decl", [0] * 999)[gi_of[r["sido"]][r["sgg"]]]]
+    path = os.path.join(OUT, "download", "lodging.csv.gz")
+    with gzip.open(path, "wt", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(DOWNLOAD_COLS)
+        for r in sorted(rows, key=lambda r: (r["sido"], r["sgg"], r["emd"] or "", r["name"])):
+            lat, lon = r["ll"] if r["ll"] else ("", "")
+            w.writerow([r["id"], r["name"], r["cat"], r["type"], r["sido"], r["sgg"], r["emd"] or "", r["ri"] or "", STATUS[r["status"]],
+                        r["date"], r["closed"], r["road"], r["lot"], lat, lon, r.get("approx", 0) if r["ll"] else "",
+                        ZONES[r["zone"]] if r["zone"] >= 0 else "", BLDGS[r["bldg"]] if r["bldg"] >= 0 else "", decl(r)])
+    print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
+
+
 SURV_FROM = "2010-01-01"  # cohort for the survival curves: permits since then (older closings are less complete)
 
 
@@ -1380,6 +1406,7 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     pop_ym = add_population(sidos, sgg_of, sido_meta)
     decl_date = add_decline(sidos, sgg_of, sido_meta, merged)
+    write_download(rows, sidos, sido_meta)
     write_arrivals()
     write_icn()
     write_kto_index(sidos, sgg_of)
