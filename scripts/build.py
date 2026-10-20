@@ -28,7 +28,7 @@ Steps
 19. festivals.json: TourAPI festivals with every edition collected so far and the operating lodgings per type within
     0.5 / 1 / 3 / 5 km, as for stations.
 20. park_lodging.json: per national park, lodgings inside it or within 1 / 3 / 5 km of its boundary (every status,
-    exact positions) with permit and closing month, for the stock over time.
+    exact positions) with permit and closing month, for the stock over time; "vis" = monthly visitors (국립공원공단) where published.
 21. food.json: 모범음식점 (designated, open) and 백년가게 at the coordinates of their 일반음식점 인허가 record (raw/food_coords.json).
 22. admin/<si>.json: 시도 and 시군구 outlines merged from 행정동 boundaries (vuski/admdongkor, 통계청 SGIS) for drawing the selected region.
 23. meta.json "decl": 인구감소지역 / 관심지역 per 시군구 (scripts/static/decline_areas.json, 2026-10-07 지정).
@@ -38,6 +38,8 @@ Steps
     monthly copy as a GitHub Release.
 27. meta.json "brief": national new permits / closings this year vs the same dates last year, and the share of operating
     facilities licensed 20+ years ago, per 업종.
+28. meta.json sido[]["r12"] / ["old"]: per 시군구 new permits and closings over the last 365 days (per 업종), and
+    operating 여관·여인숙 with the share licensed 20+ years ago, for the map colouring and the 동향 table.
 """
 import calendar
 import csv
@@ -605,13 +607,21 @@ def write_park_lodging(rows, parks, sidos, sgg_of, tidx):
                         band = next((k + 1 for k, km in enumerate(PARK_BANDS) if d2 <= km * km), None)
                         if band is None:
                             continue
-                    res.append([tidx[r["type"]], band, ym(r["date"]), ym(r["closed"]) if r["status"] == 2 else 0, r["status"]])
+                    res.append([tidx[(r["cat"], r["type"])], band, ym(r["date"]), ym(r["closed"]) if r["status"] == 2 else 0, r["status"]])
                     (regs if band <= 1 else near)[(sidos.index(r["sido"]), gi_of[r["sido"]][r["sgg"]])] += 1
         out.append({"name": park, "km2": round(area, 1), "bbox": [round(x0, 4), round(y0, 4), round(x1_, 4), round(y1_, 4)],
                     "regs": [list(k) for k, _ in (regs or near).most_common()], "rows": res})  # 시군구 of the lodgings within 1 km (else 5 km)
         print(f"  park_lodging {park}: {len(res)} lodgings ({sum(1 for x in res if x[1] == 0)} inside), regions {len(regs)}", flush=True)
+    # monthly visitors (국립공원공단, raw/park_visitors.json) for the parks it covers, matched by name without "국립공원"
+    vp = os.path.join(RAW, "park_visitors.json")
+    vis = json.load(open(vp, encoding="utf-8")) if os.path.exists(vp) else {"parks": {}}
+    for p in out:
+        v = vis["parks"].get(re.sub(r"국립공원$", "", p["name"]))
+        if v:
+            p["vis"] = [[int(m), n] for m, n in sorted(v.items())]
+    print(f"  park visitors: {sorted(p['name'] for p in out if p.get('vis'))} ({vis.get('table', '-')})", flush=True)
     with open(os.path.join(OUT, "park_lodging.json"), "w", encoding="utf-8") as f:
-        json.dump({"bands": PARK_BANDS, "parks": out}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"bands": PARK_BANDS, "parks": out, "vis_table": vis.get("table", "")}, f, ensure_ascii=False, separators=(",", ":"))
 
 
 RADII = (0.5, 1, 3, 5)  # km, station catchment rings
@@ -735,7 +745,7 @@ def write_stations(rows, sidos, sgg_of, tidx):
                     if d2 < nearest[0]:
                         nearest = (d2, (r["sido"], r["sgg"]))
                     if r["status"] == 0 and d2 <= 25:
-                        c = cnt[tidx[r["type"]]]
+                        c = cnt[tidx[(r["cat"], r["type"])]]
                         for k, rad in enumerate(RADII):
                             if d2 <= rad * rad:
                                 c[k] += 1
@@ -825,7 +835,7 @@ def write_festivals(rows, sidos, sgg_of, tidx, merged):
                     d2 = ((r["ll"][0] - lat) * 110.95) ** 2 + ((r["ll"][1] - lon) * kx) ** 2
                     for k, rad in enumerate(RADII):
                         if d2 <= rad * rad:
-                            cnt[tidx[r["type"]]][k] += 1
+                            cnt[tidx[(r["cat"], r["type"])]][k] += 1
         out.append([round(lat, 5), round(lon, 5), clean(rec["title"]), sidos.index(sido), sgg_of[sido].index(sgg) if sgg in sgg_of[sido] else -1,
                     [[int(r["eventstartdate"]), int(r["eventenddate"] or r["eventstartdate"])] for r in recs],
                     re.sub(r"^\S+\s", "", clean(rec["addr1"])), clean(rec["firstimage2"] or rec["firstimage"]).replace("http://", "https://"),
@@ -965,7 +975,8 @@ def write_kac():
 
 KTO_IX = [("21", "관광 체류 강도"), ("2101", "타권역 방문자 비중"), ("2102", "숙박 비중"), ("2103", "1박 방문자"), ("2104", "2박 방문자"),
           ("2105", "3박 방문자"), ("22", "관광 소비 강도"), ("31", "관광객 다양성"), ("32", "관광 소비 다양성"), ("33", "국제적 다양성"),
-          ("11", "관광서비스 수요"), ("1107", "숙박업 소비액"), ("1110", "숙박 검색량"), ("12", "문화자연자원 수요")]
+          ("11", "관광서비스 수요"), ("1107", "숙박업 소비액"), ("1110", "숙박 검색량"), ("12", "문화자연자원 수요"),
+          ("1103", "미식여행 SNS 언급량"), ("1106", "식음료 소비액")]
 
 
 def write_kto_index(sidos, sgg_of):
@@ -1119,6 +1130,34 @@ def write_download(rows, sidos, sido_meta):
     print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
 
 
+OLD_TYPES = {("숙박업", "여관업"), ("숙박업", "여인숙업")}  # 노후 숙박: the old roadside-inn stock
+
+
+def add_change_old(rows, sidos, sido_meta, tidx):
+    """Per 시군구 in meta.sido[]: "r12" = [[업종, new permits, closings, operating or paused now], …] over the last
+    365 days (only 업종 with any), for the map's net-change colouring; "old" = [operating 여관·여인숙, of them licensed
+    20+ years ago]."""
+    today = datetime.now(KST).date()
+    since, y20 = (today - timedelta(days=365)).isoformat(), today.year - 20
+    for si, (s, sm) in enumerate(zip(sidos, sido_meta)):
+        gi_of = {g: i for i, g in enumerate(sm["sgg"])}
+        r12 = [defaultdict(lambda: [0, 0, 0]) for _ in sm["sgg"]]
+        old = [[0, 0] for _ in sm["sgg"]]
+        for r in rows:
+            if r["sido"] != s:
+                continue
+            gi, t = gi_of[r["sgg"]], tidx[(r["cat"], r["type"])]
+            c = r12[gi][t]
+            c[0] += r["date"] > since
+            c[1] += r["status"] == 2 and r["closed"] > since
+            c[2] += r["status"] < 2
+            if r["status"] == 0 and (r["cat"], r["type"]) in OLD_TYPES:
+                old[gi][0] += 1
+                old[gi][1] += bool(r["date"]) and int(r["date"][:4]) <= y20
+        sm["r12"] = [[[t, *v] for t, v in sorted(d.items()) if any(v)] for d in r12]
+        sm["old"] = old
+
+
 def national_brief(rows, tidx):
     """National numbers for the page's briefing, per 업종 index: new permits and closings from 1 Jan to today this year
     and over the same dates last year ("ytd"), and operating facilities with the share licensed 20+ years ago ("age")."""
@@ -1128,7 +1167,7 @@ def national_brief(rows, tidx):
     ytd = {"y": y, "md": md, "new": [[0, 0] for _ in range(n)], "closed": [[0, 0] for _ in range(n)]}
     age = [[0, 0] for _ in range(n)]
     for r in rows:
-        t = tidx[r["type"]]
+        t = tidx[(r["cat"], r["type"])]
         for key, d in (("new", r["date"]), ("closed", r["closed"] if r["status"] == 2 else "")):
             if d and d[5:] <= md and d[:4] in (str(y), str(y - 1)):
                 ytd[key][t][0 if d[:4] == str(y) else 1] += 1
@@ -1304,7 +1343,7 @@ def main():
 
     # indices
     types = sorted({(r["cat"], r["type"]) for r in rows}, key=lambda t: (CATEGORIES.index(t[0]), -sum(1 for r in rows if r["type"] == t[1])))
-    tidx = {t[1]: i for i, t in enumerate(types)}
+    tidx = {t: i for i, t in enumerate(types)}  # (대분류, 업종): the same 업종 name can sit in two 대분류 (휴양콘도미니엄업)
     sido_n = Counter(r["sido"] for r in rows)
     sidos = [s for s, _ in sido_n.most_common()]
     sgg_of = {s: sorted({r["sgg"] for r in rows if r["sido"] == s}) for s in sidos}
@@ -1343,17 +1382,17 @@ def main():
             q = rix.get((g, d), {}).get(r["ri"], -1) if r["ri"] else -1
             y = int(r["date"][:4]) if r["date"][:4].isdigit() else 0
             cy = int(r["closed"][:4]) if r["status"] == 2 and r["closed"][:4].isdigit() else 0
-            cube[(si, g, tidx[r["type"]], r["status"], y)] += 1
+            cube[(si, g, tidx[(r["cat"], r["type"])], r["status"], y)] += 1
             if y >= Q_FROM:
-                cubeq[(si, g, tidx[r["type"]], r["status"], y * 10 + quarter(r["date"]))] += 1
+                cubeq[(si, g, tidx[(r["cat"], r["type"])], r["status"], y * 10 + quarter(r["date"]))] += 1
             if cy >= Q_FROM:
-                closeq[(si, g, tidx[r["type"]], cy * 10 + quarter(r["closed"]))] += 1
+                closeq[(si, g, tidx[(r["cat"], r["type"])], cy * 10 + quarter(r["closed"]))] += 1
             if cy:
-                close[(si, g, tidx[r["type"]], cy, y)] += 1
+                close[(si, g, tidx[(r["cat"], r["type"])], cy, y)] += 1
             if r["zone"] >= 0:
                 minbak[(si, g, r["status"], r["zone"], r["bldg"])] += 1
             lat, lon = r["ll"] if r["ll"] else (None, None)
-            out.append([lat, lon, tidx[r["type"]], g, d, q, r["status"], y, cy,
+            out.append([lat, lon, tidx[(r["cat"], r["type"])], g, d, q, r["status"], y, cy,
                         r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0),
                         r["zone"], r["bldg"]])
             if r["ll"]:
@@ -1445,6 +1484,7 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     pop_ym = add_population(sidos, sgg_of, sido_meta)
     decl_date = add_decline(sidos, sgg_of, sido_meta, merged)
+    add_change_old(rows, sidos, sido_meta, tidx)
     write_download(rows, sidos, sido_meta)
     write_arrivals()
     write_icn()

@@ -94,11 +94,14 @@
         <div class="chk"><input type="checkbox" id="ck-decl"><label for="ck-decl"><span class="sw" style="background:#d35400"></span>인구감소지역</label><span class="n" id="n-decl"></span></div>
         <div class="chk"><input type="checkbox" id="ck-rail" checked><label for="ck-rail"><span class="sw" style="background:linear-gradient(90deg,#0052a4 33%,#00a84d 33% 66%,#ef7c1c 66%)"></span>철도·지하철·역</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-ktx" checked><label for="ck-ktx"><span class="sw dash"></span>KTX 노선</label><span></span></div>
+        <div class="choro"><label for="choro-mode">시군구 색칠</label><select id="choro-mode"><option value="">없음</option><option value="net">최근 1년 순증률</option><option value="old">노후 숙박 비중 (여관·여인숙 20년+)</option></select>
+          <div class="legend" id="choro-legend" hidden></div></div>
         <p class="note" style="margin-top:4px">인구감소지역은 주황, 인구감소관심지역은 노랑(행정안전부 2026.10.7 지정). 지하철·광역철도(서해선·경의중앙선·수인분당선·공항철도·GTX 등)는 노선 색, KTX는 짙은 점선(다른 노선과 같이 쓰는 구간은 그 노선 색), 그 밖의 철도는 회색, 역·공항은 네모로 표시합니다. 국립공원 경계·면적은 OpenStreetMap(금정산은 지정 도면 기반 근사), 공항·철도는 배경지도(OpenStreetMap) 자료입니다.</p>
         <div class="railhead" style="margin-top:16px"><h3>맛집</h3></div>
         <div class="chk"><input type="checkbox" id="ck-food1" checked><label for="ck-food1"><span class="sw tri" style="background:#8e2c48"></span>백년가게</label><span class="n" id="n-food1"></span></div>
         <div class="chk"><input type="checkbox" id="ck-food0" checked><label for="ck-food0"><span class="sw tri" style="background:#d4a017"></span>모범음식점</label><span class="n" id="n-food0"></span></div>
         <p class="note" style="margin-top:4px" id="food-note">모범음식점은 많아서 지도를 동네 수준까지 확대하면 나옵니다. 출처: 행정안전부 모범음식점, 소상공인시장진흥공단 백년가게. 위치는 같은 가게의 일반음식점 인허가 좌표이고, 음식점이 아닌 백년가게는 나오지 않습니다.</p>
+        <p class="note" style="margin-top:4px" id="food-dem" hidden></p>
         <div class="railhead" style="margin-top:16px"><h3>지형</h3></div>
         <div class="chk"><input type="checkbox" id="ck-shade" checked><label for="ck-shade">산 음영</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-3d"><label for="ck-3d">3D 지형 (기울여 보기)</label><span></span></div>
@@ -117,6 +120,13 @@
     <div class="card"><button class="btn csv" data-csv="ytd-table" data-name="올해_작년_같은기간">CSV</button>
       <div class="tablewrap"><table id="ytd-table"></table></div>
       <p class="note">연도별 차트는 올해가 끝나지 않아 올해 숫자가 작게 보입니다. 여기서는 1월 1일부터 기준일까지를 작년의 같은 날짜까지와 비교합니다. 인허가·폐업 등록이 늦게 들어오는 경우가 있어 최근 몇 주는 올해 쪽이 조금 적게 잡힐 수 있습니다.</p></div>
+  </section>
+
+  <section data-tab="trend" id="chg-sec">
+    <div class="sechead"><h2>최근 1년 순증과 노후 숙박</h2><p class="sub" id="chg-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="chg-table" data-name="최근1년_순증_노후숙박">CSV</button>
+      <div class="tablewrap" style="max-height:520px;overflow:auto"><table id="chg-table"></table></div>
+      <p class="note">순증률 = (최근 365일 신규 인허가 − 폐업) ÷ 1년 전 추정 재고(지금 영업·휴업 − 순증). 재고 20곳 미만은 비워 둡니다. 노후 숙박은 영업 중인 여관·여인숙 가운데 인허가가 20년 넘은 곳의 비중(10곳 미만은 비움)으로, 리모델링·용도 전환 정책의 대상을 가늠하는 데 씁니다. 지도 오른쪽 '시군구 색칠'로 같은 값을 지도에서 볼 수 있습니다.</p></div>
   </section>
 
   <section data-tab="trend" id="recent-sec">
@@ -210,8 +220,11 @@
       <div class="legend"><span><i style="background:#2e7d32"></i>운영 중 숙소(월말, 왼쪽 축)</span><span><i style="background:var(--c0);border-radius:1px"></i>그 달 신규 인허가(오른쪽 축)</span></div>
       <div class="chartwrap"><svg id="park-chart" viewBox="0 0 900 280" role="img" aria-label="국립공원 주변 운영 중 숙소 추이"></svg><div class="tip" id="park-tip" hidden></div></div>
       <p class="note" id="park-note"></p></div>
+    <div class="card" id="park-vis-card" hidden><h3 style="margin-bottom:8px" id="park-vis-title"></h3>
+      <div class="chartwrap"><svg id="park-vis" viewBox="0 0 900 220" role="img" aria-label="국립공원 월별 탐방객"></svg><div class="tip" id="park-vis-tip" hidden></div></div>
+      <p class="note" id="park-vis-note"></p></div>
     <div class="card"><button class="btn csv" data-csv="park-table" data-name="국립공원주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="park-table-title">업종별 영업 숙소 수</h3><div class="tablewrap"><table id="park-table"></table></div>
-      <p class="note">좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 거리는 공원 경계선에서 잰 직선거리이고, 'n km 이내'는 공원 안 숙소를 포함합니다. 공원 경계: OpenStreetMap(금정산은 지정 도면 기반 근사). 국립공원공단 탐방객 통계는 공개 데이터가 설악산 한 곳뿐이라 넣지 않았습니다.</p></div>
+      <p class="note">좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 거리는 공원 경계선에서 잰 직선거리이고, 'n km 이내'는 공원 안 숙소를 포함합니다. 공원 경계: OpenStreetMap(금정산은 지정 도면 기반 근사). 국립공원공단 탐방객 통계는 공개 자료가 있는 공원(현재 설악산)만 '월별 탐방객'으로 보여 줍니다.</p></div>
   </section>
 
   <section data-tab="compare" id="cmp-sec">

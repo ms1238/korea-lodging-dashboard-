@@ -51,6 +51,7 @@ DATALAB_FROM = 2018  # first year the service has data for
 ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntTourismStatsList"
 ICN = "https://apis.data.go.kr/B551177/AviationStatsByCountry/getTotalNumberOfPassenger"  # 인천공항 국가별 여객
 KORAIL_WIDE = "https://apis.data.go.kr/B551457/issueStatistics/wideRailloadStationPer"  # 코레일 광역철도 역별 승하차
+PARK_VISIT_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15107577/v1"  # 국립공원공단 탐방객 통계 (odcloud, cumulative daily table)
 KAC_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1"  # 한국공항공사 공항별 여객실적 (odcloud)
 # 관광수요지수 구성 지표 (한국관광데이터랩): (operation, indicator parameter, indicator codes). Values are indices, not counts.
 KTO_INDEX = [
@@ -61,9 +62,9 @@ KTO_INDEX = [
     ("AreaTarDivService/areaIntlDivList", "intlDivIxCd", ("33",)),
 ]
 # 관광 자원 수요 (same family, own raw file so a code push fetches it when missing): 관광서비스 수요, 숙박업 소비액,
-# 내비게이션 숙박유형 검색량, 문화자연자원 수요
+# 내비게이션 숙박유형 검색량, 미식여행 SNS 언급량, 식음료 소비액, 문화자연자원 수요
 KTO_RES = [
-    ("AreaTarResDemService/areaTarSvcDemList", "tarSvcDemIxCd", ("11", "1107", "1110")),
+    ("AreaTarResDemService/areaTarSvcDemList", "tarSvcDemIxCd", ("11", "1107", "1110", "1103", "1106")),
     ("AreaTarResDemService/areaCulResDemList", "culResDemIxCd", ("12",)),
 ]
 KTO_INDEX_AREAS = ("11", "26", "27", "28", "29", "30", "31", "36", "41", "43", "44", "46", "47", "48", "50", "51", "52", "12")  # DataLab 시도 codes
@@ -101,8 +102,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -281,7 +282,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
@@ -291,7 +292,7 @@ def main():
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -414,6 +415,31 @@ def fetch_century(key):
         page += 1
     print(f"century_shops: {spec['paths'][path]['get'].get('summary')}: {len(rows)} rows", flush=True)
     save_json("century_shops.json", rows)
+
+
+def fetch_park_visitors(key):
+    """국립공원공단 탐방객 통계: the latest odcloud table (daily rows per 탐방지역 since 2018), summed per park and month:
+    {"table": title, "parks": {"설악산": {"201801": n, …}, …}}. So far the published data covers 설악산 only."""
+    spec = requests.get(PARK_VISIT_SPEC, timeout=60).json()
+    path = max(spec["paths"], key=lambda p: spec["paths"][p]["get"].get("summary", "")[-8:])
+    parks, n, page = defaultdict(lambda: defaultdict(int)), 0, 1
+    while True:
+        d = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": page, "perPage": 1000, "returnType": "JSON"}, timeout=90).json()
+        if "data" not in d:
+            raise RuntimeError(str(d)[:200])
+        for r in d["data"]:
+            day = str(r.get("일자", ""))
+            if r.get("국립공원") and re.match(r"\d{4}-\d{2}", day):
+                parks[r["국립공원"]][day[:4] + day[5:7]] += int(r.get("전체 탐방객수") or 0)
+        n += len(d["data"])
+        if not d["data"] or n >= int(d.get("totalCount") or 0):
+            break
+        page += 1
+    title = spec["paths"][path]["get"].get("summary", "")
+    print(f"park_visitors: {title}: {n} rows, parks {sorted(parks)}", flush=True)
+    if not parks:
+        raise RuntimeError("no rows")
+    save_json("park_visitors.json", {"table": title, "parks": {k: dict(sorted(v.items())) for k, v in parks.items()}})
 
 
 def fetch_dong_pop(key):
