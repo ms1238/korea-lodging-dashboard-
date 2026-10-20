@@ -1,4 +1,4 @@
-# Temporary: what 1480523/LvlhPpnSttusService offers (operations, parameters, fields, a sample).
+# Temporary: what 1480523/LvlhPpnSttusService (국립환경과학원 생활계 인구현황, data.go.kr 15058230) offers.
 name: Probe living population API
 on:
   workflow_dispatch:
@@ -17,33 +17,15 @@ jobs:
         run: |
           import os, re, time, requests
           K = os.environ["KEY"]; H = {"User-Agent": "Mozilla/5.0"}
-          def get(u, **kw):
-              for a in range(3):
-                  try: return requests.get(u, headers=H, timeout=40, **kw)
-                  except Exception as e: print("  retry", type(e).__name__, flush=True); time.sleep(5)
-          found = None
-          for kw in ("LvlhPpnSttusService", "생활인구", "생활인구 현황"):
-              t = get("https://www.data.go.kr/tcs/dss/selectDataSetList.do", params={"keyword": kw, "dType": "API", "perPage": 30}).text
-              for cid in dict.fromkeys(re.findall(r"/data/(\d{8})/openapi\.do", t)):
-                  p = get(f"https://www.data.go.kr/data/{cid}/openapi.do").text
-                  if "LvlhPpnSttus" in p:
-                      found = (cid, p); break
-              if found: break
-          if found:
-              cid, p = found
-              print("== FOUND", cid, re.findall(r"<title>(.*?)</title>", p, re.S)[:1])
-              desc = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", p))
-              i = desc.find("상세설명"); print("== desc", desc[i:i + 1500] if i >= 0 else desc[:800])
-              m = re.search(r"swaggerJson\s*=\s*`(.*?)`", p, re.S); sw = m.group(1) if m else ""
-              ops = re.findall(r'"(/\w+)":\{"get"', sw); print("== ops", ops)
-              for i, op in enumerate(ops):
-                  j, k = sw.find(f'"{op}"'), (sw.find(f'"{ops[i + 1]}"') if i + 1 < len(ops) else len(sw)); part = sw[j:k]
-                  print("== OP", op, re.findall(r'"summary":"([^"]*)"', part)[:1],
-                        "\n   params:", list(dict.fromkeys(re.findall(r'"name":"([^"]+)","(?:in|description)":"([^"]*)"', part)))[:20],
-                        "\n   fields:", list(dict.fromkeys(re.findall(r'"(\w+)":\{"type":"(?:string|number|integer)","description":"([^"]*)"', part)))[:40], flush=True)
-                  r = get(f"https://apis.data.go.kr/1480523/LvlhPpnSttusService{op}", params={"serviceKey": K, "pageNo": 1, "numOfRows": 3, "type": "json", "returnType": "json", "_type": "json"})
-                  print("== CALL", op, None if r is None else (r.status_code, r.text[:1500]), flush=True)
-          else:
-              for op in ("/getLvlhPpnSttus", "/getLvlhPpnSttusList", "/lvlhPpnSttus"):
-                  r = get(f"https://apis.data.go.kr/1480523/LvlhPpnSttusService{op}", params={"serviceKey": K, "pageNo": 1, "numOfRows": 3})
-                  print("== GUESS", op, None if r is None else (r.status_code, r.text[:600]), flush=True)
+          p = requests.get("https://www.data.go.kr/data/15058230/openapi.do", headers=H, timeout=60).text
+          txt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", re.sub(r"(?s)<(script|style).*?</\1>", "", p)))
+          for kw in ("설명", "제공기관", "업데이트 주기", "키워드"):
+              i = txt.find(kw); print("== TXT", kw, txt[i:i + 500] if i >= 0 else "-")
+          ops = sorted(set(re.findall(r"LvlhPpnSttusService(/\w+)", p)) | set(re.findall(r'"(/get\w+)"', p)))
+          print("== ops in page", ops)
+          for m in re.finditer(r"(?s)(swagger\w*\s*=\s*[`'\"{].{0,200})", p):
+              print("== swagger hint", m.group(1)[:200].replace("\n", " "))
+          for op in ops or ["/getLvlhPpnSttus"]:
+              for extra in ({"type": "json"}, {"returnType": "json"}, {}):
+                  r = requests.get(f"https://apis.data.go.kr/1480523/LvlhPpnSttusService{op}", params={"serviceKey": K, "pageNo": 1, "numOfRows": 3, **extra}, timeout=60)
+                  print("== CALL", op, extra, r.status_code, r.text[:1500].replace("\n", " "), flush=True)
