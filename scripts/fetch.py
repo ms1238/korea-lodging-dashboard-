@@ -75,10 +75,8 @@ PARKS_QUERY = """[out:json][timeout:240];
  relation["boundary"="protected_area"]["protect_class"="2"](33.0,124.5,38.7,131.0);
  way["boundary"="national_park"](33.0,124.5,38.7,131.0););
 out geom;"""
-# 시도 (admin_level 4) and 시군구 (6; a 시 with 일반구 is level 6, its 구 level 7) boundaries, one query per level
-ADMIN_QUERY = """[out:json][timeout:300];
-relation["boundary"="administrative"]["admin_level"="{}"](33.0,124.5,38.7,131.0);
-out geom;"""
+# 행정동 boundaries (vuski/admdongkor, from 통계청 boundaries; follows reorganizations such as Incheon's new 구 in 2026)
+ADMDONG_REPO = "https://api.github.com/repos/vuski/admdongkor/contents"
 # subway / light-rail stations; 수도권 전철 stations run by Korail are often railway=station + subway=yes
 STATIONS_QUERY = """[out:json][timeout:180];
 (nwr["railway"="station"]["station"~"^(subway|light_rail|monorail)$"](33.0,124.5,38.7,131.0);
@@ -90,8 +88,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode", "admin_osm"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"admin_osm", "geocode", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode", "admin_dong"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"admin_dong", "geocode", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -199,15 +197,21 @@ def osm_ways(el):
             for m in el.get("members", []) if m.get("type") == "way" and m.get("geometry")]
 
 
-def fetch_admin_osm(_key):
-    """시도 and 시군구 boundaries (OpenStreetMap) with their Korean names, for outlining the selected region."""
+def fetch_admin_dong(_key):
+    """The latest 행정동 GeoJSON of vuski/admdongkor (one folder per release, verYYYYMMDD), kept as
+    [{sido, sgg, rings: [[[lon, lat], …], …]}] with coordinates rounded to 5 decimals (~1 m)."""
+    h = {"User-Agent": "korea-lodging-dashboard (github.com/ms1238/korea-lodging-dashboard-)"}
+    ver = max(x["name"] for x in requests.get(ADMDONG_REPO, headers=h, timeout=60).json() if x["type"] == "dir" and x["name"].startswith("ver"))
+    files = [x for x in requests.get(f"{ADMDONG_REPO}/{ver}", headers=h, timeout=60).json() if x["name"].endswith(".geojson")]
+    feats = requests.get(files[0]["download_url"], headers=h, timeout=300).json()["features"]
     out = []
-    for level in (4, 6):
-        els = overpass(ADMIN_QUERY.format(level))
-        out += [{"id": el["id"], "level": level, "name": (el.get("tags", {}).get("name:ko") or el.get("tags", {}).get("name") or "").strip(),
-                 "ways": osm_ways(el)} for el in els]
-        print(f"admin_osm: level {level}: {len(els)} boundaries", flush=True)
-    save_json("admin_osm.json", out)
+    for f in feats:
+        g, p = f["geometry"], f["properties"]
+        polys = g["coordinates"] if g["type"] == "MultiPolygon" else [g["coordinates"]]
+        out.append({"sido": p.get("sidonm", ""), "sgg": p.get("sggnm", ""),
+                    "rings": [[[round(x, 5), round(y, 5)] for x, y in ring] for poly in polys for ring in poly]})
+    print(f"admin_dong: {ver}, {len(out)} 행정동", flush=True)
+    save_json("admin_dong.json", out)
 
 
 def fetch_parks_osm(_key):
@@ -261,7 +265,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode", "admin_osm"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "geocode", "admin_dong"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and (have or ep == "geocode"):  # geocoding takes long; the daily run does it
@@ -270,7 +274,7 @@ def main():
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "geocode": fetch_geocode, "admin_osm": fetch_admin_osm}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "geocode": fetch_geocode, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:

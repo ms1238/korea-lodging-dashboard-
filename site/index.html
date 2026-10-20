@@ -14,6 +14,12 @@
   <header>
     <h1>전국 숙박시설 현황</h1>
     <p class="sub">행정안전부 인허가 API 8종과 한국관광공사 관광지 정보를 매일 자동으로 모읍니다. <span id="updated"></span></p>
+    <div class="intro" id="intro"><button class="x" id="intro-x" type="button" aria-label="안내 닫기">×</button>
+      <b>이렇게 써 보세요</b>
+      <ol><li>위에서 <b>지역을 고르면</b> '지역 진단'에 그 지역 숙박업 상태가 한 장으로 나옵니다.</li>
+        <li><b>'입지 분석'·'관광 수요'</b>에서 역·축제·국립공원 주변 숙소 수와 방문객을 봅니다.</li>
+        <li><b>'＋ 비교에 추가'</b>로 여러 지역을 담아 '지역 비교'에서 나란히 봅니다.</li></ol>
+      <div class="ex">예시로 보기: <button class="btn" data-ex="강원특별자치도/강릉시">강릉시</button><button class="btn" data-ex="부산광역시/해운대구">부산 해운대구</button><button class="btn" data-ex="전북특별자치도/전주시">전주시</button><button class="btn" data-ex="제주특별자치도/제주시">제주시</button></div></div>
   </header>
 
   <div class="controls" role="group" aria-label="필터">
@@ -26,18 +32,15 @@
     <span class="cmpbar"><button class="btn" id="cmp-add" title="지금 고른 광역·기초를 비교 목록에 넣습니다">＋ 비교에 추가</button><span id="cmp-chips" class="chips"></span><label id="union-wrap" class="unionsw" hidden><input type="checkbox" id="cmp-union"> 숙박업 현황에 합쳐 보기<small>켜면 위 드롭다운 대신 담은 지역을 합산해 보여줍니다</small></label></span>
     <div class="tabbar">
       <nav class="tabs" id="tabs" role="tablist" aria-label="보기">
-        <button role="tab" data-t="summary" aria-selected="false">종합</button>
-        <button role="tab" data-t="now" aria-selected="true">현황</button>
-        <button role="tab" data-t="demand" aria-selected="false">관광 수요</button>
-        <button role="tab" data-t="festival" aria-selected="false">축제</button>
-        <button role="tab" data-t="park" aria-selected="false">국립공원</button>
-        <button role="tab" data-t="trend" aria-selected="false">동향</button>
-        <button role="tab" data-t="minbak" aria-selected="false">도시민박</button>
-        <button role="tab" data-t="compare" aria-selected="false">지역 비교</button>
-        <button role="tab" data-t="transit" aria-selected="false">대중교통</button>
+        <button role="tab" data-g="diag" aria-selected="true">지역 진단</button>
+        <button role="tab" data-g="supply" aria-selected="false">숙박 공급</button>
+        <button role="tab" data-g="dem" aria-selected="false">관광 수요</button>
+        <button role="tab" data-g="place" aria-selected="false">입지 분석</button>
+        <button role="tab" data-g="cmp" aria-selected="false">지역 비교</button>
       </nav>
       <button class="btn" id="share-link" title="지금 보고 있는 탭·지역·비교 목록을 담은 주소를 복사합니다">🔗 링크 복사</button>
     </div>
+    <nav class="subtabs" id="subtabs" aria-label="세부 보기" hidden></nav>
   </div>
 
   <div class="card summary" id="summary-card">
@@ -47,6 +50,15 @@
   </div>
 
   <div class="kpis" id="kpis" data-tab="now"></div>
+
+  <section data-tab="summary" id="sum-sec">
+    <div class="sechead"><h2 id="sum-title">종합</h2><p class="sub" id="sum-sub"></p></div>
+    <div class="card"><button class="btn csv" id="sum-print" type="button">인쇄 · PDF</button><h3 style="margin-bottom:8px">한눈에 보기</h3><ul class="sumlist" id="sum-text"></ul></div>
+    <div class="sumgrid" id="sum-grid"></div>
+    <button class="btn more" id="sum-more" type="button" hidden></button>
+    <details class="card" id="sum-def"><summary><h3>지표 정의와 근거 (산식·출처)</h3></summary><button class="btn csv" data-csv="sum-table" data-name="종합_지표">CSV</button><div class="tablewrap" style="margin-top:10px"><table id="sum-table"></table></div>
+      <p class="note" id="sum-note"></p></details>
+  </section>
 
   <section>
     <div class="sechead"><h2>지도</h2><p class="sub" id="map-sub">전국 보기에서는 시군구별 원 크기가 시설 수입니다. 광역을 고르면 시설 하나하나가 점으로 나옵니다.</p></div>
@@ -84,13 +96,6 @@
     </div>
   </section>
 
-  <section data-tab="summary" id="sum-sec">
-    <div class="sechead"><h2 id="sum-title">종합</h2><p class="sub" id="sum-sub"></p></div>
-    <div class="card"><button class="btn csv" id="sum-print" type="button">인쇄 · PDF</button><h3 style="margin-bottom:8px">한눈에 보기</h3><ul class="sumlist" id="sum-text"></ul></div>
-    <div class="sumgrid" id="sum-grid"></div>
-    <div class="card"><button class="btn csv" data-csv="sum-table" data-name="종합_지표">CSV</button><h3 style="margin-bottom:10px">지표 정의와 근거</h3><div class="tablewrap"><table id="sum-table"></table></div>
-      <p class="note" id="sum-note"></p></div>
-  </section>
 
   <section data-tab="now">
     <div class="sechead"><h2>업종별 비중</h2><p class="sub" id="share-sub"></p></div>

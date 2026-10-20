@@ -257,7 +257,7 @@
         if (map.getLayer('rail-line')) map.setFilter('rail-line', ['all', ['==', ['get', 'class'], 'rail'], ['!', ['has', 'service']]]);
       });
       // 고른 지역의 행정구역 경계(흰 테두리 위 진한 선)
-      map.addSource('admin', { type: 'geojson', data: empty });
+      map.addSource('admin', { type: 'geojson', data: empty, attribution: '행정경계: 통계청 SGIS · <a href="https://github.com/vuski/admdongkor" target="_blank">admdongkor</a> (CC BY 4.0)' });
       map.addLayer({ id: 'admin-casing', type: 'line', source: 'admin', layout: { 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-opacity': .85,
         'line-width': ['interpolate', ['linear'], ['zoom'], 6, 4.5, 12, 7] } });
       map.addLayer({ id: 'admin-line', type: 'line', source: 'admin', layout: { 'line-join': 'round' }, paint: { 'line-color': '#1f2d3d',
@@ -1324,7 +1324,7 @@
     $('sum-title').textContent = `종합 · ${regLabel(r)}`;
     $('sum-sub').textContent = `${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 기준. 막대의 표시는 ${peerLevel ? peerName + ' 중 위치(오른쪽일수록 값이 큼)' : '전국이라 비교 대상 없음'}입니다. 매일 새벽 갱신된 자료로 즉시 계산합니다.`;
     $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><p class="easy">${OV_EASY.n}</p><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small></div>`]
-      .concat(OV.map(([k, nm, f]) => { const v = me[k], p = P[k];
+      .concat(OV.filter(([k]) => me[k] != null).map(([k, nm, f]) => { const v = me[k], p = P[k];
         const why = v != null ? '' : '자료 없음';
         return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b><p class="easy">${esc(OV_EASY[k] || '')}</p>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}</div>`; })).join('');
     // 특화 업종(LQ ≥ 1.2, 10곳 이상)
@@ -1336,6 +1336,10 @@
         <div style="font-size:13px;line-height:1.7;margin-top:6px">전국 성장 효과 ${sg(me.ss.ns)}<br>업종 구성 효과 ${sg(me.ss.im)}<br>지역 고유 효과 ${sg(me.ss.rs)}</div>
         <p class="easy">${OV_EASY.ss}</p><small>기준 재고 ${fmt(me.ss.b0)}곳(휴업 포함). Dunn(1960) 변이할당분석</small></div>`);
     }
+    // 처음에는 핵심 4개(영업 숙소·외지인 대비 숙소·순증률·생존율)만, 나머지는 '더 보기'
+    const nCards = $('sum-grid').children.length;
+    $('sum-more').hidden = nCards <= 4;
+    $('sum-more').textContent = $('sum-grid').classList.contains('all') ? '접기' : `지표 더 보기 (${nCards - 4}개)`;
     // 한눈에 보기 문장
     const F = Object.fromEntries(OV.map(o => [o[0], o[2]]));
     const hiP = k => P[k] != null && P[k] >= .8, loP = k => P[k] != null && P[k] <= .2, top = k => `${peerName} 상위 ${Math.max(1, Math.round((1 - P[k]) * 100))}%`;
@@ -1364,6 +1368,11 @@
     csvSet('sum-table', ['지역', '지표', '값', '백분위', '설명', '산식', '근거'], OV.map(([k, nm, , formula, src]) => [regLabel(r), nm, me[k] == null ? '' : +me[k].toFixed(4), P[k] == null ? '' : Math.round(P[k] * 100), OV_EASY[k] || '', formula, src]));
   }
   $('sum-print').onclick = () => print();
+  $('sum-more').onclick = () => { const all = $('sum-grid').classList.toggle('all'); $('sum-more').textContent = all ? '접기' : `지표 더 보기 (${$('sum-grid').children.length - 4}개)`; };
+  // 인쇄할 때는 지표 카드와 정의 표를 모두 펼침
+  let printState = null;
+  addEventListener('beforeprint', () => { printState = [$('sum-grid').classList.contains('all'), $('sum-def').open]; $('sum-grid').classList.add('all'); $('sum-def').open = true; });
+  addEventListener('afterprint', () => { if (!printState) return; $('sum-grid').classList.toggle('all', printState[0]); $('sum-def').open = printState[1]; });
 
   /* ---------- 관광수요지수 세부 지표 (한국관광데이터랩, build.py → kto_index.json) ---------- */
   let kix = null;
@@ -1728,12 +1737,21 @@
   });
 
   /* ---------- 탭 ---------- */
-  const TABS = ['summary', 'now', 'demand', 'festival', 'park', 'trend', 'minbak', 'compare', 'transit'];
-  let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'now';
+  // 탭은 5개 묶음, 묶음 안에 세부 탭(하나뿐이면 세부 줄을 숨김). tab은 세부 탭 이름이라 공유 링크(#tab=…)도 그대로 씀
+  const GROUPS = [['diag', [['summary', '종합']]], ['supply', [['now', '현황'], ['trend', '동향'], ['minbak', '도시민박']]],
+    ['dem', [['demand', '방문객·수요'], ['festival', '축제']]], ['place', [['transit', '대중교통'], ['park', '국립공원']]], ['cmp', [['compare', '지역 비교']]]];
+  const TABS = GROUPS.flatMap(g => g[1].map(x => x[0])), groupOf = t => GROUPS.find(g => g[1].some(x => x[0] === t));
+  const lastSub = {};
+  let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'summary';
   function setTab(t) {
     tab = t;
+    const g = groupOf(t);
+    lastSub[g[0]] = t;
     document.querySelectorAll('[data-tab]').forEach(el => el.classList.toggle('tab-off', el.dataset.tab !== t));
-    document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
+    document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.g === g[0])));
+    $('subtabs').hidden = g[1].length < 2;
+    $('subtabs').innerHTML = g[1].map(([id, nm]) => `<button type="button" data-t="${id}" aria-selected="${id === t}">${nm}</button>`).join('');
+    $('summary-card').hidden = t === 'summary';  // 종합 탭에는 자체 '한눈에 보기'가 있음
     if (t === 'now' && mapReady) map.resize();
     drawRings(t === 'transit' && STN ? STN.st[stnSel] : t === 'festival' && FEST ? FEST.f[fSel] : null, true, t);
     if (mapReady) map.setLayoutProperty('fest', 'visibility', t === 'festival' ? 'visible' : 'none');
@@ -1742,7 +1760,18 @@
     if (t === 'summary') renderOverview();
     writeHash();
   }
-  $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-t]'); if (b) { setTab(b.dataset.t); scrollTo({ top: 0, behavior: 'smooth' }); } });
+  $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b) { const g = GROUPS.find(x => x[0] === b.dataset.g); setTab(lastSub[g[0]] || g[1][0][0]); scrollTo({ top: 0, behavior: 'smooth' }); } });
+  $('subtabs').addEventListener('click', e => { const b = e.target.closest('button[data-t]'); if (b) setTab(b.dataset.t); });
+  // 첫 화면 안내: 예시 지역 바로가기, 닫으면 이 브라우저에서는 다시 안 보임
+  try { if (localStorage.getItem('introHidden')) $('intro').hidden = true; } catch { /* 저장소를 못 쓰면 매번 보임 */ }
+  $('intro-x').onclick = () => { $('intro').hidden = true; try { localStorage.setItem('introHidden', '1'); } catch { /* 무시 */ } };
+  $('intro').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-ex]'); if (!b) return;
+    const [sn, gn] = b.dataset.ex.split('/'), si = S.findIndex(x => x.name === sn), gi = si >= 0 ? S[si].sgg.indexOf(gn) : -1;
+    if (gi < 0) return;
+    await setSido(si); setSgg(gi); setTab('summary');
+    document.querySelector('.controls').scrollIntoView({ behavior: 'smooth' });
+  });
 
   /* ---------- 긴 목록은 10줄까지만 보이고 '더 보기'로 펼침 ---------- */
   const FOLD = 10, unfolded = new Set();
@@ -1777,7 +1806,7 @@
   function writeHash() {
     if (restoring) return;
     const h = new URLSearchParams();
-    if (tab !== 'now') h.set('tab', tab);
+    if (tab !== 'summary') h.set('tab', tab);
     if (state.sido >= 0) h.set('r', state.grp >= 0 ? regKey(curReg()) : [S[state.sido].name, state.sgg >= 0 && S[state.sido].sgg[state.sgg], state.dong >= 0 && dongList()[state.dong], state.ri >= 0 && riList()[state.ri]].filter(Boolean).join('/'));
     if (state.status !== 0) h.set('st', state.status);
     if (state.cmp.length) h.set('cmp', state.cmp.map(regKey).join(','));
@@ -1826,7 +1855,7 @@
     else { map.setTerrain(null); map.easeTo({ pitch: 0, duration: 600 }); }
   };
   const c = meta.coords, d = meta.dedupe;
-  $('foot').textContent = `숙박업과 관광숙박업에 함께 등록된 시설 ${fmt(d.removed)}건은 관광숙박업으로만 셌습니다. 좌표가 없는 야영장 ${fmt(c.dropped_campgrounds)}곳은 제외했고, 좌표가 없는 그 밖의 시설 ${fmt(c.no_coords)}곳은 통계에는 넣고 지도에서는 뺐습니다. 읍·면·동과 리는 주소의 법정동 기준입니다. 출처: 행정안전부 지방행정인허가 API, 한국관광공사 TourAPI·데이터랩(공공데이터포털), 지형 AWS Terrain Tiles.`;
+  $('foot').textContent = `숙박업과 관광숙박업에 함께 등록된 시설 ${fmt(d.removed)}건은 관광숙박업으로만 셌습니다. 좌표가 없는 야영장 ${fmt(c.dropped_campgrounds)}곳은 제외했고, 좌표가 없는 그 밖의 시설 ${fmt(c.no_coords)}곳은 통계에는 넣고 지도에서는 뺐습니다. 읍·면·동과 리는 주소의 법정동 기준입니다. 출처: 행정안전부 지방행정인허가 API, 한국관광공사 TourAPI·데이터랩(공공데이터포털), 지형 AWS Terrain Tiles, 행정구역 경계 통계청 SGIS(공공누리 제1유형)·vuski/admdongkor(CC BY 4.0).`;
   renderArrivals();
   update(false);
   await restore();
