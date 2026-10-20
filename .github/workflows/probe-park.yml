@@ -1,0 +1,30 @@
+# Temporary: 국립공원공단 탐방객 통계 (odcloud 15107577) tables, fields and a sample.
+name: Probe national park visitors
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-park.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, requests
+          K = os.environ["KEY"]
+          spec = requests.get("https://infuser.odcloud.kr/oas/docs?namespace=15107577/v1", timeout=60).json()
+          paths = list(spec.get("paths", {}))
+          print("== paths", len(paths), flush=True)
+          for p in paths:
+              print("  ", p, spec["paths"][p].get("get", {}).get("summary"), flush=True)
+          for p in paths[-3:] + paths[:1]:
+              try:
+                  r = requests.get("https://api.odcloud.kr/api" + p, params={"serviceKey": K, "page": 1, "perPage": 3, "returnType": "JSON"}, timeout=60)
+                  print(f"== {p} {r.status_code} {r.text[:1200]!r}", flush=True)
+              except Exception as e:
+                  print(f"== {p} ERR {e}", flush=True)
