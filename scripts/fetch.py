@@ -422,6 +422,11 @@ def fetch_geocode(_key):
     path = os.path.join(RAW_DIR, "geocode.json")
     cache = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
     todo = sorted({geo_query(a) for a in restaurant_addrs() if a.strip()} - set(cache))[:GEOCODE_BUDGET // 2]
+    try:  # 브이월드 refuses some networks (it dropped every request from GitHub's servers): test once before spending the run on it
+        requests.get(VWORLD_GEOCODER, params={"service": "address", "request": "getcoord", "address": "서울특별시 중구 세종대로 110",
+                                              "type": "road", "format": "json", "key": vkey}, timeout=30).json()
+    except (requests.RequestException, ValueError) as e:
+        raise RuntimeError(f"브이월드 지오코더에 접속할 수 없음: {e}") from e
     deadline = time.time() + GEOCODE_MINUTES * 60
 
     def one(q):
