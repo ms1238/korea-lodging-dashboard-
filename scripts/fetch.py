@@ -425,9 +425,11 @@ def fetch_food_coords(key):
         if spent or time.time() > deadline:
             return k, "retry"
         params = {"serviceKey": key, "pageNo": 1, "numOfRows": 100, "returnType": "json", **cond}
-        for attempt in range(3):
+        for attempt in range(4):
             try:
                 d = requests.get(BASE.format("general_restaurants"), params=params, timeout=60).json()
+                if "SERVICETIMEOUT" in str(d)[:300]:  # a passing gateway timeout: try again
+                    raise ValueError("service timeout")
                 break
             except (requests.RequestException, ValueError):
                 time.sleep(3 + attempt * 3)
