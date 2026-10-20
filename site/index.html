@@ -14,6 +14,8 @@
   <header>
     <h1>전국 숙박시설 현황</h1>
     <p class="sub">행정안전부 인허가 API 8종과 한국관광공사 관광지 정보를 매일 자동으로 모읍니다. <span id="updated"></span></p>
+    <details class="fresh" id="fresh"><summary>데이터 기준일</summary><div class="tablewrap"><table id="fresh-table"></table></div>
+      <p class="note">자료마다 공개 주기가 달라 최신 시점이 다릅니다. 인용할 때는 이 기준일을 함께 적어 주세요.</p></details>
     <div class="intro" id="intro"><button class="x" id="intro-x" type="button" aria-label="안내 닫기">×</button>
       <b>이렇게 써 보세요</b>
       <ol><li>위에서 <b>지역을 고르면</b> '지역 진단'에 그 지역 숙박업 상태가 한 장으로 나옵니다.</li>
@@ -23,6 +25,7 @@
   </header>
 
   <div class="controls" role="group" aria-label="필터">
+    <span class="suggwrap rsearch"><input type="search" id="reg-q" placeholder="지역 검색 (예: 강릉, 해운대)" autocomplete="off" role="combobox" aria-controls="reg-sugg" aria-label="지역 검색"><span class="sugg" id="reg-sugg" role="listbox" hidden></span></span>
     <label for="f-sido">광역<select id="f-sido"><option value="-1">전국</option></select></label>
     <label for="f-sgg">기초<select id="f-sgg" disabled><option value="-1">전체</option></select></label>
     <label for="f-dong">읍·면·동<select id="f-dong" disabled><option value="-1">전체</option></select></label>
@@ -100,6 +103,15 @@
   <section data-tab="now">
     <div class="sechead"><h2>업종별 비중</h2><p class="sub" id="share-sub"></p></div>
     <div class="card"><button class="btn csv" data-csv="share" data-name="업종별_비중">CSV</button><div class="sharelist" id="share"></div><p class="note">세로선은 전국 비중입니다(지역을 골랐을 때).</p></div>
+  </section>
+
+  <section data-tab="trend" id="recent-sec">
+    <div class="sechead"><h2>최근 인허가·폐업</h2><p class="sub" id="recent-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="recent-table" data-name="최근_인허가_폐업">CSV</button>
+      <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="recent-per" role="group" aria-label="기간"><button data-v="30" aria-pressed="true">30일</button><button data-v="90" aria-pressed="false">90일</button><button data-v="365" aria-pressed="false">1년</button></div>
+        <div class="seg" id="recent-kind" role="group" aria-label="구분"><button data-v="all" aria-pressed="true">전체</button><button data-v="new" aria-pressed="false">신규 인허가</button><button data-v="close" aria-pressed="false">폐업</button></div></div>
+      <div class="tablewrap" style="max-height:480px;overflow:auto"><table id="recent-table"></table></div>
+      <p class="note" id="recent-note">줄을 누르면 지도가 그 시설로 이동합니다. 인허가·폐업 일자는 지자체가 등록한 날짜라, 실제 개업·폐업과 며칠에서 몇 주 차이가 날 수 있고 등록이 늦게 반영되기도 합니다.</p></div>
   </section>
 
   <section data-tab="trend">

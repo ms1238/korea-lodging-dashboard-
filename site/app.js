@@ -320,7 +320,17 @@
         new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(
           `${p.img ? `<img src="${esc(p.img)}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(p.name)}</b><br>${esc(TOUR.types[p.t])}<br>${esc(p.addr)}<br>${p.n3 != null ? `영업 숙소 반경 1km ${fmt(p.n1)}곳 · 3km ${fmt(p.n3)}곳<br>` : ''}<small>출처: 한국관광공사 TourAPI</small>`).addTo(map);
       });
-      map.on('click', 'areas', async e => { const p = e.features[0].properties; await setSido(p.si); setSgg(p.gi); });
+      // 전국 보기의 시군구 원: 그 지역으로 가거나 비교 목록에 담기
+      map.on('click', 'areas', e => {
+        const { si, gi, n } = e.features[0].properties, r = { si, gi };
+        const pp = new maplibregl.Popup({ maxWidth: '240px', className: 'areapop' }).setLngLat(e.lngLat).setHTML(
+          `<b>${esc(regLabel(r))}</b><br>시설 ${fmt(n)}곳<br><button class="btn" data-a="go">이 지역 보기</button><button class="btn" data-a="cmp">＋ 비교에 담기</button>`).addTo(map);
+        pp.getElement().addEventListener('click', async ev => {
+          const b = ev.target.closest('button[data-a]'); if (!b) return;
+          if (b.dataset.a === 'go') { pp.remove(); await setSido(si); setSgg(gi); }
+          else b.textContent = addCmp(r) ? '담았습니다 ✓' : state.cmp.length >= 7 ? '비교는 7곳까지' : '이미 담겨 있음';
+        });
+      });
       const pop = (ll, html) => new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(ll).setHTML(html).addTo(map);
       map.on('click', 'airports', e => {
         const p = e.features[0].properties, nm = p['name:ko'] || p.name, k = kacOf(nm), n = k ? kac.years.length - 1 : 0;
@@ -547,6 +557,7 @@
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
     renderStations();
+    renderRecent();
     syncMore();
     renderFest();
     renderPark();
@@ -626,7 +637,7 @@
   const short = n => n.replace(/(통합특별시|특별자치시|특별자치도|특별시|광역시)$/, '').replace(/^(.).(.)도$/, '$1$2');
   // 지역 = {si, gi} 또는 묶음 {si, gi: -1, grp}. gisOf: 해당 기초 목록 (null = 광역 전체)
   const gisOf = r => r.grp != null ? S[r.si].groups[r.grp].gis : r.gi >= 0 ? [r.gi] : null;
-  const regLabel = r => r.si < 0 ? '전국' : r.grp != null ? `${short(S[r.si].name)} ${S[r.si].groups[r.grp].name}` : r.gi < 0 ? S[r.si].name : `${short(S[r.si].name)} ${S[r.si].sgg[r.gi]}`;
+  const regLabel = r => r.si < 0 ? '전국' : r.grp != null ? `${short(S[r.si].name)} ${S[r.si].groups[r.grp].name}` : r.gi < 0 || S[r.si].sgg[r.gi] === S[r.si].name ? S[r.si].name : `${short(S[r.si].name)} ${S[r.si].sgg[r.gi]}`;
   const inReg = (r, si, gi) => r.si < 0 || (si === r.si && (!gisOf(r) || gisOf(r).includes(gi)));
   const curReg = () => state.sido < 0 ? { si: -1, gi: -1 } : state.grp >= 0 ? { si: state.sido, gi: -1, grp: state.grp } : { si: state.sido, gi: state.sgg };
   const regions = () => state.cmp.length ? state.cmp : [curReg()];
@@ -651,12 +662,13 @@
     $('cmp-chips').innerHTML = state.cmp.map((r, i) => `<span class="chip"><span class="sw" style="background:var(--c${i})"></span>${esc(regLabel(r))}<button data-i="${i}" aria-label="${esc(regLabel(r))} 빼기">×</button></span>`).join('')
       + (state.cmp.length ? '<button class="btn" id="cmp-clear">비우기</button>' : '');
   }
-  $('cmp-add').onclick = () => {
-    const r = curReg();
-    if (state.cmp.length >= 7 || state.cmp.some(x => regKey(x) === regKey(r))) return;
+  function addCmp(r) {  // 비교 목록에 담기(최대 7곳, 중복 제외): 버튼·지역 검색·지도에서 씀
+    if (state.cmp.length >= 7 || state.cmp.some(x => regKey(x) === regKey(r))) return false;
     state.cmp.push(r); renderChips(); renderCompare(); applyUnion(); writeHash();
     if (!unionOn()) fitRegs(state.cmp);
-  };
+    return true;
+  }
+  $('cmp-add').onclick = () => addCmp(curReg());
   $('cmp-chips').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.id === 'cmp-clear') state.cmp = []; else state.cmp.splice(+b.dataset.i, 1);
@@ -839,6 +851,62 @@
     setTimeout(() => { $('summary-copy').textContent = '요약 복사'; }, 1500);
   };
 
+  /* ---------- 지역 검색: 광역·시군구 이름(공백 무시, "강원 강릉"도 됨). 코드 = 광역×1000 + (시군구+1) ---------- */
+  const regOfCode = c => ({ si: Math.floor(c / 1000), gi: c % 1000 - 1 });
+  searchBox($('reg-q'), $('reg-sugg'), q => {
+    if (!q) return null;
+    const items = S.flatMap((sd, si) => [[si * 1000, sd.name, `${short(sd.name)}|${sd.name}`], ...sd.sgg.map((g, gi) => [si * 1000 + gi + 1, g, `${g}|${short(sd.name)}${g}|${sd.name}${g}`])]);
+    const nm = c => items.find(x => x[0] === c)[1], hay = new Map(items.map(x => [x[0], x[2].replace(/\s/g, '')]));
+    const all = items.map(x => x[0]).filter(c => hay.get(c).includes(q) || nm(c).includes(q));
+    const ids = all.sort((a, b) => nm(b).startsWith(q) - nm(a).startsWith(q) || (a % 1000 === 0) - (b % 1000 === 0) || nm(a).localeCompare(nm(b), 'ko')).slice(0, 12);
+    return { ids, html: ids.map((c, k) => { const r = regOfCode(c);
+      return `<div class="srow"><button type="button" role="option" data-i="${c}" aria-selected="${k === 0}"><b>${esc(nm(c))}</b><small>${r.gi < 0 ? '광역' : esc(S[r.si].name)}</small></button><button type="button" class="btn add" data-cmp="${c}" title="비교 목록에 담기">＋비교</button></div>`; }).join('')
+      + (all.length > ids.length ? `<p class="note">${fmt(all.length - ids.length)}곳 더 있습니다. 더 입력해 좁혀 보세요.</p>` : '') || '<p class="note">맞는 지역이 없습니다.</p>' };
+  }, async c => { const r = regOfCode(c); await setSido(r.si); if (r.gi >= 0) setSgg(r.gi); });
+  $('reg-sugg').addEventListener('mousedown', e => {
+    const b = e.target.closest('button[data-cmp]'); if (!b) return;
+    e.preventDefault();
+    b.textContent = addCmp(regOfCode(+b.dataset.cmp)) ? '담음 ✓' : state.cmp.length >= 7 ? '7곳까지' : '이미 있음';
+  });
+
+  /* ---------- 최근 인허가·폐업: 광역을 고르면 시설 목록(pts/<si>.json)에서 기간 안의 신규 인허가·폐업을 날짜순으로 ---------- */
+  let recentDays = 30, recentKind = 'all';
+  function renderRecent() {
+    document.querySelectorAll('#recent-per button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === recentDays)));
+    document.querySelectorAll('#recent-kind button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === recentKind)));
+    if (!D) { $('recent-table').innerHTML = ''; $('recent-sub').textContent = '광역이나 기초를 고르면 그 지역의 최근 신규 인허가·폐업 시설 목록이 나옵니다.'; csvSet('recent-table', [], []); return; }
+    const end = meta.updated.slice(0, 10), d0 = new Date(end); d0.setDate(d0.getDate() - recentDays);
+    const from = d0.toISOString().slice(0, 10), ev = [];
+    for (const r of D.rows) {
+      if (!inDetail(r) || !state.types.has(r[2])) continue;
+      if (recentKind !== 'close' && r[11] >= from && r[11] <= end) ev.push(['신규', r[11], r]);
+      if (recentKind !== 'new' && r[6] === 2 && r[12] >= from && r[12] <= end) ev.push(['폐업', r[12], r]);
+    }
+    ev.sort((a, b) => b[1].localeCompare(a[1]));
+    const place = r => U ? U.names[r[3]] : `${S[state.sido].sgg[r[3]]}${D.dongs[r[3]] && D.dongs[r[3]][r[4]] ? ' ' + D.dongs[r[3]][r[4]] : ''}`;
+    const nNew = ev.filter(e => e[0] === '신규').length, nCl = ev.length - nNew, SHOW = 300;
+    $('recent-sub').textContent = `${regionName()} · ${from.replace(/-/g, '.')}~${end.replace(/-/g, '.')} · 선택 업종 신규 ${fmt(nNew)}곳, 폐업 ${fmt(nCl)}곳`;
+    $('recent-table').innerHTML = `<thead><tr><th>날짜</th><th>구분</th><th>업소명</th><th>업종</th><th>지역</th><th>지금 상태</th></tr></thead><tbody>`
+      + ev.slice(0, SHOW).map(([k, d, r], i) => `<tr data-k="${i}"><td>${d.replace(/-/g, '.')}</td><td style="color:${k === '폐업' ? 'var(--closed)' : 'var(--ok)'}">${k}</td><td style="text-align:left">${esc(r[9])}</td><td style="text-align:left">${esc(T[r[2]].name)}</td><td style="text-align:left">${esc(place(r))}</td><td>${ST[r[6]]}</td></tr>`).join('')
+      + (ev.length > SHOW ? `<tr><td colspan="6" class="note">${fmt(ev.length - SHOW)}건 더 있습니다(CSV에는 모두 들어 있음).</td></tr>` : '')
+      + (ev.length ? '' : '<tr><td colspan="6" class="note">이 기간에 해당하는 시설이 없습니다.</td></tr>') + '</tbody>';
+    $('recent-table').onclick = e => {
+      const tr = e.target.closest('tr[data-k]'); if (!tr || !mapReady) return;
+      const r = ev[+tr.dataset.k][2]; if (r[0] == null) return;
+      document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      map.flyTo({ center: [r[1], r[0]], zoom: 16, duration: 900 });
+      new maplibregl.Popup({ maxWidth: '260px' }).setLngLat([r[1], r[0]]).setHTML(`<b>${esc(r[9])}</b><br>${esc(T[r[2]].name)} · ${ST[r[6]]}<br>${esc(r[10])}<br><small>인허가 ${esc(r[11])}${r[12] ? ' · 폐업 ' + esc(r[12]) : ''}${r[13] ? ' · 위치는 동 단위 근사' : ''}</small>`).addTo(map);
+    };
+    csvSet('recent-table', ['날짜', '구분', '업소명', '업종', '지역', '주소', '지금 상태', '인허가일', '폐업일'], ev.map(([k, d, r]) => [d, k, r[9], T[r[2]].name, place(r), r[10], ST[r[6]], r[11], r[12]]));
+  }
+  $('recent-per').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { recentDays = +b.dataset.v; renderRecent(); } });
+  $('recent-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { recentKind = b.dataset.v; renderRecent(); } });
+
+  /* ---------- 데이터 기준일 (build.py → meta.fresh) ---------- */
+  $('fresh-table').innerHTML = '<thead><tr><th>자료</th><th>최신 기준</th><th>갱신</th></tr></thead><tbody>'
+    + (meta.fresh || []).map(([n, d, c]) => `<tr><td>${esc(n)}</td><td><b>${esc(d)}</b></td><td>${esc(c)}</td></tr>`).join('') + '</tbody>';
+  $('fresh').hidden = !(meta.fresh || []).length;
+
   /* ---------- 대중교통: 역세권 숙소 (지하철·도시철도역 반경 안 영업 숙소, build.py → stations.json) ---------- */
   let STN = null, stnSel = -1;
   const kmLabel = km => km < 1 ? km * 1000 + 'm' : km + 'km';
@@ -920,7 +988,7 @@
       if (box.hidden || !ids.length) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault(); at = (at + (e.key === 'ArrowDown' ? 1 : ids.length - 1)) % ids.length;
-        box.querySelectorAll('button').forEach((b, k) => { b.setAttribute('aria-selected', String(k === at)); if (k === at) b.scrollIntoView({ block: 'nearest' }); });
+        box.querySelectorAll('button[data-i]').forEach((b, k) => { b.setAttribute('aria-selected', String(k === at)); if (k === at) b.scrollIntoView({ block: 'nearest' }); });
       } else if (e.key === 'Enter') { e.preventDefault(); choose(ids[at]); }
       else if (e.key === 'Escape') close();
     };

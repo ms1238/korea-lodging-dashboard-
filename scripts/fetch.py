@@ -210,7 +210,7 @@ def fetch_admin_dong(_key):
         out.append({"sido": p.get("sidonm", ""), "sgg": p.get("sggnm", ""),
                     "rings": [[[round(x, 5), round(y, 5)] for x, y in ring] for poly in polys for ring in poly]})
     print(f"admin_dong: {ver}, {len(out)} 행정동", flush=True)
-    save_json("admin_dong.json", out)
+    save_json("admin_dong.json", {"ver": ver, "dongs": out})
 
 
 def fetch_parks_osm(_key):

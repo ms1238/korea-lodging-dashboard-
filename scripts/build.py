@@ -497,8 +497,10 @@ def write_admin(sidos, sido_meta, merged):
     path = os.path.join(RAW, "admin_dong.json")
     if not os.path.exists(path):
         return
+    raw = json.load(open(path, encoding="utf-8"))
+    dongs = raw["dongs"] if isinstance(raw, dict) else raw  # older caches hold the bare list
     by_sido = defaultdict(lambda: defaultdict(list))
-    for d in json.load(open(path, encoding="utf-8")):
+    for d in dongs:
         sido = SIDO_ALIASES.get(d["sido"], d["sido"])
         if merged and sido in ("광주광역시", "전라남도"):
             sido = MERGED_GWANGJU_JEONNAM
@@ -519,6 +521,7 @@ def write_admin(sidos, sido_meta, merged):
         with open(os.path.join(OUT, "admin", f"{si}.json"), "w", encoding="utf-8") as f:
             json.dump({"sido": lines([p for v in groups.values() for p in v]) if groups else None, "sgg": sgg}, f, separators=(",", ":"))
     print(f"admin: 시도 {sum(1 for s in sidos if by_sido.get(s))} of {len(sidos)} outlined; 시군구 without an outline: {' '.join(missing) or '-'}", flush=True)
+    return raw.get("ver") if isinstance(raw, dict) else None
 
 
 PARK_BANDS = (1, 3, 5)  # km from a national park's boundary
@@ -1067,6 +1070,30 @@ def write_arrivals():
                   f, ensure_ascii=False, separators=(",", ":"))
 
 
+def data_dates(admin_ver, pop_ym):
+    """[[자료, 기준 시점, 갱신]] for the page's '데이터 기준일' panel, read from the files just written."""
+    def out(name):
+        p = os.path.join(OUT, name)
+        return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    ym = lambda s: f"{s[:4]}.{s[4:6]}" if s else "-"
+    today = datetime.now(KST).strftime("%Y.%m.%d")
+    vis, kto, arr, icn, kac, stn = out("visits.json"), out("kto_index.json"), out("arrivals.json"), out("icn.json"), out("kac.json"), out("stations.json")
+    rows = [["숙박 인허가 8종 (행정안전부)", today, "매일"],
+            ["관광지·축제 (한국관광공사 TourAPI)", today, "매일"],
+            ["외지인·외국인 방문객 (한국관광데이터랩)", f"{ym(vis.get('last'))}.{vis['last'][6:]}까지" if vis.get("last") else "-", "매일(최근 3개월 다시 받음)"],
+            ["관광수요지수 (한국관광공사)", ym((kto.get("months") or [""])[-1]), "월별"],
+            ["주민등록 인구 (행정안전부)", f"{ym(pop_ym)} 말" if pop_ym else "-", "월별"],
+            ["방한 외래관광객 (한국문화관광연구원)", ym((arr.get("months") or [""])[-1]), "월별"],
+            ["인천공항 국가별 여객 (인천국제공항공사)", ym((icn.get("months") or [""])[-1]), "월별"],
+            ["공항별 여객 (한국공항공사)", f"{(kac.get('years') or ['-'])[-1]}년", "연 단위"],
+            ["코레일 광역철도 승하차", ym((stn.get("kym") or [""])[-1]), "월별"],
+            ["코레일 간선열차 승하차", ym((stn.get("mym") or [""])[-1]), "매일(월별 합계)"],
+            ["모범음식점·백년가게 (행정안전부·소상공인시장진흥공단)", today, "매일"],
+            ["행정구역 경계 (통계청 SGIS·admdongkor)", f"{admin_ver[3:7]}.{admin_ver[7:9]}.{admin_ver[9:]}판" if admin_ver else "-", "새 판이 나오면"],
+            ["철도·역·국립공원 경계 (OpenStreetMap)", today, "매일"]]
+    return rows
+
+
 def main():
     rows = load()
     merged = any((r["road"] or r["lot"]).startswith(MERGED_GWANGJU_JEONNAM) for r in rows)
@@ -1248,7 +1275,7 @@ def main():
     write_festivals(rows, sidos, sgg_of, tidx, merged)
     write_park_lodging(rows, parks, sidos, sgg_of, tidx)
     write_food()
-    write_admin(sidos, sido_meta, merged)
+    admin_ver = write_admin(sidos, sido_meta, merged)
     if visits:
         with open(os.path.join(OUT, "visits.json"), "w", encoding="utf-8") as f:
             json.dump(visits, f, separators=(",", ":"))
@@ -1272,6 +1299,7 @@ def main():
         "zones": ZONES, "bldgs": BLDGS,
         "visitors": visitors,
         "pop_ym": pop_ym,
+        "fresh": data_dates(admin_ver, pop_ym),
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
