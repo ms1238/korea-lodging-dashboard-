@@ -759,8 +759,10 @@
     const kf = v => v == null ? '-' : v.toFixed(1);
     $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 100만 명당 숙소</th><th>외국인 100만 명당 숙소</th>${KX.map(k => `<th>${k[1]} 지수</th>`).join('')}<th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th></tr></thead><tbody>`
       + R.map((r, i) => { const x = stats[i];
-        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}${kv[i].map(v => `<td>${kf(v)}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
+        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}${kv[i].map(v => `<td>${kf(v)}${v != null && kixApprox(r) ? '*' : ''}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
     $('cmp-kix-note').hidden = !kix;
+    if (kix && !$('cmp-kix-note').dataset.base) $('cmp-kix-note').dataset.base = $('cmp-kix-note').textContent;
+    if (kix) $('cmp-kix-note').textContent = $('cmp-kix-note').dataset.base + (R.some(kixApprox) ? ' *는 관광수요지수가 일반구별로만 제공되는 시라서 일반구 값의 단순 평균(근사)입니다.' : '');
     csvSet('cmp-table', ['지역', '영업 숙소', '연간 외지인', '연간 외국인', '외지인 100만 명당 숙소', '외국인 100만 명당 숙소', ...KX.map(k => `${k[1]} 지수(12개월 평균)`), `${Y3 + 1}~${yNow} 증가율(%)`, '누적 폐업률(%)', '영업 도시민박'],
       R.map((r, i) => { const x = stats[i];
         return [regLabel(r), x.st[0], x.v ? x.v[0] : '', x.v ? x.v[1] : '', ...[0, 1].map(j => x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(2) : ''),
@@ -1326,7 +1328,8 @@
     $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><p class="easy">${OV_EASY.n}</p><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small></div>`]
       .concat(OV.filter(([k]) => me[k] != null).map(([k, nm, f]) => { const v = me[k], p = P[k];
         const why = v != null ? '' : '자료 없음';
-        return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b><p class="easy">${esc(OV_EASY[k] || '')}</p>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}</div>`; })).join('');
+        const approx = /^k21/.test(k) && kixApprox(r) ? '<small>일반구 값의 단순 평균(근사)</small>' : '';
+        return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b><p class="easy">${esc(OV_EASY[k] || '')}</p>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}${approx}</div>`; })).join('');
     // 특화 업종(LQ ≥ 1.2, 10곳 이상)
     const spec = me.lq.map((q, i) => [q, i]).filter(([q]) => q != null && q >= 1.2).sort((x, y) => y[0] - x[0]).slice(0, 3);
     $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>특화 업종 (입지계수 LQ)</h4>${spec.length ? spec.map(([q, i]) => `<div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(T[i].name)}</span><b style="font-size:16px;display:inline">${q.toFixed(2)}</b></div>`).join('') : '<b>-</b>'}<p class="easy">${OV_EASY.lq}</p><small>LQ = (지역 업종 비중) ÷ (전국 업종 비중). 1.2 이상·10곳 이상만. Isard(1960) 지역분석의 입지계수</small></div>`);
@@ -1398,14 +1401,18 @@
     else if (!cur || cur.si < 0) rows = S.map((sd, si) => [sd.name, String(si)]);
     else rows = S[cur.si].sgg.map((g, gi) => [g, `${cur.si}:${gi}`]);
     rows = rows.filter(([, k]) => row(k));
+    if ([ck, ...rows.map(x => x[1])].some(k => k && kix.approx && kix.approx.includes(k)))
+      $('kix-sub').textContent += ' *표시한 시는 관광수요지수가 일반구별로만 제공돼 일반구 값의 단순 평균(근사)으로 보여 줍니다.';
     const cols = KIX_SHOW.map(ixi), val = (k, j) => (row(k) || [])[j]?.[li];
     const range = cols.map(j => { const xs = rows.map(([, k]) => val(k, j)).filter(x => x != null); return [Math.min(...xs), Math.max(...xs)]; });
     const heat = (x, [a, b]) => x == null || b <= a ? '' : `style="background:color-mix(in srgb,var(--c0) ${Math.round(6 + (x - a) / (b - a) * 56)}%,transparent)"`;
     $('kix-title').textContent = `${U ? '선택 지역' : !cur || cur.si < 0 ? '광역' : S[cur.si].name + ' 시군구'}별 지표 · ${ym(M[li])}`;
     $('kix-table').innerHTML = `<thead><tr><th>지역</th>${cols.map(j => `<th>${esc(kix.ix[j][1])}</th>`).join('')}</tr></thead><tbody>`
-      + rows.map(([nm, k]) => `<tr${k === ck ? ' class="sum"' : ''}><td>${esc(nm)}</td>${cols.map((j, c) => { const x = val(k, j); return `<td ${heat(x, range[c])}>${x == null ? '·' : x.toFixed(1)}</td>`; }).join('')}</tr>`).join('') + '</tbody>';
+      + rows.map(([nm, k]) => `<tr${k === ck ? ' class="sum"' : ''}><td>${esc(nm)}${kix.approx && kix.approx.includes(k) ? '*' : ''}</td>${cols.map((j, c) => { const x = val(k, j); return `<td ${heat(x, range[c])}>${x == null ? '·' : x.toFixed(1)}</td>`; }).join('')}</tr>`).join('') + '</tbody>';
     csvSet('kix-table', ['지역', '기준월', ...kix.ix.map(x => x[1])], rows.flatMap(([nm, k]) => M.map((m, i) => [nm, m, ...kix.ix.map((_, j) => row(k)[j][i] ?? '')])));
   }
+  // 일반구로만 제공되는 시(수원·고양 등)는 일반구 값의 단순 평균(build.py)
+  const kixApprox = r => !!(kix && kix.approx && r && r.si >= 0 && r.gi >= 0 && kix.approx.includes(`${r.si}:${r.gi}`));
   // 지역 하나(광역 또는 기초)의 최근 12개월 평균 지수
   function kixAvg(r, code) {
     if (!kix || r.si < 0 || r.grp != null) return null;

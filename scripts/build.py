@@ -941,8 +941,10 @@ KTO_IX = [("21", "관광 체류 강도"), ("2101", "타권역 방문자 비중")
 
 
 def write_kto_index(sidos, sgg_of):
-    """관광수요지수 세부 지표 (한국관광데이터랩) per 시도 / 시군구 and month: {"months", "ix", "v": {"si" or "si:gi": [[value per month] per indicator]}}.
-    Old 광주광역시/전라남도 rows go to 전남광주통합특별시 when it exists (its own 시도 row wins)."""
+    """관광수요지수 세부 지표 (한국관광데이터랩) per 시도 / 시군구 and month: {"months", "ix", "v": {"si" or "si:gi": [[value per month] per indicator]},
+    "approx": [keys]}. Old 광주광역시/전라남도 rows go to 전남광주통합특별시 when it exists (its own 시도 row wins). Cities the
+    service reports only by 일반구 ("수원시 장안구") get the plain mean of their 구 (an index, so no weights exist); those keys
+    are listed in "approx"."""
     path = os.path.join(RAW, "kto_index.jsonl")
     if not os.path.exists(path):
         return
@@ -954,7 +956,7 @@ def write_kto_index(sidos, sgg_of):
     for sd in sidos:
         for g in sgg_of[sd]:
             by_name[g].append(sd)
-    out, unmatched = {}, set()
+    out, unmatched, parts = {}, set(), defaultdict(list)
     for r in sorted(rows, key=lambda r: r["sido"] == MERGED_GWANGJU_JEONNAM):  # the merged 시도's own rows last, so they win
         old = r["sido"] in ("광주광역시", "전라남도")
         sido = MERGED_GWANGJU_JEONNAM if old and merged else SIDO_ALIASES.get(r["sido"], r["sido"])
@@ -968,15 +970,26 @@ def write_kto_index(sidos, sgg_of):
             key = str(si)
         else:
             g = r["sgg"] if r["sgg"] in sgg_of[sido] else (r["sgg"] if len(by_name.get(r["sgg"], [])) == 1 else None)
+            city = re.fullmatch(r"(\S+시) \S+구", r["sgg"])
+            if g is None and city and city.group(1) in sgg_of[sido]:
+                parts[(f"{si}:{sgg_of[sido].index(city.group(1))}", xi[r["ix"]], mi[r["ym"]])].append(r["v"])
+                continue
             if g is None:
                 unmatched.add(f"{r['sido']} {r['sgg']}")
                 continue
             sd = by_name[g][0] if g not in sgg_of[sido] else sido
             key = f"{sidos.index(sd)}:{sgg_of[sd].index(g)}"
         out.setdefault(key, [[None] * len(months) for _ in KTO_IX])[xi[r["ix"]]][mi[r["ym"]]] = r["v"]
-    print(f"kto_index: {len(months)} months {months[:1]}~{months[-1:]}, {len(out)} areas; unmatched: {' '.join(sorted(unmatched))}", flush=True)
+    approx = set()
+    for (key, j, m), vs in parts.items():
+        cell = out.setdefault(key, [[None] * len(months) for _ in KTO_IX])[j]
+        if cell[m] is None:  # the city's own row, when there is one, wins
+            cell[m] = round(sum(vs) / len(vs), 2)
+            approx.add(key)
+    print(f"kto_index: {len(months)} months {months[:1]}~{months[-1:]}, {len(out)} areas ({len(approx)} from the mean of their 일반구); "
+          f"unmatched: {' '.join(sorted(unmatched))}", flush=True)
     with open(os.path.join(OUT, "kto_index.json"), "w", encoding="utf-8") as f:
-        json.dump({"months": months, "ix": KTO_IX, "v": out}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"months": months, "ix": KTO_IX, "v": out, "approx": sorted(approx)}, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def add_population(sidos, sgg_of, sido_meta):
