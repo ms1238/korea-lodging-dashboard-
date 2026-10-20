@@ -547,7 +547,10 @@
       [topT && topT[0] ? esc(T[topT[1]].name) : '-', topT && a.total ? `최다 업종 (${pct(topT[0], a.total)})` : '최다 업종'],
       [fmt(recent), `${yNow - 2}~${yNow}년 인허가`],
       [topA ? esc(names[topA[0]] ?? '-') : '-', topA ? `가장 많은 ${childLabel()} (${fmt(topA[1])})` : '하위 지역 없음'],
-      (pop => [pop ? fmt(pop) + '명' : '-', pop ? `주민등록 인구 (${popYm()}${!U && state.dong >= 0 ? ', 시군구 전체' : ''})${!U && state.dong >= 0 ? '' : ` · 주민 1천 명당 숙소 ${(a.total / (pop / 1e3)).toFixed(1)}곳`}` : '주민등록 인구 자료 없음'])(curPop()),
+      (() => { const dp = !U && state.dong >= 0 && state.ri < 0 && D && D.dpop ? (D.dpop[state.sgg] || [])[state.dong] : null;
+        if (dp) return [fmt(dp) + '명', `읍·면·동 주민 (${meta.dpop_year}년 생활계 인구현황) · 주민 1천 명당 숙소 ${(a.total / (dp / 1e3)).toFixed(1)}곳`];
+        const pop = curPop();
+        return [pop ? fmt(pop) + '명' : '-', pop ? `주민등록 인구 (${popYm()}${!U && state.dong >= 0 ? ', 시군구 전체' : ''})${!U && state.dong >= 0 ? '' : ` · 주민 1천 명당 숙소 ${(a.total / (pop / 1e3)).toFixed(1)}곳`}` : '주민등록 인구 자료 없음']; })(),
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
 
     // share by sub-type
@@ -637,7 +640,7 @@
     const k = +b.dataset.k;
     [setSido, setSgg, setDong, setRi][level()]?.(k);
   };
-  for (const id of ['rank', 'tr-up', 'tr-down', 'mb-area']) $(id).addEventListener('click', drill);
+  for (const id of ['rank', 'tr-up', 'tr-down', 'mb-area', 'sup-ratio']) $(id).addEventListener('click', drill);
 
   /* ---------- 휴업·폐업 ---------- */
   function renderStatus(a, names) {
@@ -1665,27 +1668,51 @@
     const lod = {};
     if (!D) { for (const r of cube) if (r[3] === 0 && state.types.has(r[2])) lod[r[0]] = (lod[r[0]] || 0) + r[5]; }
     else for (const r of D.rows) if (r[6] === 0 && state.types.has(r[2])) lod[r[3]] = (lod[r[3]] || 0) + 1;
-    const kids = si < 0 ? S.map((s, i) => ({ k: i, name: s.name, vis: s.vis, tour: (s.tour || []).reduce((a, g) => a + tourSel(g), 0), lod: lod[i] || 0 }))
-      : S[si].sgg.map((g, i) => ({ k: i, name: g, vis: (S[si].visg || [])[i], tour: tourSel((S[si].tour || [])[i]), lod: lod[i] || 0 }));
+    const kids = si < 0 ? S.map((s, i) => ({ k: i, name: s.name, vis: s.vis, tour: (s.tour || []).reduce((a, g) => a + tourSel(g), 0), lod: lod[i] || 0, pop: s.pop }))
+      : S[si].sgg.map((g, i) => ({ k: i, name: g, vis: (S[si].visg || [])[i], tour: tourSel((S[si].tour || [])[i]), lod: lod[i] || 0, pop: (S[si].popg || [])[i] }));
     const sel = atSgg ? kids.filter(c => c.k === gi) : kids;
     const sum = f => sel.reduce((a, c) => a + (c[f] || 0), 0);
     const vj = mode === 'for' ? 1 : 0, vOf = c => c.vis ? c.vis[vj] : null, vName = mode === 'for' ? '외국인' : '외지인';
     const L = sum('lod'), TT = sum('tour'), VO = sel.reduce((a, c) => a + (c.vis ? c.vis[0] : 0), 0), VF = sel.reduce((a, c) => a + (c.vis ? c.vis[1] : 0), 0);
-    const perVis = (l, v) => v ? l / (v / 1e6) : null, perTour = (l, t) => t ? l / t : null;
+    const perVis = (l, v) => v ? l / (v / 1e6) : null, perTour = (l, t) => t ? l / t : null, perPop = (l, p) => p ? l / (p / 1e3) : null;
+    const PP = sel.reduce((a, c) => a == null || !c.pop ? null : a + c.pop, 0);
     const man = v => VIS && v ? fmt(Math.round(v / 1e4)) + '만' : '-';
     $('sup-kpis').innerHTML = [
       [fmt(L), `${regName} 영업 숙소 (선택 업종)`],
       [man(VO), VIS ? '연간 외지인 방문객' : '방문객 자료 없음'],
       [man(VF), VIS ? '연간 외국인 방문객' : '방문객 자료 없음'],
       mode === 'tour' ? [TT ? perTour(L, TT).toFixed(1) : '-', state.tour.size ? '관광지 1곳당 숙소 (선택 관광 유형)' : '관광 유형을 고르세요']
+        : mode === 'pop' ? [perPop(L, PP)?.toFixed(1) ?? '-', '주민 1천 명당 숙소 (주민등록 인구)']
         : [perVis(L, vj ? VF : VO)?.toFixed(1) ?? '-', `${vName} 100만 명당 숙소`],
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
     $('sup-sub').textContent = `${regName} 기준. 숙소가 수요보다 적은 곳과 관광지 주변 숙소 공백을 봅니다.`;
 
     // child-area ranking, fewest lodgings per demand first
-    $('sup-ratio-card').hidden = atSgg;
-    document.querySelectorAll('#sup-seg button').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.m === mode)); b.disabled = b.dataset.m !== 'tour' && !VIS; });
-    if (!atSgg) {
+    // 주민 기준: 광역·시군구는 주민등록 인구, 시군구를 고르면 그 안의 읍·면·동(생활계 인구현황)별로 많은 순
+    const dongKids = atSgg && mode === 'pop' && D && D.dpop && D.dpop[gi] ? (D.dongs[gi] || []).map((nm, d) => ({ k: d, name: nm, pop: D.dpop[gi][d],
+      lod: D.rows.reduce((a, r) => a + (r[6] === 0 && state.types.has(r[2]) && r[3] === gi && r[4] === d), 0) })) : null;
+    const hasDpop = atSgg && D && D.dpop && D.dpop[gi] && D.dpop[gi].some(x => x);
+    $('sup-ratio-card').hidden = atSgg && !hasDpop;
+    if (atSgg && hasDpop && mode !== 'pop') {  // 시군구 안에서는 읍·면·동별 주민 기준만 비교할 수 있음
+      $('sup-ratio-title').textContent = '읍·면·동별 비교';
+      $('sup-ratio').innerHTML = '<p class="note">시군구를 고른 상태에서는 \'주민 기준\'을 누르면 읍·면·동별 주민 1천 명당 숙소를 볼 수 있습니다(방문객·관광지는 시군구 단위 자료라 읍·면·동별로 나눌 수 없음).</p>';
+      $('sup-ratio-note').textContent = ''; csvSet('sup-ratio', [], []);
+    }
+    document.querySelectorAll('#sup-seg button').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.m === mode));
+      b.disabled = b.dataset.m === 'pop' ? !S.some(x => x.pop) : b.dataset.m !== 'tour' && !VIS; });
+    if (mode === 'pop' && (!atSgg || dongKids)) {
+      const MINP = 100, list = (dongKids || kids).filter(c => c.pop >= MINP).map(c => ({ ...c, r: perPop(c.lod, c.pop) })).sort((a, b) => b.r - a.r);
+      const avg = dongKids ? perPop(dongKids.reduce((a, c) => a + c.lod, 0), dongKids.reduce((a, c) => a + (c.pop || 0), 0)) : perPop(L, PP);
+      const lbl = dongKids ? '읍·면·동' : childLabel();
+      $('sup-ratio-title').textContent = `${lbl}별 주민 1천 명당 숙소 · 많은 순`;
+      $('sup-ratio').innerHTML = rowsHTML(list.map(c => ({ k: c.k, name: c.name, value: c.r, mark: avg, label: c.r.toFixed(1) + '곳',
+        extra: `숙소 ${fmt(c.lod)} · 주민 ${fmt(c.pop)}`, color: avg && c.r > avg * 2 ? 'var(--closed)' : 'var(--c0)' })), { button: true }) || '<p class="note">비교할 자료가 없습니다.</p>';
+      csvSet('sup-ratio', [lbl, '영업 숙소', '주민', '주민 1천 명당 숙소'], list.map(c => [c.name, c.lod, c.pop, c.r.toFixed(2)]));
+      const small = (dongKids || kids).filter(c => c.pop != null && c.pop < MINP).map(c => c.name), none = (dongKids || kids).filter(c => !c.pop).length;
+      $('sup-ratio-note').textContent = `세로선은 ${regName} 평균, 빨간 막대는 평균의 2배 넘는 곳(주민에 비해 숙소가 많아 생활권과 관광이 겹치는 곳)입니다. `
+        + (dongKids ? `읍·면·동 주민은 국립환경과학원 생활계 인구현황(${meta.dpop_year || '-'}년, 법정동 기준, 내국인+외국인)이라 시군구의 주민등록 인구(월말)와 조금 다를 수 있습니다. 주민 ${MINP}명 미만인 곳은 뺐습니다${small.length ? `(${small.join(', ')})` : ''}. ${none ? `주민 자료가 없는 곳 ${none}곳.` : ''}`
+          : `주민은 행정안전부 주민등록 인구(${popYm()})입니다. 시군구를 고르면 읍·면·동별로 나옵니다.`);
+    } else if (!atSgg) {
       const isVis = mode !== 'tour';
       const f = isVis ? c => perVis(c.lod, vOf(c)) : c => perTour(c.lod, c.tour);
       const minD = si < 0 ? 1 : 5;

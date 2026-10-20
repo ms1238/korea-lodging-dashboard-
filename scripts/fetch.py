@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import time
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
@@ -40,6 +41,7 @@ TOUR_BASE = "https://apis.data.go.kr/B551011/KorService2/areaBasedList2"
 TOUR_TYPES = {"12": "관광지", "14": "문화시설", "28": "레포츠"}  # TourAPI contentTypeId
 FESTIVALS = "https://apis.data.go.kr/B551011/KorService2/searchFestival2"  # TourAPI 행사·축제
 CENTURY_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15132695/v1"  # 소상공인시장진흥공단 백년가게 (odcloud, one table per publication)
+DONG_POP = "https://apis.data.go.kr/1480523/LvlhPpnSttusService/getLvlhPpnSttusInfo"  # 국립환경과학원 생활계 인구현황 (법정동·리, yearly)
 FOOD_MATCH_BUDGET = 6000  # 일반음식점 lookups per run (one per restaurant); the rest waits for the next run
 FOOD_MATCH_MINUTES = 20  # stop after this long so the job (90 min limit) still saves what it found
 FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
@@ -87,8 +89,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -264,7 +266,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
@@ -273,7 +275,7 @@ def main():
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -396,6 +398,37 @@ def fetch_century(key):
         page += 1
     print(f"century_shops: {spec['paths'][path]['get'].get('summary')}: {len(rows)} rows", flush=True)
     save_json("century_shops.json", rows)
+
+
+def fetch_dong_pop(key):
+    """Population per 법정동·리 for the latest survey year (국립환경과학원 생활계 인구현황: 주민등록 내국인 + 외국인).
+    The service has no year filter and lists every year since 2012 in order, so the last pages are read backwards
+    until an older year appears."""
+    def page(p, n=1000):
+        last = None
+        for attempt in range(4):
+            try:
+                root = ET.fromstring(requests.get(DONG_POP, params={"serviceKey": key, "pageNo": p, "numOfRows": n}, timeout=120).content)
+                if root.findtext(".//resultCode") not in ("00", None):
+                    raise RuntimeError(root.findtext(".//resultMsg"))
+                return int(root.findtext(".//totalCount") or 0), [{c.tag: (c.text or "").strip() for c in it} for it in root.iter("item")]
+            except Exception as e:  # noqa: BLE001
+                last = e
+                time.sleep(5 + attempt * 5)
+        raise RuntimeError(f"dong_pop page {p}: {last}")
+    total, _ = page(1, 1)
+    rows, latest = [], None
+    for p in range(math.ceil(total / 1000), 0, -1):
+        _, items = page(p)
+        years = {it["year"] for it in items}
+        latest = latest or max(years)
+        rows += [it for it in items if it["year"] == latest]
+        if min(years) < latest:
+            break
+    out = [{"sido": r.get("citynm", ""), "sgg": r.get("citicoungunm", ""), "emd": r.get("adividoungnm", ""), "ri": r.get("adivininm", ""),
+            "pop": int(r.get("popusumcnt") or 0)} for r in rows]
+    print(f"dong_pop: {latest}, {len(out)} 법정동·리, population {sum(r['pop'] for r in out):,}", flush=True)
+    save_json("dong_pop.json", {"year": latest, "rows": out})
 
 
 def fetch_food_coords(key):

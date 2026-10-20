@@ -32,6 +32,7 @@ Steps
 21. food.json: 모범음식점 (designated, open) and 백년가게 at the coordinates of their 일반음식점 인허가 record (raw/food_coords.json).
 22. admin/<si>.json: 시도 and 시군구 outlines merged from 행정동 boundaries (vuski/admdongkor, 통계청 SGIS) for drawing the selected region.
 23. meta.json "decl": 인구감소지역 / 관심지역 per 시군구 (scripts/static/decline_areas.json, 2026-10-07 지정).
+24. pts/<si>.json "dpop": population per 법정 읍·면·동 (국립환경과학원 생활계 인구현황, latest year).
 """
 import calendar
 import difflib
@@ -1071,6 +1072,27 @@ def write_arrivals():
                   f, ensure_ascii=False, separators=(",", ":"))
 
 
+def load_dong_pop(merged):
+    """Population per 법정 읍·면·동 (국립환경과학원 생활계 인구현황, 리 summed) keyed by (시도, 시군구, 읍면동), 일반구 counted
+    in their 시, plus a (시도, 읍면동) index for names whose 구 changed after the survey year (인천 2026). Returns
+    (by_key, by_sido_emd, year)."""
+    path = os.path.join(RAW, "dong_pop.json")
+    if not os.path.exists(path):
+        return {}, {}, None
+    d = json.load(open(path, encoding="utf-8"))
+    by_key, by_name = Counter(), defaultdict(Counter)
+    for r in d["rows"]:
+        sido = SIDO_ALIASES.get(r["sido"], r["sido"])
+        if merged and sido in ("광주광역시", "전라남도"):
+            sido = MERGED_GWANGJU_JEONNAM
+        m = re.fullmatch(r"(\S+?시)\s?\S+구", r["sgg"])
+        sgg = sido if sido == "세종특별자치시" or not r["sgg"] else (m.group(1) if m else r["sgg"])
+        by_key[(sido, sgg, r["emd"])] += r["pop"]
+        by_name[(sido, r["emd"])][sgg] += r["pop"]
+    unique = {k: sum(v.values()) for k, v in by_name.items() if len(v) == 1}
+    return by_key, unique, d["year"]
+
+
 def add_decline(sidos, sgg_of, sido_meta, merged):
     """인구감소지역 (1) / 인구감소관심지역 (2) per 시군구 from scripts/static/decline_areas.json: sido_meta[i]["decl"],
     and the 시군구 indices of 인구활력 플러스 areas in ["declp"]. Returns the designation date."""
@@ -1095,7 +1117,7 @@ def add_decline(sidos, sgg_of, sido_meta, merged):
     return d["designated"]
 
 
-def data_dates(admin_ver, pop_ym, decl_date=None):
+def data_dates(admin_ver, pop_ym, decl_date=None, dpop_year=None):
     """[[자료, 기준 시점, 갱신]] for the page's '데이터 기준일' panel, read from the files just written."""
     def out(name):
         p = os.path.join(OUT, name)
@@ -1116,6 +1138,7 @@ def data_dates(admin_ver, pop_ym, decl_date=None):
             ["모범음식점·백년가게 (행정안전부·소상공인시장진흥공단)", today, "매일"],
             ["행정구역 경계 (통계청 SGIS·admdongkor)", f"{admin_ver[3:7]}.{admin_ver[7:9]}.{admin_ver[9:]}판" if admin_ver else "-", "새 판이 나오면"],
             ["철도·역·국립공원 경계 (OpenStreetMap)", today, "매일"],
+            ["읍·면·동 인구 (국립환경과학원 생활계 인구현황)", f"{dpop_year}년" if dpop_year else "-", "연 단위"],
             ["인구감소지역 지정 (행정안전부)", f"{decl_date.replace('-', '.')} 고시" if decl_date else "-", "5년마다 재지정"]]
     return rows
 
@@ -1177,6 +1200,8 @@ def main():
     def quarter(d):
         return (int(d[5:7]) - 1) // 3 + 1 if d[5:7].isdigit() and 1 <= int(d[5:7]) <= 12 else 1
     minbak = Counter()
+    dpop_key, dpop_name, dpop_year = load_dong_pop(merged)
+    dpop_hit = dpop_all = 0
     sido_meta = []
     for si, s in enumerate(sidos):
         sggs = sgg_of[s]
@@ -1212,8 +1237,13 @@ def main():
                         r["zone"], r["bldg"]])
             if r["ll"]:
                 cen[r["sgg"]].append(r["ll"])
+        # 읍·면·동 주민 수(생활계 인구현황): 같은 시군구의 같은 이름, 없으면 시도 안에서 이름이 하나뿐인 동
+        dpop = [[dpop_key.get((s, g, dn)) or dpop_name.get((s, dn)) for dn in ds] for g, ds in zip(sggs, dongs)] if dpop_key else None
+        if dpop:
+            dpop_all += sum(len(x) for x in dpop)
+            dpop_hit += sum(1 for x in dpop for v in x if v)
         with open(os.path.join(OUT, "pts", f"{si}.json"), "w", encoding="utf-8") as f:
-            json.dump({"dongs": dongs, "ris": {f"{k[0]}:{k[1]}": v for k, v in ris.items()}, "rows": out},
+            json.dump({"dongs": dongs, "ris": {f"{k[0]}:{k[1]}": v for k, v in ris.items()}, "rows": out, "dpop": dpop},
                       f, ensure_ascii=False, separators=(",", ":"))
         sgg_c = []
         for g in sggs:
@@ -1226,6 +1256,8 @@ def main():
         })
         if s == MERGED_GWANGJU_JEONNAM:
             sido_meta[-1]["groups"] = [{"name": "광주시", "gis": [sggs.index(g) for g in GWANGJU_GU if g in sggs]}]
+    if dpop_key:
+        print(f"dong_pop: {dpop_year}, population found for {dpop_hit} of {dpop_all} 읍·면·동", flush=True)
     with open(os.path.join(OUT, "close.json"), "w", encoding="utf-8") as f:
         json.dump([[*k, v] for k, v in sorted(close.items())], f, separators=(",", ":"))
     for name, data in (("cubeq.json", cubeq), ("closeq.json", closeq)):
@@ -1326,7 +1358,8 @@ def main():
         "zones": ZONES, "bldgs": BLDGS,
         "visitors": visitors,
         "pop_ym": pop_ym,
-        "fresh": data_dates(admin_ver, pop_ym, decl_date),
+        "fresh": data_dates(admin_ver, pop_ym, decl_date, dpop_year),
+        "dpop_year": dpop_year,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
