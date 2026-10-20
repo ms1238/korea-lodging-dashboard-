@@ -1,0 +1,34 @@
+# Temporary: 숙박 비중 지수 (관광 체류 강도 2102) for every 시군구, Jan/Apr/Jul/Oct of 2022 and 2025, for a research sample.
+name: Probe stay-intensity by 시군구
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-stay.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, json, requests
+          K = os.environ["KEY"]; U = "https://apis.data.go.kr/B551011/AreaTarDemDsService/areaTarSjrnDsList"
+          AREAS = ("11", "26", "27", "28", "29", "30", "31", "36", "41", "43", "44", "46", "47", "48", "50", "51", "52", "12")
+          out = []
+          for y in (2022, 2025):
+              for m in ("01", "04", "07", "10"):
+                  for a in AREAS:
+                      try:
+                          d = requests.get(U, params={"serviceKey": K, "pageNo": 1, "numOfRows": 100, "MobileOS": "ETC", "MobileApp": "probe", "_type": "json",
+                                                      "baseYm": f"{y}{m}", "areaCd": a, "tarSjrnDsIxCd": "2102"}, timeout=60).json()
+                          b = d["response"]["body"]; it = b["items"]["item"] if b.get("items") else []
+                          for x in (it if isinstance(it, list) else [it]):
+                              out.append([f"{y}{m}", x.get("areaNm"), x.get("signguNm"), float(x.get("tarSjrnDsIxVal"))])
+                      except Exception as e:
+                          print("ERR", y, m, a, str(e)[:100], flush=True)
+          print(f"== rows {len(out)}", flush=True)
+          print("== DATA " + json.dumps(out, ensure_ascii=False, separators=(",", ":")), flush=True)
