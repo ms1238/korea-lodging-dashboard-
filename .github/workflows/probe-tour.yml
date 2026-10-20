@@ -1,4 +1,4 @@
-# Temporary: specs and sample responses of 한국관광공사 지역별 관광 자원 수요 and 한국문화관광연구원 tour.go.kr services.
+# Temporary: OSM rail route relations in Korea (KTX/SRT/광역철도 names, colours, networks).
 name: Probe tourism demand / balance APIs
 on:
   workflow_dispatch:
@@ -11,38 +11,19 @@ jobs:
   probe:
     runs-on: ubuntu-24.04
     steps:
-      - env:
-          KEY: ${{ secrets.DATA_GO_KR_KEY }}
-        shell: python
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - shell: python
         run: |
-          import os, json, requests
-          K = os.environ["KEY"]
-          def show(tag, url, **p):
-              try:
-                  r = requests.get(url, params={"serviceKey": K, **p}, timeout=60)
-                  print(f"== {tag} {r.status_code} {r.headers.get('content-type')} {r.text[:900]!r}", flush=True)
-              except Exception as e:
-                  print(f"== {tag} ERR {e}", flush=True)
-          # round 3: sub-indicator codes of 관광 자원 수요; OSM rail routes (KTX/SRT/광역철도) and their colours
+          import sys; sys.path.insert(0, "scripts")
           from collections import Counter
-          A = "https://apis.data.go.kr/B551011/AreaTarResDemService/"
-          base = dict(MobileOS="ETC", MobileApp="probe", _type="json", numOfRows=1, pageNo=1, baseYm="202508", areaCd="11")
-          for op, prm, codes in (("areaTarSvcDemList", "tarSvcDemIxCd", range(1101, 1112)), ("areaCulResDemList", "culResDemIxCd", range(1201, 1208))):
-              for c in codes:
-                  d = requests.get(A + op, params={"serviceKey": K, **base, prm: str(c)}, timeout=60).json()
-                  b = d["response"]["body"]; it = b["items"]["item"][0] if b.get("items") else {}
-                  print("== code", op, c, b.get("totalCount"), {k: v for k, v in it.items() if k.endswith(("Nm", "Val")) and not k.startswith(("area", "signgu"))}, flush=True)
-          for ym in ("202601", "202606", "202608", "202609"):
-              d = requests.get(A + "areaTarSvcDemList", params={"serviceKey": K, **base, "baseYm": ym, "tarSvcDemIxCd": "11"}, timeout=60).json()
-              print("== latest month", ym, d["response"]["body"].get("totalCount"), flush=True)
-          q = """[out:json][timeout:240];relation["route"~"^(train|subway|light_rail)$"](33.0,124.5,38.7,131.0);out tags;"""
-          for url in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"):
-              try:
-                  rels = requests.post(url, data={"data": q}, timeout=300).json()["elements"]; break
-              except Exception as e:
-                  print("overpass", url, e); rels = []
+          from fetch import overpass
+          rels = overpass("""[out:json][timeout:240];relation["route"~"^(train|subway|light_rail)$"](33.0,124.5,38.7,131.0);out tags;""")
           print("== routes", Counter(r["tags"].get("route") for r in rels))
           for r in sorted(rels, key=lambda r: (r["tags"].get("route"), r["tags"].get("name", ""))):
               t = r["tags"]
-              if t.get("route") == "train" or "Korail" in t.get("operator", "") or "코레일" in t.get("operator", "") or "서해" in t.get("name", ""):
-                  print("  ", t.get("route"), "|", t.get("name", "")[:40], "|", t.get("ref", ""), "|", t.get("colour", ""), "|", t.get("network", "")[:20], "|", t.get("service", ""), "|", t.get("operator", "")[:15])
+              if t.get("route") == "train" or any(w in t.get("operator", "") + t.get("network", "") for w in ("Korail", "코레일", "한국철도")):
+                  print("  ", t.get("route"), "|", t.get("name", "")[:45], "|", t.get("ref", ""), "|", t.get("colour", ""), "|", t.get("network", "")[:25], "|", t.get("service", ""), "|", t.get("operator", "")[:15])
