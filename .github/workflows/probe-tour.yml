@@ -23,17 +23,26 @@ jobs:
                   print(f"== {tag} {r.status_code} {r.headers.get('content-type')} {r.text[:900]!r}", flush=True)
               except Exception as e:
                   print(f"== {tag} ERR {e}", flush=True)
-          # round 2: parameters for the two AreaTarResDemService operations, operation names of 관광수지
+          # round 3: sub-indicator codes of 관광 자원 수요; OSM rail routes (KTX/SRT/광역철도) and their colours
+          from collections import Counter
           A = "https://apis.data.go.kr/B551011/AreaTarResDemService/"
-          base = dict(MobileOS="ETC", MobileApp="probe", _type="json", numOfRows=5, pageNo=1, baseYm="202508", areaCd="11")
-          for op, prm in (("areaTarSvcDemList", "tarSvcDemIxCd"), ("areaCulResDemList", "culResDemIxCd")):
-              for code in ("1", "11", "12", "13", "1101", "1102", "1103", "1201", "1202", "1301"):
-                  show(f"{op} {prm}={code}", A + op, **base, **{prm: code})
-          show("areaTarSvcDemList no code", A + "areaTarSvcDemList", **base)
-          show("areaTarSvcDemList signgu", A + "areaTarSvcDemList", **{**base, "signguCd": "11110"}, tarSvcDemIxCd="11")
-          T = "http://openapi.tour.go.kr/openapi/service/EdrcntTourismBalnaceService/"
-          for op in ("getEdrcntTourismBalnaceList", "getEdrcntTourismBalanceList", "getTourismBalnaceList", "getTourismBalanceList", "getEdrcntTourismBalnace", "getBalnaceList"):
-              for p in ({"YM": "202508"}, {"YM": "202508", "_type": "json"}, {"YEAR": "2025"}, {}):
-                  show(f"balance {op} {p}", T + op, **p)
-          for path in ("TourismResourceStatsService/getPchrgTrrsrtVisitorList", "TourismIndustStatsService/getTourismBsnesTrendIndexList", "TourismAccdtService/getTourismTotqyList"):
-              show("tour.go.kr " + path, "http://openapi.tour.go.kr/openapi/service/" + path, YM="202508", numOfRows=3, pageNo=1)
+          base = dict(MobileOS="ETC", MobileApp="probe", _type="json", numOfRows=1, pageNo=1, baseYm="202508", areaCd="11")
+          for op, prm, codes in (("areaTarSvcDemList", "tarSvcDemIxCd", range(1101, 1112)), ("areaCulResDemList", "culResDemIxCd", range(1201, 1208))):
+              for c in codes:
+                  d = requests.get(A + op, params={"serviceKey": K, **base, prm: str(c)}, timeout=60).json()
+                  b = d["response"]["body"]; it = b["items"]["item"][0] if b.get("items") else {}
+                  print("== code", op, c, b.get("totalCount"), {k: v for k, v in it.items() if k.endswith(("Nm", "Val")) and not k.startswith(("area", "signgu"))}, flush=True)
+          for ym in ("202601", "202606", "202608", "202609"):
+              d = requests.get(A + "areaTarSvcDemList", params={"serviceKey": K, **base, "baseYm": ym, "tarSvcDemIxCd": "11"}, timeout=60).json()
+              print("== latest month", ym, d["response"]["body"].get("totalCount"), flush=True)
+          q = """[out:json][timeout:240];relation["route"~"^(train|subway|light_rail)$"](33.0,124.5,38.7,131.0);out tags;"""
+          for url in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"):
+              try:
+                  rels = requests.post(url, data={"data": q}, timeout=300).json()["elements"]; break
+              except Exception as e:
+                  print("overpass", url, e); rels = []
+          print("== routes", Counter(r["tags"].get("route") for r in rels))
+          for r in sorted(rels, key=lambda r: (r["tags"].get("route"), r["tags"].get("name", ""))):
+              t = r["tags"]
+              if t.get("route") == "train" or "Korail" in t.get("operator", "") or "코레일" in t.get("operator", "") or "서해" in t.get("name", ""):
+                  print("  ", t.get("route"), "|", t.get("name", "")[:40], "|", t.get("ref", ""), "|", t.get("colour", ""), "|", t.get("network", "")[:20], "|", t.get("service", ""), "|", t.get("operator", "")[:15])
