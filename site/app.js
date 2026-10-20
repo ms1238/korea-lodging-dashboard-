@@ -1321,15 +1321,21 @@
       ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); return addPop(p, { si, gi }); }))
       : S.map((_, si) => { const p = ovStats(keysOf({ si, gi: -1 }), natA, msido(si), nat); p.k21 = kixAvg({ si, gi: -1 }, '21'); p.k2102 = kixAvg({ si, gi: -1 }, '2102'); return addPop(p, { si, gi: -1 }); });
     const pctile = (key, v) => { const xs = peers.map(p => p[key]).filter(x => x != null); return v == null || xs.length < 5 ? null : xs.filter(x => x <= v).length / xs.length; };
+    // 기준값: 비교 대상의 중위값(극단값에 덜 흔들림)과 전국 전체 값(전국을 한 지역으로 본 값)
+    const median = key => { const xs = peers.map(p => p[key]).filter(x => x != null).sort((a, b) => a - b), m = xs.length >> 1;
+      return xs.length < 5 ? null : xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2; };
+    const natP = r.si < 0 ? null : addPop(ovStats(keysOf({ si: -1, gi: -1 }), natA, natMon, nat), { si: -1, gi: -1 });
+    const refLine = (key, f) => { const md = median(key), nv = natP && key !== 'n' ? natP[key] : null;
+      return md == null && nv == null ? '' : `<small class="ref">${md != null ? `${peerName} 중위 <b>${f(md)}</b>` : ''}${md != null && nv != null ? ' · ' : ''}${nv != null ? `전국 전체 <b>${f(nv)}</b>` : ''}</small>`; };
     const peerName = peerLevel === 'sgg' ? '전국 시군구' : '광역';
     const P = {}; for (const [k] of OV) P[k] = pctile(k, me[k]);
     $('sum-title').textContent = `종합 · ${regLabel(r)}`;
     $('sum-sub').textContent = `${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 기준. 막대의 표시는 ${peerLevel ? peerName + ' 중 위치(오른쪽일수록 값이 큼)' : '전국이라 비교 대상 없음'}입니다. 매일 새벽 갱신된 자료로 즉시 계산합니다.`;
-    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><p class="easy">${OV_EASY.n}</p><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small></div>`]
+    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소</h4><b>${fmt(me.n)}곳</b><p class="easy">${OV_EASY.n}</p><small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명</small>${refLine('n', v => fmt(Math.round(v)) + '곳')}</div>`]
       .concat(OV.filter(([k]) => me[k] != null).map(([k, nm, f]) => { const v = me[k], p = P[k];
         const why = v != null ? '' : '자료 없음';
         const approx = /^k21/.test(k) && kixApprox(r) ? '<small>일반구 값의 단순 평균(근사)</small>' : '';
-        return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b><p class="easy">${esc(OV_EASY[k] || '')}</p>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}${approx}</div>`; })).join('');
+        return `<div class="sumcard"><h4>${esc(nm)}</h4><b>${v == null ? '-' : f(v)}</b><p class="easy">${esc(OV_EASY[k] || '')}</p>${p != null ? `<div class="pbar"><i style="left:calc(${p * 100}% - 1px)"></i></div><small>${peerName} 중 상위 ${Math.max(1, Math.round((1 - p) * 100))}%</small>` : why ? `<small>${why}</small>` : ''}${refLine(k, f)}${approx}</div>`; })).join('');
     // 특화 업종(LQ ≥ 1.2, 10곳 이상)
     const spec = me.lq.map((q, i) => [q, i]).filter(([q]) => q != null && q >= 1.2).sort((x, y) => y[0] - x[0]).slice(0, 3);
     $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>특화 업종 (입지계수 LQ)</h4>${spec.length ? spec.map(([q, i]) => `<div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(T[i].name)}</span><b style="font-size:16px;display:inline">${q.toFixed(2)}</b></div>`).join('') : '<b>-</b>'}<p class="easy">${OV_EASY.lq}</p><small>LQ = (지역 업종 비중) ÷ (전국 업종 비중). 1.2 이상·10곳 이상만. Isard(1960) 지역분석의 입지계수</small></div>`);
@@ -1364,11 +1370,12 @@
     if (hiP('tpi')) L.push(`주민 1천 명당 하루 외지인이 ${me.tpi.toFixed(1)}명으로 주민 대비 관광객 부담이 큰 편입니다(${top('tpi')}).`);
     if (hiP('fshare')) L.push(`외국인 방문객 비중이 ${F.fshare(me.fshare)}로 높습니다.`);
     $('sum-text').innerHTML = L.map(x => `<li>${esc(x)}</li>`).join('');
-    $('sum-table').innerHTML = '<thead><tr><th>지표</th><th>값</th><th>' + (peerLevel ? esc(peerName) + ' 중 백분위' : '백분위') + '</th><th style="text-align:left">무슨 뜻인가요</th><th style="text-align:left">산식</th><th style="text-align:left">근거</th></tr></thead><tbody>'
-      + OV.map(([k, nm, f, formula, src]) => `<tr><td>${esc(nm)}</td><td>${me[k] == null ? '-' : f(me[k])}</td><td>${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td style="text-align:left;white-space:normal;min-width:240px">${esc(OV_EASY[k] || '')}</td><td style="text-align:left;white-space:normal">${esc(formula)}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(src)}</td></tr>`).join('') + '</tbody>';
-    $('sum-note').textContent = '백분위는 비교 대상 중 이 값보다 작거나 같은 곳의 비율입니다(100에 가까울수록 값이 큼). 값이 크다고 좋은 것은 아니며, 정책 목적에 따라 해석하세요. '
+    $('sum-table').innerHTML = '<thead><tr><th>지표</th><th>값</th><th>' + (peerLevel ? esc(peerName) + ' 중 백분위' : '백분위') + '</th><th>' + (peerLevel ? esc(peerName) + ' 중위' : '중위') + '</th><th>전국 전체</th><th style="text-align:left">무슨 뜻인가요</th><th style="text-align:left">산식</th><th style="text-align:left">근거</th></tr></thead><tbody>'
+      + OV.map(([k, nm, f, formula, src]) => `<tr><td>${esc(nm)}</td><td>${me[k] == null ? '-' : f(me[k])}</td><td>${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td>${median(k) == null ? '-' : f(median(k))}</td><td>${(natP || me)[k] == null ? '-' : f((natP || me)[k])}</td><td style="text-align:left;white-space:normal;min-width:240px">${esc(OV_EASY[k] || '')}</td><td style="text-align:left;white-space:normal">${esc(formula)}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(src)}</td></tr>`).join('') + '</tbody>';
+    $('sum-note').textContent = '백분위는 비교 대상 중 이 값보다 작거나 같은 곳의 비율입니다(100에 가까울수록 값이 큼). 중위는 비교 대상을 값 순으로 세웠을 때 한가운데 값으로, 막대의 가운데 눈금입니다. 전국 전체는 전국을 한 지역으로 보고 계산한 값입니다(시군구마다 크기가 달라 중위와 다를 수 있음). 값이 크다고 좋은 것은 아니며, 정책 목적에 따라 해석하세요. '
       + '인구 기반 지표는 행정안전부 행정동별 주민등록 인구(월말, 거주불명자·재외국민 포함)로 계산합니다.';
-    csvSet('sum-table', ['지역', '지표', '값', '백분위', '설명', '산식', '근거'], OV.map(([k, nm, , formula, src]) => [regLabel(r), nm, me[k] == null ? '' : +me[k].toFixed(4), P[k] == null ? '' : Math.round(P[k] * 100), OV_EASY[k] || '', formula, src]));
+    csvSet('sum-table', ['지역', '지표', '값', '백분위', `${peerLevel ? peerName + ' ' : ''}중위`, '전국 전체', '설명', '산식', '근거'], OV.map(([k, nm, , formula, src]) => [regLabel(r), nm, me[k] == null ? '' : +me[k].toFixed(4), P[k] == null ? '' : Math.round(P[k] * 100),
+      median(k) == null ? '' : +median(k).toFixed(4), (natP || me)[k] == null ? '' : +(natP || me)[k].toFixed(4), OV_EASY[k] || '', formula, src]));
   }
   $('sum-print').onclick = () => print();
   $('sum-more').onclick = () => { const all = $('sum-grid').classList.toggle('all'); $('sum-more').textContent = all ? '접기' : `지표 더 보기 (${$('sum-grid').children.length - 4}개)`; };
