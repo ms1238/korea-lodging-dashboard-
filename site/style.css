@@ -234,3 +234,14 @@ th:first-child,td:first-child{text-align:left}
 .radpop td,.radpop th{padding:2px 6px;text-align:right;border-bottom:1px solid #eee}
 .radpop td:first-child,.radpop th:first-child{text-align:left}
 .radpop small{color:#566370;display:block;line-height:1.4}
+/* 역할별 질문(헤더 안내) */
+.intro .hint{color:#a9b8cf;font-size:12px}
+.roles{margin:8px 0 10px;display:flex;flex-direction:column;gap:6px}
+.roles > div{display:grid;grid-template-columns:84px minmax(0,1fr);gap:8px;align-items:baseline}
+.roles dt{font-weight:700;color:#fff;font-size:12.5px}
+.roles dd{margin:0;display:flex;flex-wrap:wrap;gap:6px}
+.roles .q{font:inherit;font-size:12.5px;line-height:1.4;padding:4px 10px;border-radius:999px;border:1px solid rgba(143,176,255,.45);background:rgba(47,107,255,.18);color:#e9eef6;cursor:pointer;text-decoration:none}
+.roles .q:hover{background:rgba(47,107,255,.35)}
+.linkbtn{border:0;background:none;padding:0;font:inherit;font-size:13px;color:#dfe7f5;text-decoration:underline;cursor:pointer}
+#ytd-table tr.sum td{font-weight:700}
+@media (max-width:520px){.roles > div{grid-template-columns:86px minmax(0,1fr)}.roles dt{font-size:12px;white-space:nowrap}.roles dd .q + .q{display:none}.intro .ex,.intro .hint{display:none}}  /* 휴대폰: 역할마다 질문 하나만 */

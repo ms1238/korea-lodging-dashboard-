@@ -36,6 +36,8 @@ Steps
 25. survival.json: Kaplan-Meier survival by 업종 대분류 for the nation, 시도 and 시군구 (permits since 2010).
 26. download/lodging.csv.gz: every facility, for download (columns in site/codebook.html); the workflow keeps a
     monthly copy as a GitHub Release.
+27. meta.json "brief": national new permits / closings this year vs the same dates last year, and the share of operating
+    facilities licensed 20+ years ago, per 업종.
 """
 import calendar
 import csv
@@ -1099,6 +1101,25 @@ def write_download(rows, sidos, sido_meta):
     print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
 
 
+def national_brief(rows, tidx):
+    """National numbers for the page's briefing, per 업종 index: new permits and closings from 1 Jan to today this year
+    and over the same dates last year ("ytd"), and operating facilities with the share licensed 20+ years ago ("age")."""
+    today = datetime.now(KST).date()
+    y, md = today.year, today.strftime("%m-%d")
+    n = max(tidx.values()) + 1
+    ytd = {"y": y, "md": md, "new": [[0, 0] for _ in range(n)], "closed": [[0, 0] for _ in range(n)]}
+    age = [[0, 0] for _ in range(n)]
+    for r in rows:
+        t = tidx[r["type"]]
+        for key, d in (("new", r["date"]), ("closed", r["closed"] if r["status"] == 2 else "")):
+            if d and d[5:] <= md and d[:4] in (str(y), str(y - 1)):
+                ytd[key][t][0 if d[:4] == str(y) else 1] += 1
+        if r["status"] == 0 and r["date"]:
+            age[t][0] += 1
+            age[t][1] += int(r["date"][:4]) <= y - 20
+    return {"ytd": ytd, "age": age}
+
+
 SURV_FROM = "2010-01-01"  # cohort for the survival curves: permits since then (older closings are less complete)
 
 
@@ -1444,6 +1465,7 @@ def main():
         "pop_ym": pop_ym,
         "fresh": data_dates(admin_ver, pop_ym, decl_date, dpop_year),
         "dpop_year": dpop_year,
+        "brief": national_brief(rows, tidx),
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))

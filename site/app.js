@@ -638,7 +638,7 @@
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
     renderStations();
-    renderRecent();
+    renderRecent(); renderYTD();
     renderSurv();
     syncMore();
     renderFest();
@@ -963,6 +963,30 @@
     e.preventDefault();
     b.textContent = addCmp(regOfCode(+b.dataset.cmp)) ? '담음 ✓' : state.cmp.length >= 7 ? '7곳까지' : '이미 있음';
   });
+
+  /* ---------- 올해 vs 작년 같은 기간(1월 1일~기준일): 광역 이하는 시설 목록에서, 전국은 meta.brief에서 ---------- */
+  function ytdCounts() {  // → { y, md, nw: [[올해, 작년] per 업종], cl: [...] }
+    const b = meta.brief && meta.brief.ytd; if (!b) return null;
+    if (!D) return { y: b.y, md: b.md, nw: b.new, cl: b.closed };
+    const nw = T.map(() => [0, 0]), cl = T.map(() => [0, 0]), y = String(b.y), py = String(b.y - 1);
+    const add = (a, d, t) => { if (d && d.slice(5) <= b.md) { if (d.startsWith(y)) a[t][0]++; else if (d.startsWith(py)) a[t][1]++; } };
+    for (const r of D.rows) { if (!inDetail(r)) continue; add(nw, r[11], r[2]); if (r[6] === 2) add(cl, r[12], r[2]); }
+    return { y: b.y, md: b.md, nw, cl };
+  }
+  const ytdChg = (a, b) => b ? `${a >= b ? '+' : '−'}${Math.abs((a / b - 1) * 100).toFixed(0)}%` : '-';
+  function renderYTD() {
+    const c = ytdCounts(); $('ytd-sec').hidden = !c; if (!c) return;
+    const per = CATS.map(() => [0, 0, 0, 0]);  // 대분류별 [신규 올해, 신규 작년, 폐업 올해, 폐업 작년]
+    T.forEach((_, i) => { if (!state.types.has(i)) return; const g = per[catOf[i]]; g[0] += c.nw[i][0]; g[1] += c.nw[i][1]; g[2] += c.cl[i][0]; g[3] += c.cl[i][1]; });
+    const tot = per.reduce((s, g) => s.map((v, k) => v + g[k]), [0, 0, 0, 0]);
+    const rows = CATS.map((n, i) => [n, ...per[i]]).filter(r => r[1] + r[2] + r[3] + r[4]).concat([['합계', ...tot]]);
+    const col = (a, b, up) => !b ? '' : (a > b) === up ? 'var(--ok)' : a === b ? '' : 'var(--closed)';
+    const md = c.md.replace('-', '.');
+    $('ytd-sub').textContent = `${regionName()} · ${c.y}.01.01~${c.y}.${md} vs ${c.y - 1}.01.01~${c.y - 1}.${md}${state.types.size < T.length ? ' · 선택 업종' : ''}`;
+    $('ytd-table').innerHTML = `<thead><tr><th>업종</th><th>신규 ${c.y - 1}</th><th>신규 ${c.y}</th><th>증감</th><th>폐업 ${c.y - 1}</th><th>폐업 ${c.y}</th><th>증감</th><th>${c.y} 순증</th></tr></thead><tbody>`
+      + rows.map(([n, a, b, x, z], k) => `<tr${k === rows.length - 1 ? ' class="sum"' : ''}><td>${esc(n)}</td><td>${fmt(b)}</td><td>${fmt(a)}</td><td style="color:${col(a, b, true)}">${ytdChg(a, b)}</td><td>${fmt(z)}</td><td>${fmt(x)}</td><td style="color:${col(x, z, false)}">${ytdChg(x, z)}</td><td>${a - x >= 0 ? '+' : '−'}${fmt(Math.abs(a - x))}</td></tr>`).join('') + '</tbody>';
+    csvSet('ytd-table', ['업종', `신규 ${c.y - 1}`, `신규 ${c.y}`, `폐업 ${c.y - 1}`, `폐업 ${c.y}`], rows.map(([n, a, b, x, z]) => [n, b, a, z, x]));
+  }
 
   /* ---------- 최근 인허가·폐업: 광역을 고르면 시설 목록(pts/<si>.json)에서 기간 안의 신규 인허가·폐업을 날짜순으로 ---------- */
   let recentDays = 30, recentKind = 'all';
@@ -1571,6 +1595,28 @@
       const big = [['전국 추세', me.ss.ns], ['업종 구성', me.ss.im], ['지역 고유 요인', me.ss.rs]].sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0];
       L.push(`${SS_Y0}→${SS_Y1}년 숙소 ${me.ss.d >= 0 ? '증가' : '감소'}(${me.ss.d >= 0 ? '+' : ''}${fmt(Math.round(me.ss.d))}곳)는 주로 ${big[0]} 때문입니다(변이할당분석${P.rsr != null ? `, 지역 고유 효과 ${top('rsr')}` : ''}).`);
     }
+    // 올해 vs 작년 같은 기간(읍·면·동을 고르면 시군구 종합과 맞지 않아 생략)
+    const yc = state.dong < 0 ? ytdCounts() : null;
+    if (yc) {
+      const sum = a => T.reduce((s, _, i) => state.types.has(i) ? [s[0] + a[i][0], s[1] + a[i][1]] : s, [0, 0]), n = sum(yc.nw), c = sum(yc.cl);
+      L.push(`올해(1월 1일~${yc.md.replace('-', '월 ')}일) 신규 인허가 ${fmt(n[0])}곳(작년 같은 기간 ${ytdChg(n[0], n[1])}), 폐업 ${fmt(c[0])}곳(${ytdChg(c[0], c[1])}).`);
+      if (r.si < 0) {  // 전국: 업종 대분류 가운데 신규가 가장 많이 는·준 곳(작년 같은 기간 100곳 이상)
+        const g = CATS.map(() => [0, 0]); T.forEach((_, i) => { if (state.types.has(i)) { g[catOf[i]][0] += yc.nw[i][0]; g[catOf[i]][1] += yc.nw[i][1]; } });
+        const big = g.map((v, i) => [v[0] / v[1] - 1, i, v]).filter(x => x[2][1] >= 100).sort((a, b) => b[0] - a[0]);
+        if (big.length > 1) L.push(`신규가 가장 크게 는 업종은 ${CATS[big[0][1]]}(${ytdChg(big[0][2][0], big[0][2][1])}, ${fmt(big[0][2][0])}곳), 가장 크게 준 업종은 ${CATS[big.at(-1)[1]]}(${ytdChg(big.at(-1)[2][0], big.at(-1)[2][1])})입니다.`);
+      }
+    }
+    if (r.si < 0 && meta.brief) {
+      // 전국: 노후 숙소(영업 1천 곳 이상 업종 가운데 인허가 20년 넘은 비중이 가장 큰 곳)
+      const old = meta.brief.age.map((a, i) => [a[0] ? a[1] / a[0] : 0, i, a[0]]).filter(x => x[2] >= 1000 && state.types.has(x[1])).sort((a, b) => b[0] - a[0])[0];
+      if (old && old[0] >= .5) L.push(`영업 중인 ${T[old[1]].name}의 ${(old[0] * 100).toFixed(0)}%가 인허가 20년 이상입니다(${fmt(old[2])}곳 중). 노후 숙박 리모델링·전환 정책의 대상입니다.`);
+      // 전국: 인구감소지역(관심지역 포함)에 있는 영업 숙소 비중과 외지인 100만 명당 숙소
+      const at = areaTable(), dv = [[0, 0], [0, 0]]; let all = 0;
+      S.forEach((sd, si) => sd.sgg.forEach((_, gi) => { const x = at[si + ':' + gi]; if (!x) return; const n = x.a.reduce((p, q) => p + q, 0), d = (sd.decl || [])[gi] ? 1 : 0, v = (sd.visg || [])[gi];
+        all += n; dv[d][0] += n; if (v && v[0]) dv[d][1] += v[0]; }));
+      if (all && dv[1][1] && dv[0][1]) { const a = dv[1][0] / (dv[1][1] / 1e6), b = dv[0][0] / (dv[0][1] / 1e6);
+        L.push(`영업 숙소의 ${(dv[1][0] / all * 100).toFixed(0)}%가 인구감소·관심지역에 있고, 외지인 100만 명당 숙소는 ${a.toFixed(1)}곳으로 그 밖 지역(${b.toFixed(1)}곳)의 ${(a / b).toFixed(1)}배입니다.`); }
+    }
     if (hiP('tpi')) L.push(`주민 1천 명당 하루 외지인이 ${me.tpi.toFixed(1)}명으로 주민 대비 관광객 부담이 큰 편입니다(${top('tpi')}).`);
     if (hiP('fshare')) L.push(`외국인 방문객 비중이 ${F.fshare(me.fshare)}로 높습니다.`);
     if (loP('fdens') && me.fshare != null && P.fshare != null && P.fshare >= .5) L.push(`외국인 방문객에 비해 숙소가 적은 편입니다(외국인 100만 명당 ${F.fdens(me.fdens)}, ${peerName} 하위 ${Math.max(1, Math.round(P.fdens * 100))}%).`);
@@ -2008,9 +2054,19 @@
   $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b) { const g = GROUPS.find(x => x[0] === b.dataset.g); setTab(lastSub[g[0]] || g[1][0][0]); scrollTo({ top: 0, behavior: 'smooth' }); } });
   $('subtabs').addEventListener('click', e => { const b = e.target.closest('button[data-t]'); if (b) setTab(b.dataset.t); });
   // 첫 화면 안내: 예시 지역 바로가기, 닫으면 이 브라우저에서는 다시 안 보임
-  try { if (localStorage.getItem('introHidden')) $('intro').hidden = true; } catch { /* 저장소를 못 쓰면 매번 보임 */ }
-  $('intro-x').onclick = () => { $('intro').hidden = true; try { localStorage.setItem('introHidden', '1'); } catch { /* 무시 */ } };
+  const showIntro = on => { $('intro').hidden = !on; $('intro-open').hidden = on; };
+  try { if (localStorage.getItem('introHidden')) showIntro(false); } catch { /* 저장소를 못 쓰면 매번 보임 */ }
+  $('intro-x').onclick = () => { showIntro(false); try { localStorage.setItem('introHidden', '1'); } catch { /* 무시 */ } };
+  $('intro-open').onclick = () => { showIntro(true); try { localStorage.removeItem('introHidden'); } catch { /* 무시 */ } };
   $('intro').addEventListener('click', async e => {
+    // 역할별 질문: 답이 있는 탭으로(search = 지역 검색창, radius = 지도 반경 분석 켜기)
+    const q = e.target.closest('button[data-go]');
+    if (q) {
+      const go = q.dataset.go;
+      if (go === 'search') { setTab('summary'); $('reg-q').focus(); return; }
+      if (go === 'radius') { const rb = document.querySelector('.radbtn'); if (rb && rb.getAttribute('aria-pressed') !== 'true') rb.click(); $('map').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+      setTab(go.slice(4)); document.querySelector('.controls').scrollIntoView({ behavior: 'smooth' }); return;
+    }
     const b = e.target.closest('button[data-ex]'); if (!b) return;
     const [sn, gn] = b.dataset.ex.split('/'), si = S.findIndex(x => x.name === sn), gi = si >= 0 ? S[si].sgg.indexOf(gn) : -1;
     if (gi < 0) return;

@@ -16,13 +16,16 @@
     <p class="sub">행정안전부 인허가 API 8종과 한국관광공사 관광지 정보를 매일 자동으로 모읍니다. <span id="updated"></span></p>
     <div class="meta"><details class="fresh" id="fresh"><summary>데이터 기준일</summary><div class="tablewrap"><table id="fresh-table"></table></div>
       <p class="note">자료마다 공개 주기가 달라 최신 시점이 다릅니다. 인용할 때는 이 기준일을 함께 적어 주세요.</p></details>
-    <p class="dl">전체 시설 내려받기: <a href="data/download/lodging.csv.gz" download>CSV (gzip, 약 5MB)</a> · <a href="codebook.html">코드북</a> · <a href="https://github.com/ms1238/korea-lodging-dashboard-/releases">월별 스냅샷</a></p></div></div>
+    <p class="dl">전체 시설 내려받기: <a href="data/download/lodging.csv.gz" download>CSV (gzip, 약 5MB)</a> · <a href="codebook.html">코드북</a> · <a href="https://github.com/ms1238/korea-lodging-dashboard-/releases">월별 스냅샷</a></p><button class="linkbtn" id="intro-open" type="button" hidden>어떤 일에 쓰나요?</button></div></div>
     <div class="intro" id="intro"><button class="x" id="intro-x" type="button" aria-label="안내 닫기">×</button>
-      <b>이렇게 써 보세요</b>
-      <ol><li>아래에서 <b>지역을 고르면</b> '지역 진단'에 그 지역 숙박업 상태가 한 장으로 나옵니다.</li>
-        <li><b>'입지 분석'·'관광 수요'</b>에서 역·축제·국립공원 주변 숙소 수와 방문객을 봅니다.</li>
-        <li><b>'＋ 비교에 추가'</b>로 여러 지역을 담아 '지역 비교'에서 나란히 봅니다.</li></ol>
-      <div class="ex">예시로 보기: <button class="btn" data-ex="강원특별자치도/강릉시">강릉시</button><button class="btn" data-ex="부산광역시/해운대구">부산 해운대구</button><button class="btn" data-ex="전북특별자치도/전주시">전주시</button><button class="btn" data-ex="제주특별자치도/제주시">제주시</button></div></div>
+      <b>어떤 일에 쓰시나요?</b> <span class="hint">질문을 누르면 답이 있는 화면으로 갑니다.</span>
+      <dl class="roles">
+        <div><dt>정책·GR</dt><dd><button class="q" data-go="tab=minbak">외국인 숙소는 어디서 늘고 있나</button><button class="q" data-go="tab=trend">올해 신규·폐업, 작년보다 많나</button></dd></div>
+        <div><dt>지자체</dt><dd><button class="q" data-go="search">우리 지역 숙박 진단</button><button class="q" data-go="tab=festival">축제 때 숙소는 충분한가</button></dd></div>
+        <div><dt>사업자·호스트</dt><dd><button class="q" data-go="tab=transit">역 주변 숙소 경쟁</button><button class="q" data-go="radius">지도에서 반경 안 숙소 세기</button></dd></div>
+        <div><dt>연구자</dt><dd><button class="q" data-go="tab=compare">여러 지역 나란히 비교</button><a class="q" href="codebook.html">데이터 내려받기·코드북</a></dd></div>
+      </dl>
+      <div class="ex">예시 지역: <button class="btn" data-ex="강원특별자치도/강릉시">강릉시</button><button class="btn" data-ex="부산광역시/해운대구">부산 해운대구</button><button class="btn" data-ex="전북특별자치도/전주시">전주시</button><button class="btn" data-ex="제주특별자치도/제주시">제주시</button></div></div>
   </div></header>
 
   <div class="controls" role="group" aria-label="필터">
@@ -106,6 +109,13 @@
   <section data-tab="now">
     <div class="sechead"><h2>업종별 비중</h2><p class="sub" id="share-sub"></p></div>
     <div class="card"><button class="btn csv" data-csv="share" data-name="업종별_비중">CSV</button><div class="sharelist" id="share"></div><p class="note">세로선은 전국 비중입니다(지역을 골랐을 때).</p></div>
+  </section>
+
+  <section data-tab="trend" id="ytd-sec">
+    <div class="sechead"><h2>올해 vs 작년 같은 기간</h2><p class="sub" id="ytd-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="ytd-table" data-name="올해_작년_같은기간">CSV</button>
+      <div class="tablewrap"><table id="ytd-table"></table></div>
+      <p class="note">연도별 차트는 올해가 끝나지 않아 올해 숫자가 작게 보입니다. 여기서는 1월 1일부터 기준일까지를 작년의 같은 날짜까지와 비교합니다. 인허가·폐업 등록이 늦게 들어오는 경우가 있어 최근 몇 주는 올해 쪽이 조금 적게 잡힐 수 있습니다.</p></div>
   </section>
 
   <section data-tab="trend" id="recent-sec">
