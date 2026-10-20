@@ -1,0 +1,26 @@
+# Temporary: which 시군구 have no 관광수요지수 value on the live page.
+name: Probe kto index coverage
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-kix.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - shell: python
+        run: |
+          import requests
+          B = "https://ms1238.github.io/korea-lodging-dashboard-/data/"
+          m, k = requests.get(B + "meta.json", timeout=60).json(), requests.get(B + "kto_index.json", timeout=60).json()
+          miss = []
+          for si, s in enumerate(m["sido"]):
+              for gi, g in enumerate(s["sgg"]):
+                  v = k["v"].get(f"{si}:{gi}")
+                  if not v or not any(x is not None for row in v for x in row):
+                      miss.append(f"{s['name']} {g}")
+          print("== months", k["months"][:1], k["months"][-1:], "areas", len(k["v"]))
+          print("== 시군구 without any index value:", len(miss), miss)
