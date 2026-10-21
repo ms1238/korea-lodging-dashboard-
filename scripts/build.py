@@ -40,6 +40,8 @@ Steps
     facilities licensed 20+ years ago, per 업종.
 28. meta.json sido[]["r12"] / ["old"]: per 시군구 new permits and closings over the last 365 days (per 업종), and
     operating 여관·여인숙 with the share licensed 20+ years ago, for the map colouring and the 동향 table.
+29. bus.json: bus terminals and intercity bus 정류장 (OpenStreetMap amenity=bus_station) as [lat, lon, 1 = name has 터미널, name];
+    meta.json "bus" = the official national count (한국교통안전공단 전국 버스터미널 현황, latest table).
 """
 import calendar
 import csv
@@ -886,6 +888,20 @@ def write_food(sidos, sido_meta, merged):
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
 
+def write_bus():
+    """bus.json from raw/bus_stations.json; returns {"table", "n"} from raw/bus_official.json for meta (None if absent)."""
+    path = os.path.join(RAW, "bus_stations.json")
+    out = [[s["lat"], s["lon"], int("터미널" in s["name"]), s["name"]] for s in json.load(open(path, encoding="utf-8"))] if os.path.exists(path) else []
+    print(f"bus: {sum(o[2] for o in out)} 터미널, {sum(1 - o[2] for o in out)} other bus stations", flush=True)
+    with open(os.path.join(OUT, "bus.json"), "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    path = os.path.join(RAW, "bus_official.json")
+    if not os.path.exists(path):
+        return None
+    d = json.load(open(path, encoding="utf-8"))
+    return {"table": d["table"], "n": sum(int(r["계"]) for r in d["rows"] if r.get("구분") not in ("계", "합계", "전국"))}
+
+
 def add_main(out, srcs):
     """Append [[boardings], [alightings]] of 간선열차 for the latest 12 months to stations taken from the 간선 table."""
     path = os.path.join(RAW, "korail_main.jsonl")
@@ -1505,6 +1521,7 @@ def main():
     write_festivals(rows, sidos, sgg_of, tidx, merged)
     write_park_lodging(rows, parks, sidos, sgg_of, tidx)
     write_food(sidos, sido_meta, merged)
+    bus = write_bus()
     write_survival(rows, sidos, sgg_of)
     admin_ver = write_admin(sidos, sido_meta, merged)
     if visits:
@@ -1533,6 +1550,7 @@ def main():
         "fresh": data_dates(admin_ver, pop_ym, decl_date, dpop_year),
         "dpop_year": dpop_year,
         "brief": national_brief(rows, tidx),
+        "bus": bus,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))

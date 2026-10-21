@@ -57,6 +57,7 @@ select:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid 
 .sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;flex:none}
 .sw.ring{background:#fff;border:2px solid;width:11px;height:11px}
 .sw.tri{border-radius:0;clip-path:polygon(50% 0,100% 100%,0 100%)}
+.sw.dia{border-radius:0;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
 .sw.dash{border-radius:0;height:4px;width:14px;background:repeating-linear-gradient(90deg,#1f2d3d 0 5px,transparent 5px 8px)}
 .sharelist,.ranklist{display:flex;flex-direction:column;gap:6px}
 .row{display:grid;grid-template-columns:minmax(120px,210px) minmax(0,1fr) 120px;gap:12px;align-items:center;font-size:13px}

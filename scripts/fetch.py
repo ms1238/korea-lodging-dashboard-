@@ -52,6 +52,7 @@ ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntT
 ICN = "https://apis.data.go.kr/B551177/AviationStatsByCountry/getTotalNumberOfPassenger"  # 인천공항 국가별 여객
 KORAIL_WIDE = "https://apis.data.go.kr/B551457/issueStatistics/wideRailloadStationPer"  # 코레일 광역철도 역별 승하차
 PARK_VISIT_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15107577/v1"  # 국립공원공단 탐방객 통계 (odcloud, cumulative daily table)
+BUS_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15066765/v1"  # 한국교통안전공단 전국 버스터미널 현황 (odcloud, counts per 시도, one table per year)
 KAC_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1"  # 한국공항공사 공항별 여객실적 (odcloud)
 # 관광수요지수 구성 지표 (한국관광데이터랩): (operation, indicator parameter, indicator codes). Values are indices, not counts.
 KTO_INDEX = [
@@ -97,13 +98,19 @@ STATIONS_QUERY = """[out:json][timeout:180];
  nwr["railway"="station"]["subway"="yes"](33.0,124.5,38.7,131.0);
  nwr["railway"="station"]["light_rail"="yes"](33.0,124.5,38.7,131.0););
 out center tags;"""
+# bus terminals and intercity bus 정류장 (매표소); an area lookup because the bounding box would also take in 개성 and 후쿠오카
+# (a mirror without an area index fails and the next one is tried)
+BUS_QUERY = """[out:json][timeout:240];
+area["ISO3166-1"="KR"][admin_level=2]->.k;
+nwr["amenity"="bus_station"](area.k);
+out center tags;"""
 # every railway station: 광역철도 lines run by Korail (경의중앙, 경춘, 수인분당, 서해, 동해선, 대경선 ...) are tagged as
 # ordinary railway stations, so the build adds those whose name appears in the 코레일 광역철도 table
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -282,7 +289,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
@@ -292,7 +299,7 @@ def main():
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -415,6 +422,18 @@ def fetch_century(key):
         page += 1
     print(f"century_shops: {spec['paths'][path]['get'].get('summary')}: {len(rows)} rows", flush=True)
     save_json("century_shops.json", rows)
+
+
+def fetch_bus_official(key):
+    """전국 버스터미널 현황: the latest table (시도 구분, 계, 공영, 공용); counts only, no locations."""
+    spec = requests.get(BUS_SPEC, timeout=60).json()
+    path = max(spec["paths"], key=lambda p: spec["paths"][p]["get"].get("summary", "")[-8:])
+    d = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": 1, "perPage": 100, "returnType": "JSON"}, timeout=90).json()
+    if not d.get("data"):
+        raise RuntimeError(str(d)[:200])
+    title = spec["paths"][path]["get"].get("summary", "")
+    print(f"bus_official: {title}: {len(d['data'])} rows", flush=True)
+    save_json("bus_official.json", {"table": title, "rows": d["data"]})
 
 
 def fetch_park_visitors(key):

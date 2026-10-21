@@ -282,7 +282,7 @@
         map.getSource('decl').setData({ type: 'FeatureCollection', features: feats });
       };
       map.on('click', 'decl-fill', e => { if (radiusOn) return;
-        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'areas', 'tour', 'fest', 'food0', 'food1'].filter(l => map.getLayer(l)) }).length) return;
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'bus0', 'bus1'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties, r = { si: p.si, gi: p.gi };
         new maplibregl.Popup({ maxWidth: '240px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(regLabel(r))}</b><br>${p.d === 1 ? '인구감소지역' : '인구감소관심지역'}${(S[r.si].declp || []).includes(r.gi) ? ' · 인구활력 플러스' : ''}<br><small>행정안전부 2026.10.7 지정</small>`).addTo(map);
       });
@@ -292,7 +292,7 @@
       map.addLayer({ id: 'choro-line', type: 'line', source: 'choro', layout: { visibility: 'none' }, paint: { 'line-color': '#ffffff', 'line-width': .6 } }, firstSymbol);
       $('choro-mode').onchange = renderChoro;
       map.on('click', 'choro-fill', e => { if (radiusOn) return;
-        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'areas', 'tour', 'fest', 'food0', 'food1'].filter(l => map.getLayer(l)) }).length) return;
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'bus0', 'bus1'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties, x = r12Of(p.si, p.gi), [n, o] = oldOf(p.si, p.gi), nr = netRate(x);
         new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(regLabel({ si: p.si, gi: p.gi }))}</b><br>최근 1년 신규 ${fmt(x.nw)} · 폐업 ${fmt(x.cl)} · 순증률 ${nr == null ? '-' : pct1(nr)}<br>여관·여인숙 ${fmt(n)}곳 중 20년 이상 ${n ? Math.round(o / n * 100) + '%' : '-'}`).addTo(map);
       });
@@ -360,6 +360,28 @@
       });
       for (const k of [0, 1]) map.on('click', 'food' + k, e => { if (radiusOn) return; const p = e.features[0].properties;
         pop(e.lngLat, `<b>${esc(p.n)}</b><br>${k ? '백년가게' : '모범음식점'}${p.m ? ' · ' + esc(p.m) : ''}<br>${esc(p.a)}${p.t ? '<br>' + esc(p.t) : ''}<br><small>출처: ${k ? '소상공인시장진흥공단' : '행정안전부'} · 위치는 일반음식점 인허가 좌표</small>`); });
+      // 버스터미널(진한 청록 마름모, 전국 보기부터)과 시외버스 정류장(옅은 마름모, 9레벨부터) (build.py → bus.json, OpenStreetMap)
+      map.addSource('bus', { type: 'geojson', data: empty });
+      const dia = (fill, px) => {
+        const c = document.createElement('canvas'); c.width = c.height = px; const g = c.getContext('2d'), r = px / 2;
+        g.beginPath(); g.moveTo(r, 2); g.lineTo(px - 2, r); g.lineTo(r, px - 2); g.lineTo(2, r); g.closePath();
+        g.fillStyle = fill; g.fill(); g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+        return g.getImageData(0, 0, px, px);
+      };
+      for (const [k, col, minzoom] of [[0, '#4db6ac', 9], [1, '#00695c', 6]]) {
+        map.addImage('dia' + k, dia(col, 24), { pixelRatio: 2 });
+        map.addLayer({ id: 'bus' + k, type: 'symbol', source: 'bus', minzoom, filter: ['==', ['get', 'k'], k],
+          layout: { 'icon-image': 'dia' + k, 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, .95, 16, 1.2] } });
+      }
+      getJSON('data/bus.json', null).then(rows => {
+        if (!rows || !rows.length) return;
+        map.getSource('bus').setData({ type: 'FeatureCollection', features: rows.map(r => ({ type: 'Feature', properties: { k: r[2], n: r[3] },
+          geometry: { type: 'Point', coordinates: [r[1], r[0]] } })) });
+        $('n-bus').textContent = fmt(rows.length) + '곳';
+        if (meta.bus) $('bus-note').textContent += ` 공식 집계(한국교통안전공단, ${meta.bus.table.slice(-8, -4)}년 말)로는 버스터미널이 전국 ${fmt(meta.bus.n)}곳이고, 지도에는 정류장·매표소도 함께 나옵니다.`;
+      });
+      for (const k of [0, 1]) map.on('click', 'bus' + k, e => { if (radiusOn) return; const p = e.features[0].properties;
+        pop(e.lngLat, `<b>${esc(p.n)}</b><br>${k ? '버스터미널' : '버스 정류장·매표소'}<br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'pts', e => { if (radiusOn) return;
         const p = e.features[0].properties;
         new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(e.lngLat).setHTML(
@@ -388,16 +410,16 @@
       });
       for (const l of ['subway', 'ktx']) map.on('click', l, e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p.n)}</b><br><small>출처: OpenStreetMap</small>`); });
       map.on('click', 'park-fill', e => { if (radiusOn) return;
-        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'fest', 'food0', 'food1', 'areas', 'airports', 'rail-st', 'subway', 'ktx'].filter(l => map.getLayer(l)) }).length) return;
+        if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'tour', 'fest', 'food0', 'food1', 'bus0', 'bus1', 'areas', 'airports', 'rail-st', 'subway', 'ktx'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties;
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
       map.on('click', 'rail-st', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']]]) {
+      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
-      for (const l of ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'airports', 'rail-st', 'subway', 'ktx', 'park-fill']) {
+      for (const l of ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'bus0', 'bus1', 'airports', 'rail-st', 'subway', 'ktx', 'park-fill']) {
         map.on('mouseenter', l, () => { map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', l, () => { map.getCanvas().style.cursor = ''; });
       }
