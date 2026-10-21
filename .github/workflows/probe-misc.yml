@@ -1,0 +1,33 @@
+# Temporary: final 관광수지 check + where the 도시철도역사 standard-data file now lives.
+name: Probe misc
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-misc.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, re, requests
+          K = os.environ["KEY"]
+          base = "http://openapi.tour.go.kr/openapi/service/EdrcntTourismBalnaceService/getTourismBalcList"
+          for ym in ("202508", "201205"):
+              try:
+                  r = requests.get(base, params={"serviceKey": K, "YM": ym}, timeout=30)
+                  print(f"== BAL {ym} {r.status_code} {r.text[:400]!r}", flush=True)
+              except Exception as e:
+                  print("== BAL ERR", e, flush=True)
+          ua = {"User-Agent": "Mozilla/5.0"}
+          t = requests.get("https://www.data.go.kr/data/15013205/standard.do", headers=ua, timeout=60).text
+          print("== PAGE len", len(t), flush=True)
+          for pat in (r"atchFileId", r"fileDetailSn", r"fileDownload", r"tn_pubr", r"openapi", r"\.csv", r"download", r"publicDataPk|publicDataDetailPk|uddi"):
+              hits = [m.group(0) for m in re.finditer(r".{0,90}" + pat + r".{0,140}", t)][:4]
+              for h in hits:
+                  print(f"== [{pat}]", re.sub(r"\s+", " ", h), flush=True)
