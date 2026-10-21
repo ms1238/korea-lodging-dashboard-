@@ -40,7 +40,8 @@ Steps
     facilities licensed 20+ years ago, per 업종.
 28. meta.json sido[]["r12"] / ["old"]: per 시군구 new permits and closings over the last 365 days (per 업종), and
     operating 여관·여인숙 with the share licensed 20+ years ago, for the map colouring and the 동향 table;
-    ["stk"] / "stock_years": per 시군구 and 업종 the stock at the end of each of the last four years (supply vs demand chart).
+    ["stk"] / "stock_years" / "room_cov": per 시군구 and 업종 the stock and its 객실 수 at the end of each of the last
+    four years, and per 업종 the share of operating facilities with a 객실 수 (supply vs demand chart).
 29. bus.json: bus terminals and intercity bus 정류장 (OpenStreetMap amenity=bus_station) as [lat, lon, 1 = name has 터미널, name];
     terminals also get 시도/시군구 and the operating lodgings per type within 1 / 3 km, for the 대중교통 tab;
     meta.json "bus" = the official national count (한국교통안전공단 전국 버스터미널 현황, latest table).
@@ -77,6 +78,10 @@ SOURCES = {
 }
 CATEGORIES = ["숙박업", "관광숙박업", "외국인관광 도시민박업", "농어촌민박업", "관광펜션업", "한옥체험업", "야영장업"]
 CAMP = {"general_campgrounds", "auto_campgrounds"}
+# 객실 수 columns per source (summed): 숙박업 한실 + 양실, the others 객실수; 관광펜션업 and campgrounds have none.
+# (면적 columns exist too but are unusable: 숙박업 소재지면적 stops below 1,000㎡ and 관광 시설면적 often holds land areas.)
+ROOM_COLS = {"lodgings": ("KSRM_CNT", "WSRM_CNT"), "tourist_accommodations": ("GSRM_CNT",), "foreigner_city_homestays": ("GSRM_CNT",),
+             "rural_homestays": ("GSRM_CNT",), "hanok_experience": ("GSRM_CNT",)}
 TOUR_TYPES = [("12", "관광지"), ("14", "문화시설"), ("28", "레포츠")]
 STATUS = ["영업", "휴업", "폐업"]  # 폐업 also covers 취소·말소·만료 etc.
 ZONES = ["주거지역", "상업지역", "공업지역", "녹지·관리지역", "미상"]
@@ -214,6 +219,17 @@ def similar(a, b):
     return difflib.SequenceMatcher(None, a, b).ratio() >= 0.6
 
 
+def rooms_of(rec, cols):
+    """Sum of the 객실 columns, or None when none of them holds a positive number."""
+    n = 0
+    for c in cols:
+        try:
+            n += max(0, int(float(rec.get(c))))
+        except (TypeError, ValueError):
+            pass
+    return n or None
+
+
 def load():
     rows = []
     for ep, (cat, cols, default) in SOURCES.items():
@@ -233,6 +249,7 @@ def load():
                     "ll": coords(rec), "id": clean(rec.get("MNG_NO")),
                     "zone": zone_of(rec.get("RGN_SE_NM")) if ep == "foreigner_city_homestays" else -1,
                     "bldg": bldg_of(rec.get("BLDG_USG_NM")) if ep == "foreigner_city_homestays" else -1,
+                    "rooms": rooms_of(rec, ROOM_COLS[ep]) if ep in ROOM_COLS else None,
                 })
     return rows
 
@@ -1196,15 +1213,27 @@ def add_change_old(rows, sidos, sido_meta, tidx):
     """Per 시군구 in meta.sido[]: "r12" = [[업종, new permits, closings, operating or paused now], …] over the last
     365 days (only 업종 with any), for the map's net-change colouring; "old" = [operating 여관·여인숙, of them licensed
     20+ years ago]; "stk" = [[업종, stock at the end of each of STOCK_YEARS], …] (operating or paused that day, from the
-    permit and closing dates; closed records without a date are left out), for the supply vs demand growth chart.
-    Returns STOCK_YEARS."""
+    permit and closing dates; closed records without a date are left out), followed by the summed 객실 수 at the same
+    year ends (an empty one takes the median of the 업종, one above the 업종's 99.9th percentile is cut to it; 0 for 업종
+    without a 객실 column), for the supply vs demand growth chart. Returns (STOCK_YEARS, per 업종 the share of operating
+    facilities with a 객실 수)."""
     today = datetime.now(KST).date()
     since, y20 = (today - timedelta(days=365)).isoformat(), today.year - 20
     years = list(range(today.year - 4, today.year))
+    by_t = defaultdict(list)
+    for r in rows:
+        if r["status"] == 0:
+            by_t[tidx[(r["cat"], r["type"])]].append(r["rooms"])
+    med, cap = {}, {}
+    for t, xs in by_t.items():
+        v = sorted(x for x in xs if x)
+        if v:
+            med[t], cap[t] = statistics.median(v), v[int(len(v) * 0.999)]
+    cov = [round(sum(1 for x in by_t.get(t, []) if x) / len(by_t[t]), 3) if by_t.get(t) else 0 for t in range(max(tidx.values()) + 1)]
     for si, (s, sm) in enumerate(zip(sidos, sido_meta)):
         gi_of = {g: i for i, g in enumerate(sm["sgg"])}
         r12 = [defaultdict(lambda: [0, 0, 0]) for _ in sm["sgg"]]
-        stk = [defaultdict(lambda: [0] * len(years)) for _ in sm["sgg"]]
+        stk = [defaultdict(lambda: [0] * (2 * len(years))) for _ in sm["sgg"]]
         old = [[0, 0] for _ in sm["sgg"]]
         for r in rows:
             if r["sido"] != s:
@@ -1218,13 +1247,15 @@ def add_change_old(rows, sidos, sido_meta, tidx):
                 old[gi][0] += 1
                 old[gi][1] += bool(r["date"]) and int(r["date"][:4]) <= y20
             if r["date"] and (r["status"] < 2 or r["closed"]):
+                rooms = min(r["rooms"], cap.get(t, r["rooms"])) if r["rooms"] else med.get(t, 0)
                 for k, y in enumerate(years):
                     if int(r["date"][:4]) <= y and (r["status"] < 2 or int(r["closed"][:4]) > y):
                         stk[gi][t][k] += 1
+                        stk[gi][t][len(years) + k] += rooms
         sm["r12"] = [[[t, *v] for t, v in sorted(d.items()) if any(v)] for d in r12]
-        sm["stk"] = [[[t, *v] for t, v in sorted(d.items()) if any(v)] for d in stk]
+        sm["stk"] = [[[t, *v[:len(years)], *(round(x) for x in v[len(years):])] for t, v in sorted(d.items()) if any(v)] for d in stk]
         sm["old"] = old
-    return years
+    return years, cov
 
 
 def national_brief(rows, tidx):
@@ -1553,7 +1584,7 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     pop_ym = add_population(sidos, sgg_of, sido_meta)
     decl_date = add_decline(sidos, sgg_of, sido_meta, merged)
-    stock_years = add_change_old(rows, sidos, sido_meta, tidx)
+    stock_years, room_cov = add_change_old(rows, sidos, sido_meta, tidx)
     write_download(rows, sidos, sido_meta)
     write_arrivals()
     write_icn()
@@ -1596,6 +1627,7 @@ def main():
         "brief": national_brief(rows, tidx),
         "bus": bus,
         "stock_years": stock_years,
+        "room_cov": room_cov,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
