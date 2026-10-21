@@ -131,6 +131,18 @@
       <p class="note">순증률 = (최근 365일 신규 인허가 − 폐업) ÷ 1년 전 추정 재고(지금 영업·휴업 − 순증). 재고 20곳 미만은 비워 둡니다. 노후 숙박은 영업 중인 여관·여인숙 가운데 인허가가 20년 넘은 곳의 비중(10곳 미만은 비움)으로, 리모델링·용도 전환 정책의 대상을 가늠하는 데 씁니다. 지도 오른쪽 '시군구 색칠'로 같은 값을 지도에서 볼 수 있습니다.</p></div>
   </section>
 
+  <section data-tab="trend" id="sd-sec" hidden>
+    <div class="sechead"><h2>숙소는 방문객보다 빨리 늘었나</h2><p class="sub" id="sd-sub"></p>
+      <div class="seg" id="sd-kind" role="group" aria-label="방문객 기준" style="margin-top:8px"><button data-v="t" aria-pressed="true">외지인+외국인</button><button data-v="1" aria-pressed="false">외국인만</button></div></div>
+    <div class="kpis" id="sd-kpis"></div>
+    <div class="card"><h3 style="margin-bottom:6px">시군구별 숙소 증가율 vs 방문객 증가율</h3>
+      <div class="chartwrap"><svg id="sd-chart" viewBox="0 0 900 460" role="img" aria-label="시군구별 숙소 증가율과 방문객 증가율 산점도"></svg><div class="tip" id="sd-tip" hidden></div></div>
+      <p class="note">점 하나가 시군구 하나입니다(시작 연도 숙소 30곳 미만은 제외). 점선은 두 증가율이 같은 선이고, 그 아래(붉은 영역)는 숙소가 방문객보다 빨리 늘어난 곳, 위는 방문객이 숙소보다 빨리 늘어난 곳입니다. 가로·세로 눈금 간격이 달라 점선이 45도가 아닙니다. 값이 아주 큰 몇 곳은 가장자리에 빈 원으로 표시합니다. 점을 누르면 그 지역으로 갑니다.</p></div>
+    <div class="card"><button class="btn csv" data-csv="sd-table" data-name="숙소_방문_증가율">CSV</button><h3 style="margin-bottom:10px" id="sd-title"></h3>
+      <div class="tablewrap" style="max-height:480px;overflow:auto"><table id="sd-table"></table></div>
+      <p class="note">공급 과잉을 단정하는 지표가 아니라 신호입니다. 숙소는 그해 12월 31일에 영업·휴업 중인 시설 수(객실 수가 아님)로, 지금 인허가 기록의 인허가일·폐업일로 거꾸로 계산해 폐업일이 빠진 오래된 기록은 들어가지 않습니다. 방문객은 한국관광데이터랩의 이동통신 기반 추정치(연간 합계, 같은 사람이 여러 날 오면 여러 번 셈)입니다. 차이가 +10%p 넘으면 붉게, −10%p 아래면 초록으로 표시합니다. 2026년에 새로 생긴 인천 구(제물포·영종·서해·검단)는 방문객 자료가 옛 구 기준이라 증가율을 비워 둡니다.</p></div>
+  </section>
+
   <section data-tab="trend" id="recent-sec">
     <div class="sechead"><h2>최근 인허가·폐업</h2><p class="sub" id="recent-sub"></p></div>
     <div class="card"><button class="btn csv" data-csv="recent-table" data-name="최근_인허가_폐업">CSV</button>

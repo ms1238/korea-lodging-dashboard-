@@ -39,7 +39,8 @@ Steps
 27. meta.json "brief": national new permits / closings this year vs the same dates last year, and the share of operating
     facilities licensed 20+ years ago, per 업종.
 28. meta.json sido[]["r12"] / ["old"]: per 시군구 new permits and closings over the last 365 days (per 업종), and
-    operating 여관·여인숙 with the share licensed 20+ years ago, for the map colouring and the 동향 table.
+    operating 여관·여인숙 with the share licensed 20+ years ago, for the map colouring and the 동향 table;
+    ["stk"] / "stock_years": per 시군구 and 업종 the stock at the end of each of the last four years (supply vs demand chart).
 29. bus.json: bus terminals and intercity bus 정류장 (OpenStreetMap amenity=bus_station) as [lat, lon, 1 = name has 터미널, name];
     terminals also get 시도/시군구 and the operating lodgings per type within 1 / 3 km, for the 대중교통 tab;
     meta.json "bus" = the official national count (한국교통안전공단 전국 버스터미널 현황, latest table).
@@ -1194,12 +1195,16 @@ OLD_TYPES = {("숙박업", "여관업"), ("숙박업", "여인숙업")}  # 노�
 def add_change_old(rows, sidos, sido_meta, tidx):
     """Per 시군구 in meta.sido[]: "r12" = [[업종, new permits, closings, operating or paused now], …] over the last
     365 days (only 업종 with any), for the map's net-change colouring; "old" = [operating 여관·여인숙, of them licensed
-    20+ years ago]."""
+    20+ years ago]; "stk" = [[업종, stock at the end of each of STOCK_YEARS], …] (operating or paused that day, from the
+    permit and closing dates; closed records without a date are left out), for the supply vs demand growth chart.
+    Returns STOCK_YEARS."""
     today = datetime.now(KST).date()
     since, y20 = (today - timedelta(days=365)).isoformat(), today.year - 20
+    years = list(range(today.year - 4, today.year))
     for si, (s, sm) in enumerate(zip(sidos, sido_meta)):
         gi_of = {g: i for i, g in enumerate(sm["sgg"])}
         r12 = [defaultdict(lambda: [0, 0, 0]) for _ in sm["sgg"]]
+        stk = [defaultdict(lambda: [0] * len(years)) for _ in sm["sgg"]]
         old = [[0, 0] for _ in sm["sgg"]]
         for r in rows:
             if r["sido"] != s:
@@ -1212,8 +1217,14 @@ def add_change_old(rows, sidos, sido_meta, tidx):
             if r["status"] == 0 and (r["cat"], r["type"]) in OLD_TYPES:
                 old[gi][0] += 1
                 old[gi][1] += bool(r["date"]) and int(r["date"][:4]) <= y20
+            if r["date"] and (r["status"] < 2 or r["closed"]):
+                for k, y in enumerate(years):
+                    if int(r["date"][:4]) <= y and (r["status"] < 2 or int(r["closed"][:4]) > y):
+                        stk[gi][t][k] += 1
         sm["r12"] = [[[t, *v] for t, v in sorted(d.items()) if any(v)] for d in r12]
+        sm["stk"] = [[[t, *v] for t, v in sorted(d.items()) if any(v)] for d in stk]
         sm["old"] = old
+    return years
 
 
 def national_brief(rows, tidx):
@@ -1542,7 +1553,7 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     pop_ym = add_population(sidos, sgg_of, sido_meta)
     decl_date = add_decline(sidos, sgg_of, sido_meta, merged)
-    add_change_old(rows, sidos, sido_meta, tidx)
+    stock_years = add_change_old(rows, sidos, sido_meta, tidx)
     write_download(rows, sidos, sido_meta)
     write_arrivals()
     write_icn()
@@ -1584,6 +1595,7 @@ def main():
         "dpop_year": dpop_year,
         "brief": national_brief(rows, tidx),
         "bus": bus,
+        "stock_years": stock_years,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))

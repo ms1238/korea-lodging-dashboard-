@@ -674,7 +674,7 @@
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
     renderStations(); renderTerminals();
-    renderRecent(); renderYTD(); renderChange(); if ($('choro-mode').value === 'net') renderChoro();
+    renderRecent(); renderYTD(); renderChange(); renderSD(); if ($('choro-mode').value === 'net') renderChoro();
     renderSurv();
     syncMore();
     renderFest();
@@ -1050,6 +1050,82 @@
     csvSet('chg-table', ['지역', '영업·휴업', '최근1년 신규', '최근1년 폐업', '순증', '순증률(%)', '여관·여인숙 영업', '그중 인허가 20년 이상'],
       rows.map(([nm, , a, nr]) => [nm, a.live, a.nw, a.cl, a.nw - a.cl, nr == null ? '' : +(nr * 100).toFixed(2), a.n, a.o]));
   }
+
+  /* ---------- 공급 vs 수요 증가율: 시군구별 연말 재고(build.py → meta.sido[].stk) × 데이터랩 방문객(visits.json) ---------- */
+  let sdKind = 't';  // 't' = 외지인 + 외국인, '1' = 외국인만
+  const SD_MIN = 30;  // 시작 연도 재고가 이보다 적으면 증가율이 크게 튀어 차트에서 빼고 표에서는 비움
+  function renderSD() {
+    const Y = meta.stock_years, P = visits && Y ? visPeriods('y') : null;
+    // 끝 연도 = 방문객 자료가 1년 다 찬 마지막 해, 시작 = 그 2년 전
+    const y1 = P ? Y.filter(y => { const j = P.keys.indexOf(String(y)); return j >= 0 && !P.partial[j]; }).at(-1) : null, y0 = y1 - 2;
+    const ok = !!y1 && Y.includes(y0);
+    $('sd-sec').hidden = !ok; if (!ok) return;
+    const k0 = Y.indexOf(y0) + 1, k1 = Y.indexOf(y1) + 1, j0 = P.keys.indexOf(String(y0)), j1 = P.keys.indexOf(String(y1));
+    const stock = r => (r.si < 0 ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => [si, gi])) : (gisOf(r) || S[r.si].sgg.map((_, gi) => gi)).map(gi => [r.si, gi]))
+      .reduce((a, [si, gi]) => { for (const c of (S[si].stk || [])[gi] || []) if (state.types.has(c[0])) { a[0] += c[k0]; a[1] += c[k1]; } return a; }, [0, 0]);
+    const dem = r => { const v = visOf(r); if (!v) return null;
+      const yr = j => { const xs = P.idx[j].map(i => sdKind === 't' ? (v[0][i] == null || v[1][i] == null ? null : v[0][i] + v[1][i]) : v[1][i]); return xs.some(x => x == null) ? null : xs.reduce((a, b) => a + b, 0); };
+      const a = yr(j0), b = yr(j1); return a && b != null ? [a, b] : null; };
+    const calc = r => { const st = stock(r), d = dem(r), gs = st[0] >= SD_MIN ? st[1] / st[0] - 1 : null, gd = d ? d[1] / d[0] - 1 : null;
+      return { ...r, st, d, gs, gd, gap: gs != null && gd != null ? gs - gd : null }; };
+    const cur = U ? null : curReg();
+    const all = S.flatMap((sd, si) => sd.sgg.map((_, gi) => calc({ si, gi }))), pts = all.filter(p => p.gap != null);
+    const isSel = p => cur && cur.si === p.si && (cur.gi < 0 && cur.grp == null || cur.gi === p.gi || (gisOf(cur) || []).includes(p.gi));
+    const kindName = sdKind === 't' ? '외지인+외국인 방문' : '외국인 방문';
+    document.querySelectorAll('#sd-kind button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === sdKind)));
+    $('sd-sub').textContent = `${y0}년 말 → ${y1}년 말 숙소 vs ${y0}년 → ${y1}년 ${kindName} · 시군구 ${pts.length}곳${state.types.size < T.length ? ' · 선택 업종' : ''}`;
+    // 지표 카드: 고른 지역과 전국
+    const me = calc(cur && cur.si >= 0 ? cur : { si: -1, gi: -1 }), nat = calc({ si: -1, gi: -1 }), pp = v => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%p`;
+    const rate = (a, b) => a ? pct1(b / a - 1) : '-';
+    const higher = pts.filter(p => me.gap != null && p.gap > me.gap).length;
+    $('sd-kpis').innerHTML = [
+      [rate(...me.st), `숙소 ${fmt(me.st[0])} → ${fmt(me.st[1])} (${regionName()})`],
+      [me.d ? rate(...me.d) : '-', `${kindName} ${me.d ? `${fmt(Math.round(me.d[0] / 1e4))}만 → ${fmt(Math.round(me.d[1] / 1e4))}만` : '자료 없음'}`],
+      [me.st[0] && me.d ? pp((me.st[1] / me.st[0] - 1) - (me.d[1] / me.d[0] - 1)) : '-', `숙소 증가율 − 방문 증가율${cur && cur.gi >= 0 && me.gap != null ? ` (전국 ${pts.length}곳 중 ${higher + 1}위)` : ''}`],
+      [`${rate(...nat.st)} · ${nat.d ? rate(...nat.d) : '-'}`, '전국 숙소 · 방문 증가율'],
+    ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
+    // 산점도: 대각선(숙소 증가율 = 방문 증가율) 아래는 숙소가 방문보다 빨리 늘어난 곳
+    const q = (xs, f) => { const v = [...xs].sort((a, b) => a - b); return v[Math.min(v.length - 1, Math.max(0, Math.round(f * (v.length - 1))))]; };
+    // 가로·세로 축 범위는 따로(2~98백분위, 0 포함): 숙소 증가율이 방문 증가율보다 훨씬 넓게 퍼져 있음
+    const dom = xs => { const lo = Math.min(0, q(xs, .02)), hi = Math.max(0, q(xs, .98)), pad = (hi - lo) * .06 || .1; return [lo - pad, hi + pad]; };
+    const [xa, xb] = dom(pts.map(p => p.gs)), [ya, yb] = dom(pts.map(p => p.gd));
+    const W = 900, H = 460, L = 56, R = 16, Tp = 30, B = 40, iw = W - L - R, ih = H - Tp - B;
+    const Xr = v => L + (v - xa) / (xb - xa) * iw, Yr = v => Tp + ih - (v - ya) / (yb - ya) * ih;
+    const X = v => Xr(Math.min(xb, Math.max(xa, v))), Yp = v => Yr(Math.min(yb, Math.max(ya, v)));
+    const out = p => p.gs < xa || p.gs > xb || p.gd < ya || p.gd > yb;
+    const tick = (a, b) => ([1, 2, 5, 10, 20, 25, 50, 100, 200, 500].find(v => v >= (b - a) * 100 / 6) || 1000) / 100;  // 눈금 6개 안팎
+    const m = Math.min(xa, ya), M = Math.max(xb, yb);
+    let g = `<defs><clipPath id="sd-clip"><rect x="${L}" y="${Tp}" width="${iw}" height="${ih}"/></clipPath></defs>`
+      + `<g clip-path="url(#sd-clip)"><polygon points="${Xr(m)},${Yr(m)} ${Xr(M)},${Yr(M)} ${Xr(M)},${Yr(m)}" fill="var(--closed)" opacity=".06"/>`
+      + `<line x1="${Xr(m)}" y1="${Yr(m)}" x2="${Xr(M)}" y2="${Yr(M)}" stroke="var(--muted)" stroke-dasharray="4 4"/></g>`;
+    const ty = tick(ya, yb), tx = tick(xa, xb), pc = v => `${Math.round(v * 100)}%`;
+    for (let v = Math.ceil(ya / ty) * ty; v <= yb + 1e-9; v += ty) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Yr(v)}" y2="${Yr(v)}"/><text x="${L - 8}" y="${Yr(v) + 4}" text-anchor="end">${pc(v)}</text>`;
+    for (let v = Math.ceil(xa / tx) * tx; v <= xb + 1e-9; v += tx) g += `<text x="${Xr(v)}" y="${H - 22}" text-anchor="middle">${pc(v)}</text>`;
+    g += `<line x1="${Xr(0)}" x2="${Xr(0)}" y1="${Tp}" y2="${Tp + ih}" stroke="var(--muted)" stroke-width=".8"/><line x1="${L}" x2="${W - R}" y1="${Yr(0)}" y2="${Yr(0)}" stroke="var(--muted)" stroke-width=".8"/>`;
+    const lab = (x, y, t, a) => `<text x="${x}" y="${y}" text-anchor="${a}" style="font-size:12px;font-weight:700;fill:var(--muted)">${t}</text>`;
+    g += lab(W - R - 4, Tp + ih - 8, '숙소가 방문보다 빨리 늘어난 곳', 'end') + lab(L + 6, Tp + 14, '방문이 숙소보다 빨리 늘어난 곳', 'start');
+    g += `<text x="${L + iw / 2}" y="${H - 4}" text-anchor="middle">숙소 증가율 (${y0}→${y1}년 말) →</text><text x="${L - 40}" y="12" text-anchor="start">↑ ${kindName} 증가율 (${y0}→${y1}년)</text>`;
+    const dot = (p, i, sel) => `<circle data-i="${i}" cx="${X(p.gs)}" cy="${Yp(p.gd)}" r="${sel ? 6.5 : 4}" fill="${out(p) ? 'none' : sel ? 'var(--c1)' : 'var(--c0)'}" stroke="${sel ? (out(p) ? 'var(--c1)' : '#fff') : out(p) ? 'var(--c0)' : 'none'}" stroke-width="1.5"${sel ? '' : ' opacity=".4"'}/>`;
+    pts.forEach((p, i) => { if (!isSel(p)) g += dot(p, i, false); });
+    pts.forEach((p, i) => { if (isSel(p)) g += dot(p, i, true) + `<text x="${X(p.gs) + 9}" y="${Yp(p.gd) + 4}" style="font-size:12px;font-weight:700;fill:var(--fg)">${esc(S[p.si].sgg[p.gi])}</text>`; });
+    $('sd-chart').innerHTML = g;
+    const svg = $('sd-chart'), tip = $('sd-tip'), wrap = svg.parentElement;
+    svg.onmousemove = e => { const c = e.target.closest('circle[data-i]'); if (!c) { tip.hidden = true; return; } const p = pts[+c.dataset.i];
+      tip.innerHTML = `<b>${esc(regLabel(p))}</b><br>숙소 ${fmt(p.st[0])} → ${fmt(p.st[1])} (${pct1(p.gs)})<br>${kindName} ${pct1(p.gd)}<br>차이 ${pp(p.gap)}${out(p) ? '<br><small>축 밖 값이라 가장자리에 빈 원으로 표시</small>' : ''}`; tip.hidden = false;
+      const b = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + 'px'; tip.style.top = (e.clientY - b.top + 10) + 'px'; };
+    svg.onmouseleave = () => { tip.hidden = true; };
+    svg.onclick = async e => { const c = e.target.closest('circle[data-i]'); if (!c) return; const p = pts[+c.dataset.i]; if (state.sido !== p.si) await setSido(p.si); setSgg(p.gi); };
+    // 표: 고른 광역(없으면 전국)의 시군구, 숙소가 방문보다 빨리 는 폭 큰 순
+    const rows = all.filter(p => !cur || cur.si < 0 || p.si === cur.si).sort((a, b) => (b.gap ?? -9) - (a.gap ?? -9));
+    $('sd-title').textContent = `${cur && cur.si >= 0 ? S[cur.si].name : '전국'} 시군구: 숙소 증가율 − 방문 증가율 큰 순`;
+    const man = v => v == null ? '·' : fmt(Math.round(v / 1e4));
+    $('sd-table').innerHTML = `<thead><tr><th>지역</th><th>숙소 ${y0}</th><th>숙소 ${y1}</th><th>증가율</th><th>방문 ${y0}(만)</th><th>방문 ${y1}(만)</th><th>증가율</th><th>차이</th></tr></thead><tbody>`
+      + rows.map(p => `<tr${isSel(p) ? ' class="sum"' : ''}><td>${esc(regLabel(p))}</td><td>${fmt(p.st[0])}</td><td>${fmt(p.st[1])}</td><td>${p.gs == null ? '·' : pct1(p.gs)}</td><td>${man(p.d && p.d[0])}</td><td>${man(p.d && p.d[1])}</td><td>${p.gd == null ? '·' : pct1(p.gd)}</td>`
+        + `<td style="color:${p.gap == null ? '' : p.gap > .1 ? 'var(--closed)' : p.gap < -.1 ? 'var(--ok)' : ''}">${p.gap == null ? '·' : pp(p.gap)}</td></tr>`).join('') + '</tbody>';
+    csvSet('sd-table', ['지역', `숙소 ${y0}년 말`, `숙소 ${y1}년 말`, '숙소 증가율(%)', `${kindName} ${y0}`, `${kindName} ${y1}`, '방문 증가율(%)', '차이(%p)'],
+      rows.map(p => [regLabel(p), p.st[0], p.st[1], p.gs == null ? '' : +(p.gs * 100).toFixed(2), p.d ? p.d[0] : '', p.d ? p.d[1] : '', p.gd == null ? '' : +(p.gd * 100).toFixed(2), p.gap == null ? '' : +(p.gap * 100).toFixed(2)]));
+  }
+  $('sd-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { sdKind = b.dataset.v; renderSD(); } });
 
   /* ---------- 올해 vs 작년 같은 기간(1월 1일~기준일): 광역 이하는 시설 목록에서, 전국은 meta.brief에서 ---------- */
   function ytdCounts() {  // → { y, md, nw: [[올해, 작년] per 업종], cl: [...] }
