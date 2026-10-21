@@ -644,7 +644,7 @@
     renderStatus(a, names);
     renderCompare();
     renderDemandVis();
-    renderKix(); renderLodem(); renderFoodDem();
+    renderKix(); renderLodem(); renderFoodDem(); renderFood();
     renderOverview();
     renderSupply();
     renderSummary(a, renderTrend(names));
@@ -1832,6 +1832,64 @@
     el.innerHTML = `${esc(regionName())} 미식 수요 · ${M[li].slice(0, 4)}.${M[li].slice(4)}: ${one(j[0])}, ${one(j[1])}. 한국관광공사 관광수요지수(상대 지수).`;
     el.hidden = false;
   }
+  /* ---------- 미식: 식음료 소비 vs 숙박업 소비(관광 자원 수요, 시군구 백분위) ---------- */
+  let fdPeer = 'all';
+  function renderFood() {
+    const ok = kix && kix.ix.some(x => x[0] === '1106');
+    $('food-sec').hidden = !ok; if (!ok) return;
+    const cur = U ? null : curReg(), avg = (si, gi, c) => kixAvg({ si, gi }, c);
+    // 비교 대상 시군구: 전국 / 서울 제외 / 고른 광역 안
+    const seoul = S.findIndex(sd => sd.name === '서울특별시');
+    let all = S.flatMap((sd, si) => sd.sgg.map((_, gi) => ({ si, gi })));
+    if (fdPeer === 'noseoul') all = all.filter(r => r.si !== seoul);
+    if (fdPeer === 'sido' && cur && cur.si >= 0) all = all.filter(r => r.si === cur.si);
+    const at = areaTable(), live = r => { const x = at[r.si + ':' + r.gi]; return x ? x.a.reduce((p, q) => p + q, 0) : 0; };
+    const pts = all.map(r => ({ ...r, f: avg(r.si, r.gi, '1106'), l: avg(r.si, r.gi, '1107'), sns: avg(r.si, r.gi, '1103') })).filter(p => p.f != null && p.l != null);
+    const rank = key => { const xs = pts.map(p => p[key]).sort((a, b) => a - b);
+      pts.forEach(p => { const lo = xs.filter(x => x < p[key]).length, eq = xs.filter(x => x === p[key]).length; p[key + 'p'] = (lo + eq / 2) / xs.length * 100; }); };
+    rank('f'); rank('l');
+    const isSel = p => cur && cur.si === p.si && (cur.gi < 0 && cur.grp == null || cur.gi === p.gi || (gisOf(cur) || []).includes(p.gi));
+    document.querySelectorAll('#fd-peer button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === fdPeer)));
+    $('fd-peer').querySelector('[data-v="sido"]').disabled = !(cur && cur.si >= 0);
+    const peerName = fdPeer === 'noseoul' ? '서울 제외 시군구' : fdPeer === 'sido' && cur && cur.si >= 0 ? S[cur.si].name + ' 시군구' : '전국 시군구';
+    $('fd-sub').textContent = `${peerName} ${pts.length}곳 · 관광수요지수 최근 12개월 평균 · ${regionName()}${cur && cur.si >= 0 ? ' 강조' : ''}`;
+    // 지표 카드: 고른 지역(시군구면 비교 대상 안 백분위도)
+    const me = cur && cur.si >= 0 && cur.grp == null ? (cur.gi >= 0 ? pts.find(p => p.si === cur.si && p.gi === cur.gi) : null) : null;
+    const reg = cur && cur.si >= 0 && cur.grp == null ? { f: avg(cur.si, cur.gi, '1106'), l: avg(cur.si, cur.gi, '1107'), sns: avg(cur.si, cur.gi, '1103') } : null;
+    const fc = (cur && cur.si >= 0 ? (gisOf(cur) || S[cur.si].sgg.map((_, gi) => gi)).map(gi => (S[cur.si].food || [])[gi] || [0, 0]) : S.flatMap(sd => sd.food || [])).reduce((a, b) => [a[0] + b[0], a[1] + b[1]], [0, 0]);
+    const topP = v => v >= 50 ? `상위 ${Math.max(1, Math.round(100 - v))}%` : `하위 ${Math.max(1, Math.round(v))}%`;
+    $('fd-kpis').innerHTML = [
+      [reg && reg.f != null ? reg.f.toFixed(1) : '-', `식음료 소비액 지수${me ? ` (${topP(me.fp)})` : ''}`],
+      [reg && reg.l != null ? reg.l.toFixed(1) : '-', `숙박업 소비액 지수${me ? ` (${topP(me.lp)})` : ''}`],
+      [reg && reg.sns != null ? reg.sns.toFixed(1) : '-', '미식여행 SNS 언급량 지수'],
+      [`${fmt(fc[0])} · ${fmt(fc[1])}`, `모범음식점 · 백년가게 (${regionName()})`],
+    ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
+    // 산점도(백분위): 50선으로 4분면
+    const W = 900, H = 460, L = 56, R = 16, Tp = 30, B = 40, iw = W - L - R, ih = H - Tp - B, X = v => L + v / 100 * iw, Y = v => Tp + ih - v / 100 * ih;
+    let g = '';
+    for (const v of [0, 25, 50, 75, 100]) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${v}</text><text x="${X(v)}" y="${H - 22}" text-anchor="middle">${v}</text>`;
+    g += `<line x1="${X(50)}" x2="${X(50)}" y1="${Tp}" y2="${Tp + ih}" stroke="var(--muted)" stroke-dasharray="4 4"/><line x1="${L}" x2="${W - R}" y1="${Y(50)}" y2="${Y(50)}" stroke="var(--muted)" stroke-dasharray="4 4"/>`;
+    const q = (x, y, t, a) => `<text x="${X(x)}" y="${Y(y)}" text-anchor="${a}" style="font-size:12px;font-weight:700;fill:var(--muted)">${t}</text>`;
+    g += q(98, 96, '먹고 자는 곳', 'end') + q(98, 4, '먹고 가는 곳(당일 미식)', 'end') + q(2, 96, '숙박 중심', 'start') + q(2, 4, '둘 다 낮음', 'start');
+    g += `<text x="${L + iw / 2}" y="${H - 4}" text-anchor="middle">식음료 소비액 백분위 →</text><text x="${L - 40}" y="12" text-anchor="start">↑ 숙박업 소비액 백분위</text>`;
+    pts.forEach((p, i) => { if (!isSel(p)) g += `<circle data-i="${i}" cx="${X(p.fp)}" cy="${Y(p.lp)}" r="4" fill="var(--c0)" opacity=".35"/>`; });
+    pts.forEach((p, i) => { if (isSel(p)) g += `<circle data-i="${i}" cx="${X(p.fp)}" cy="${Y(p.lp)}" r="6.5" fill="var(--c1)" stroke="#fff" stroke-width="1.5"/><text x="${X(p.fp) + 9}" y="${Y(p.lp) + 4}" style="font-size:12px;font-weight:700;fill:var(--fg)">${esc(S[p.si].sgg[p.gi])}</text>`; });
+    $('fd-chart').innerHTML = g;
+    const svg = $('fd-chart'), tip = $('fd-tip'), wrap = svg.parentElement;
+    svg.onmousemove = e => { const c = e.target.closest('circle[data-i]'); if (!c) { tip.hidden = true; return; } const p = pts[+c.dataset.i];
+      tip.innerHTML = `<b>${esc(regLabel(p))}</b><br>식음료 소비 ${p.f.toFixed(1)} (백분위 ${p.fp.toFixed(0)})<br>숙박업 소비 ${p.l.toFixed(1)} (백분위 ${p.lp.toFixed(0)})${p.sns != null ? `<br>미식 SNS ${p.sns.toFixed(1)}` : ''}`; tip.hidden = false;
+      const b = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + 'px'; tip.style.top = (e.clientY - b.top + 10) + 'px'; };
+    svg.onmouseleave = () => { tip.hidden = true; };
+    svg.onclick = async e => { const c = e.target.closest('circle[data-i]'); if (!c) return; const p = pts[+c.dataset.i]; if (state.sido !== p.si) await setSido(p.si); setSgg(p.gi); };
+    // 표: 먹고 가는 정도(식음료 백분위 − 숙박 백분위) 큰 순
+    const rows = pts.map(p => ({ ...p, d: p.fp - p.lp, food: (S[p.si].food || [])[p.gi] || [0, 0], n: live(p) })).sort((a, b) => b.d - a.d);
+    $('fd-title').textContent = `${peerName}: 먹고 가는 정도 큰 순`;
+    $('fd-table').innerHTML = '<thead><tr><th>지역</th><th>식음료 소비</th><th>백분위</th><th>숙박업 소비</th><th>백분위</th><th>차이</th><th>미식 SNS</th><th>모범음식점</th><th>백년가게</th><th>영업 숙소</th></tr></thead><tbody>'
+      + rows.map(p => `<tr${isSel(p) ? ' class="sum"' : ''}><td>${esc(regLabel(p))}</td><td>${p.f.toFixed(1)}</td><td>${p.fp.toFixed(0)}</td><td>${p.l.toFixed(1)}</td><td>${p.lp.toFixed(0)}</td><td style="color:${p.d > 25 ? 'var(--c1)' : ''}">${p.d >= 0 ? '+' : '−'}${Math.abs(p.d).toFixed(0)}</td><td>${p.sns == null ? '·' : p.sns.toFixed(1)}</td><td>${fmt(p.food[0])}</td><td>${fmt(p.food[1])}</td><td>${fmt(p.n)}</td></tr>`).join('') + '</tbody>';
+    csvSet('fd-table', ['지역', '식음료 소비액 지수(12개월 평균)', '식음료 백분위', '숙박업 소비액 지수(12개월 평균)', '숙박 백분위', '차이(백분위p)', '미식여행 SNS 언급량 지수', '모범음식점', '백년가게', '영업 숙소'],
+      rows.map(p => [regLabel(p), +p.f.toFixed(2), +p.fp.toFixed(1), +p.l.toFixed(2), +p.lp.toFixed(1), +p.d.toFixed(1), p.sns == null ? '' : +p.sns.toFixed(2), p.food[0], p.food[1], p.n]));
+  }
+  $('fd-peer').addEventListener('click', e => { const b = e.target.closest('button'); if (b && !b.disabled) { fdPeer = b.dataset.v; renderFood(); } });
   // 일반구로만 제공되는 시(수원·고양 등)는 일반구 값의 단순 평균(build.py)
   const kixApprox = r => !!(kix && kix.approx && r && r.si >= 0 && r.gi >= 0 && kix.approx.includes(`${r.si}:${r.gi}`));
   // 지역 하나(광역 또는 기초)의 최근 12개월 평균 지수
@@ -1841,7 +1899,7 @@
     const xs = v && j >= 0 ? v[j].slice(-12).filter(x => x != null) : [];
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   }
-  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); renderLodem(); renderFoodDem(); renderCompare(); renderOverview(); });
+  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); renderLodem(); renderFoodDem(); renderFood(); renderCompare(); renderOverview(); });
 
   /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
   let icn = null, icnPer = 'm';
@@ -2191,7 +2249,7 @@
   /* ---------- 탭 ---------- */
   // 탭은 5개 묶음, 묶음 안에 세부 탭(하나뿐이면 세부 줄을 숨김). tab은 세부 탭 이름이라 공유 링크(#tab=…)도 그대로 씀
   const GROUPS = [['diag', [['summary', '종합']]], ['supply', [['now', '현황'], ['trend', '동향'], ['minbak', '도시민박']]],
-    ['dem', [['demand', '방문객·수요'], ['festival', '축제']]], ['place', [['transit', '대중교통'], ['park', '국립공원']]], ['cmp', [['compare', '지역 비교']]]];
+    ['dem', [['demand', '방문객·수요'], ['food', '미식'], ['festival', '축제']]], ['place', [['transit', '대중교통'], ['park', '국립공원']]], ['cmp', [['compare', '지역 비교']]]];
   const TABS = GROUPS.flatMap(g => g[1].map(x => x[0])), groupOf = t => GROUPS.find(g => g[1].some(x => x[0] === t));
   const lastSub = {};
   let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'summary';

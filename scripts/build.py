@@ -845,19 +845,27 @@ def write_festivals(rows, sidos, sgg_of, tidx, merged):
         json.dump({"r": RADII, "f": out}, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def write_food():
+def write_food(sidos, sido_meta, merged):
     """모범음식점 (still designated and open) and 백년가게 placed at the coordinates of their 일반음식점 인허가 record
-    (fetch.py food_coords; same EPSG:5174 coordinates as the lodging records). Those not matched yet are left out."""
+    (fetch.py food_coords; same EPSG:5174 coordinates as the lodging records). Those not matched yet are left out.
+    Also meta.sido[]["food"] = per 시군구 [모범음식점, 백년가게] counted from the address (placed or not), for the 미식 tab."""
     path = os.path.join(RAW, "food_coords.json")
-    if not os.path.exists(path):
-        return
-    pos = {k: coords({"CRD_INFO_X": v[0], "CRD_INFO_Y": v[1]}) for k, v in json.load(open(path, encoding="utf-8")).items() if v}
+    pos = {k: coords({"CRD_INFO_X": v[0], "CRD_INFO_Y": v[1]}) for k, v in json.load(open(path, encoding="utf-8")).items() if v} if os.path.exists(path) else {}
     out, missing = [], Counter()
+    for sm in sido_meta:
+        sm["food"] = [[0, 0] for _ in sm["sgg"]]
+    def count(addr, k):
+        sd, g = region(addr, merged)
+        if sd in sidos:
+            sm = sido_meta[sidos.index(sd)]
+            if g in sm["sgg"]:
+                sm["food"][sm["sgg"].index(g)][k] += 1
     ex = os.path.join(RAW, "excellent_restaurant_info.jsonl")
     for line in open(ex, encoding="utf-8") if os.path.exists(ex) else []:
         r = json.loads(line)
         if r.get("DSGN_RTRCN_YMD") or r.get("SALS_STTS_NM") != "영업":
             continue
+        count(clean(r.get("ROAD_NM_ADDR") or r.get("LCTN_ADDR")), 0)
         ll = pos.get(f"ex:{r['MNG_NO']}")
         if not ll:
             missing[0] += 1
@@ -866,6 +874,7 @@ def write_food():
                     " · ".join(x for x in (clean(r.get("FD_OF_TYPE")), clean(r.get("PRINC_FD_KND"))) if x), clean(r.get("TELNO"))])
     cen = os.path.join(RAW, "century_shops.json")
     for r in json.load(open(cen, encoding="utf-8")) if os.path.exists(cen) else []:
+        count(clean(r.get("업체주소")), 1)
         ll = pos.get(f"cen:{r.get('업체명')}|{r.get('업체주소')}")
         if not ll:
             missing[1] += 1
@@ -1495,7 +1504,7 @@ def main():
     write_stations(rows, sidos, sgg_of, tidx)
     write_festivals(rows, sidos, sgg_of, tidx, merged)
     write_park_lodging(rows, parks, sidos, sgg_of, tidx)
-    write_food()
+    write_food(sidos, sido_meta, merged)
     write_survival(rows, sidos, sgg_of)
     admin_ver = write_admin(sidos, sido_meta, merged)
     if visits:

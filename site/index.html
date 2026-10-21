@@ -257,6 +257,18 @@
       <p class="note" id="dv-note"></p></div>
   </section>
 
+  <section data-tab="food" id="food-sec">
+    <div class="sechead"><h2>미식과 숙박: 먹고 가는 곳, 먹고 자는 곳</h2><p class="sub" id="fd-sub"></p>
+      <div class="seg" id="fd-peer" role="group" aria-label="비교 대상" style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구</button><button data-v="noseoul" aria-pressed="false">서울 제외</button><button data-v="sido" aria-pressed="false">같은 광역 안</button></div></div>
+    <div class="kpis" id="fd-kpis"></div>
+    <div class="card"><h3 style="margin-bottom:6px">식음료 소비 vs 숙박업 소비 (비교 대상 안 백분위)</h3>
+      <div class="chartwrap"><svg id="fd-chart" viewBox="0 0 900 460" role="img" aria-label="식음료 소비와 숙박업 소비 백분위 산점도"></svg><div class="tip" id="fd-tip" hidden></div></div>
+      <p class="note">점 하나가 시군구 하나입니다. 가로는 식음료 소비액, 세로는 숙박업 소비액 지수(최근 12개월 평균)를 비교 대상 안에서 순위(백분위)로 바꾼 값이고, 가운데 선이 중위값입니다. 오른쪽 아래는 식음료 소비에 비해 숙박 소비가 낮은 '먹고 가는 곳'(당일 미식 관광지, 체류형 전환·숙박 공급 기회), 오른쪽 위는 '먹고 자는 곳'입니다. 지수는 원·건수가 아닌 상대값이라 원값 대신 순위를 씁니다(값이 대부분 60대에 몰려 있고 100을 넘는 곳은 1%뿐).</p></div>
+    <div class="card"><button class="btn csv" data-csv="fd-table" data-name="미식_숙박_시군구">CSV</button><h3 style="margin-bottom:10px" id="fd-title"></h3>
+      <div class="tablewrap" style="max-height:480px;overflow:auto"><table id="fd-table"></table></div>
+      <p class="note">차이 = 식음료 백분위 − 숙박 백분위(클수록 먹고 가는 곳). 모범음식점·백년가게는 주소로 센 수로, 지자체마다 지정 기준이 달라 미식 수준을 뜻하지는 않습니다. 출처: 한국관광공사 관광수요지수 '관광 자원 수요'(식음료·숙박업 소비액, 미식여행 SNS 언급량), 행정안전부 모범음식점, 소상공인시장진흥공단 백년가게.</p></div>
+  </section>
+
   <section data-tab="demand" id="lodem-sec" hidden>
     <div class="sechead"><h2>숙박 수요 신호: 숙박업 소비액·숙박 검색량</h2><p class="sub" id="lodem-sub"></p></div>
     <div class="kpis" id="lodem-kpis"></div>
