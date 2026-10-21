@@ -461,8 +461,10 @@ def fetch_land_price(_key):
             raise RuntimeError(str(d)[:200])
         total = next((h["list_total_count"] for h in blk[0].get("head", []) if "list_total_count" in h), 0)
         got = blk[1].get("row", []) if len(blk) > 1 else []
-        rows += [[int(r["WRTTIME_IDTFR_ID"]), r["CLS_FULLNM"], r["DTA_VAL"]] for r in got
-                 if r.get("DTA_VAL") is not None and r["CLS_FULLNM"].count(">") <= 2]
+        for r in got:  # 시도 rows may carry the name only in CLS_NM
+            full = r.get("CLS_FULLNM") or r.get("CLS_NM") or ""
+            if r.get("DTA_VAL") is not None and full and full.count(">") <= 2:
+                rows.append([int(r["WRTTIME_IDTFR_ID"]), full, r["DTA_VAL"]])
         if not got or page * 1000 >= int(total):
             break
         page += 1
