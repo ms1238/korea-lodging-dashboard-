@@ -1,4 +1,4 @@
-# Temporary: final 관광수지 check + where the 도시철도역사 standard-data file now lives.
+# Temporary: find a working download path for 전국도시철도역사정보표준데이터.
 name: Probe misc
 on:
   push:
@@ -15,19 +15,24 @@ jobs:
           KEY: ${{ secrets.DATA_GO_KR_KEY }}
         shell: python
         run: |
-          import os, re, requests
-          K = os.environ["KEY"]
-          base = "http://openapi.tour.go.kr/openapi/service/EdrcntTourismBalnaceService/getTourismBalcList"
-          for ym in ("202508", "201205"):
-              try:
-                  r = requests.get(base, params={"serviceKey": K, "YM": ym}, timeout=30)
-                  print(f"== BAL {ym} {r.status_code} {r.text[:400]!r}", flush=True)
-              except Exception as e:
-                  print("== BAL ERR", e, flush=True)
-          ua = {"User-Agent": "Mozilla/5.0"}
-          t = requests.get("https://www.data.go.kr/data/15013205/standard.do", headers=ua, timeout=60).text
-          print("== PAGE len", len(t), flush=True)
-          for pat in (r"atchFileId", r"fileDetailSn", r"fileDownload", r"tn_pubr", r"openapi", r"\.csv", r"download", r"publicDataPk|publicDataDetailPk|uddi"):
-              hits = [m.group(0) for m in re.finditer(r".{0,90}" + pat + r".{0,140}", t)][:4]
-              for h in hits:
-                  print(f"== [{pat}]", re.sub(r"\s+", " ", h), flush=True)
+          import os, re, json, requests
+          K, ua = os.environ["KEY"], {"User-Agent": "Mozilla/5.0"}
+          def show(tag, f):
+              try: print("==", tag, f(), flush=True)
+              except Exception as e: print("==", tag, "ERR", type(e).__name__, str(e)[:200], flush=True)
+          def oas():
+              d = requests.get("https://infuser.odcloud.kr/oas/docs?namespace=15093755/v1", timeout=60).json()
+              return {p: v["get"].get("summary") for p, v in d.get("paths", {}).items()}
+          show("OAS", oas)
+          def call():
+              r = requests.get("https://api.odcloud.kr/api/15093755/v1/uddi:df94c599-74fa-48e2-99c9-e743e49b5d78", params={"serviceKey": K, "page": 1, "perPage": 2, "returnType": "JSON"}, timeout=60)
+              return r.status_code, r.text[:700]
+          show("CALL", call)
+          def js():
+              t = requests.get("https://www.data.go.kr/js/biz/mvc/std/std-download-manager.js", headers=ua, timeout=60).text
+              return [re.sub(r"\s+", " ", m.group(0)) for m in re.finditer(r".{0,120}(url|\.do)['\"]?.{0,160}", t)][:12]
+          show("JS", js)
+          def fpage():
+              t = requests.get("https://www.data.go.kr/data/15093755/fileData.do", headers=ua, timeout=60).text
+              return [re.sub(r"\s+", " ", m.group(0)) for m in re.finditer(r".{0,80}(atchFileId|fileDetailSn|fileDownload).{0,120}", t)][:6]
+          show("FILEPAGE", fpage)
