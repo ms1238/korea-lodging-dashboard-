@@ -439,35 +439,43 @@ def fetch_bus_official(key):
 
 
 def fetch_land_price(_key):
-    """한국부동산원 (연) 지역별 지가변동률 for the last two years, 시도 and 시군구 rows only (읍면동 dropped):
-    {"rows": [[year, "강원>강릉시", %], …]}. Uses REB_KEY (R-ONE), not the data.go.kr key."""
+    """한국부동산원 (연) 지역별 지가변동률 of the latest published year, 시도 and 시군구 rows only (읍면동 dropped):
+    {"rows": [[year, "강원>강릉시", %], …]}. Uses REB_KEY (R-ONE), not the data.go.kr key. The server drops large or
+    kept-alive requests, so pages are small, each on a fresh connection, with retries."""
     key = os.environ.get("REB_KEY")
     if not key:
         raise RuntimeError("REB_KEY is not set")
-    y = date.today().year
-    rows, page = [], 1
-    while True:
-        for attempt in range(4):  # the server sometimes drops the connection
+
+    def page_of(year, page):
+        for attempt in range(6):
             try:
-                d = requests.get(REB_API, params={"KEY": key, "Type": "json", "pIndex": page, "pSize": 1000, "STATBL_ID": LAND_PRICE_TABLE,
-                                                  "DTACYCLE_CD": "YY", "START_WRTTIME": y - 2, "END_WRTTIME": y - 1}, timeout=(10, 60)).json()
-                break
+                time.sleep(0.5)
+                return requests.get(REB_API, params={"KEY": key, "Type": "json", "pIndex": page, "pSize": 100, "STATBL_ID": LAND_PRICE_TABLE,
+                                                     "DTACYCLE_CD": "YY", "START_WRTTIME": year, "END_WRTTIME": year},
+                                    headers={"Connection": "close"}, timeout=(10, 40)).json()
             except (requests.RequestException, ValueError):
-                if attempt == 3:
+                if attempt == 5:
                     raise
-                time.sleep(5 * (attempt + 1))
-        blk = d.get("SttsApiTblData")
-        if not blk:
-            raise RuntimeError(str(d)[:200])
-        total = next((h["list_total_count"] for h in blk[0].get("head", []) if "list_total_count" in h), 0)
-        got = blk[1].get("row", []) if len(blk) > 1 else []
-        for r in got:  # 시도 rows may carry the name only in CLS_NM
-            full = r.get("CLS_FULLNM") or r.get("CLS_NM") or ""
-            if r.get("DTA_VAL") is not None and full and full.count(">") <= 2:
-                rows.append([int(r["WRTTIME_IDTFR_ID"]), full, r["DTA_VAL"]])
-        if not got or page * 1000 >= int(total):
+                time.sleep(3 * (attempt + 1))
+
+    rows = []
+    for year in (date.today().year - 1, date.today().year - 2):  # last year's table appears during the spring
+        page = 1
+        while True:
+            blk = page_of(year, page).get("SttsApiTblData")
+            if not blk:
+                break
+            total = next((h["list_total_count"] for h in blk[0].get("head", []) if "list_total_count" in h), 0)
+            got = blk[1].get("row", []) if len(blk) > 1 else []
+            for r in got:  # 시도 rows may carry the name only in CLS_NM
+                full = r.get("CLS_FULLNM") or r.get("CLS_NM") or ""
+                if r.get("DTA_VAL") is not None and full and full.count(">") <= 2:
+                    rows.append([int(r["WRTTIME_IDTFR_ID"]), full, r["DTA_VAL"]])
+            if not got or page * 100 >= int(total):
+                break
+            page += 1
+        if rows:
             break
-        page += 1
     print(f"land_price: {len(rows)} 시도·시군구 rows, years {sorted({r[0] for r in rows})}", flush=True)
     if not rows:
         raise RuntimeError("no rows")
