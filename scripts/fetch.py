@@ -680,30 +680,29 @@ def fetch_korail_main(key):
 
 
 def fetch_metro_std(_key):
-    """전국도시철도역사정보표준데이터: the JSON the dataset page's own download button reads (the page names the dataset
-    in a hidden publicDataPk field; columList.json gives the table and columns, standard.json the rows).
-    Saved as a list of rows keyed by the Korean column names (역사명, 노선명, 위도, 경도 …)."""
-    ua = {"User-Agent": "Mozilla/5.0", "Referer": METRO_STD}
-    t = requests.get(METRO_STD, headers=ua, timeout=60).text
-    m = re.search(r'value="([^"]+)"[^>]*id="publicDataPk"', t) or re.search(r'id="publicDataPk"[^>]*value="([^"]+)"', t)
-    if not m:
-        raise RuntimeError("publicDataPk not found on the dataset page")
-    pk = m.group(1)
-    head = requests.get("https://www.data.go.kr/download/columList.json", params={"pk": pk, "ext": "JSON"}, headers=ua, timeout=60).json()
+    """전국도시철도역사정보표준데이터: the JSON the dataset page's own download button reads (columList.json gives the
+    table and columns, standard.json the rows, pages counted from 1). Saved as a list of rows keyed by the Korean column
+    names (역사명, 노선명, 역위도, 역경도 …)."""
+    pk = re.search(r"/data/(\d+)/", METRO_STD).group(1)
+    s = requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0", "Referer": METRO_STD, "X-Requested-With": "XMLHttpRequest"})
+    s.get(METRO_STD, timeout=60)
+    head = s.get("https://www.data.go.kr/download/columList.json", params={"pk": pk, "ext": "JSON"}, timeout=60).json()
+    if "columList" not in head:
+        raise RuntimeError(str(head)[:200])
     cols = {c["columCode"]: c["columNm"] for c in head["columList"]}
-    rows, page = [], 0
+    rows, page = [], 1
     while True:
-        d = requests.get("https://www.data.go.kr/download/standard.json", headers=ua, timeout=120,
-                         params={"publicDataPk": pk, "colNmList": head["tableVO"]["colNmList"], "totalCount": head["totalCount"],
-                                 "svcTableNm": head["tableVO"]["svcTableNm"], "perPage": 10000, "page": page}).json()
-        got = d if isinstance(d, list) else next((v for v in d.values() if isinstance(v, list)), [])
+        got = s.get("https://www.data.go.kr/download/standard.json", timeout=120,
+                    params={"publicDataPk": pk, "colNmList": head["tableVO"]["colNmList"], "totalCount": head["totalCount"],
+                            "svcTableNm": head["tableVO"]["svcTableNm"], "perPage": 10000, "page": page}).json()
         rows += [{cols.get(k, k): v for k, v in r.items()} for r in got]
         if not got or len(rows) >= int(head["totalCount"]):
             break
         page += 1
-    print(f"metro_std: {len(rows)} rows (of {head['totalCount']}); columns {list(rows[0]) if rows else []}; first {rows[:1]}", flush=True)
+    print(f"metro_std: {len(rows)} rows (of {head['totalCount']}); columns {list(rows[0]) if rows else []}", flush=True)
     if not rows:
-        raise RuntimeError("empty: " + str(d)[:200])
+        raise RuntimeError("no rows")
     save_json("metro_std.json", rows)
 
 
