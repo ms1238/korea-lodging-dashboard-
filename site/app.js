@@ -820,6 +820,7 @@
   const visOf = r => {
     if (!visits) return null;
     if (r.si >= 0 && r.grp == null) return r.gi < 0 ? visits.sido[r.si] : visits.sgg[r.si][r.gi];
+    if (r.si >= 0 && S[r.si].groups[r.grp].own) return visits.gsgg ? visits.gsgg[r.si][r.grp] : null;
     if (r.si >= 0) { // 묶음: 기초별 값을 더함 (자료가 없는 분기는 비움)
       const out = [visits.q.map(() => null), visits.q.map(() => null)];
       for (const gi of gisOf(r)) { const v = visits.sgg[r.si][gi]; if (v) for (let j = 0; j < 2; j++) v[j].forEach((x, i) => { if (x != null) out[j][i] = (out[j][i] || 0) + x; }); }
@@ -885,7 +886,8 @@
     let mb = 0;
     for (const m of minbak) if (m[2] === 0 && inReg(r, m[0], m[1])) mb += m[5];
     const sumV = vs => vs.reduce((a, v) => v ? [a[0] + v[0], a[1] + v[1]] : a, [0, 0]);
-    const v = r.si < 0 ? sumV(S.map(s => s.vis)) : r.grp != null ? sumV(gisOf(r).map(gi => (S[r.si].visg || [])[gi])) : (r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]);
+    const g = r.grp != null ? S[r.si].groups[r.grp] : null;  // own: 방문객을 묶음 단위로만 가진 묶음(인천 옛 중·동·서구)
+    const v = r.si < 0 ? sumV(S.map(s => s.vis)) : g ? (g.own ? g.vis : sumV(gisOf(r).map(gi => (S[r.si].visg || [])[gi]))) : (r.gi < 0 ? S[r.si].vis : (S[r.si].visg || [])[r.gi]);
     return { st, tr, py: state.per === 'q' ? pq : py, mb, v };
   }
   function renderCompare() {
@@ -1088,8 +1090,11 @@
     const calc = r => { const st = stock(r), d = dem(r), gs = st[0] >= SD_MIN && st[2] ? st[3] / st[2] - 1 : null, gd = d ? d[1] / d[0] - 1 : null;
       return { ...r, st, d, gs, gd, gap: gs != null && gd != null ? gs - gd : null }; };
     const cur = U ? null : curReg();
-    const all = S.flatMap((sd, si) => sd.sgg.map((_, gi) => calc({ si, gi }))), pts = all.filter(p => p.gap != null);
-    const isSel = p => cur && cur.si === p.si && (cur.gi < 0 && cur.grp == null || cur.gi === p.gi || (gisOf(cur) || []).includes(p.gi));
+    // 방문객이 묶음 단위로만 있는 곳(인천 옛 중·동·서구)은 묶음을 점 하나로
+    const all = S.flatMap((sd, si) => [...sd.sgg.map((_, gi) => calc({ si, gi })), ...(sd.groups || []).map((g, grp) => g.own ? calc({ si, gi: -1, grp }) : null).filter(Boolean)]),
+      pts = all.filter(p => p.gap != null);
+    const isSel = p => cur && cur.si === p.si && (cur.gi < 0 && cur.grp == null || (p.grp != null ? gisOf(p).includes(cur.gi) : cur.gi === p.gi || (gisOf(cur) || []).includes(p.gi)));
+    const ptName = p => p.grp != null ? S[p.si].groups[p.grp].name : S[p.si].sgg[p.gi];
     const kindName = sdKind === 't' ? '외지인+외국인 방문' : '외국인 방문';
     document.querySelectorAll('#sd-kind button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === sdKind)));
     document.querySelectorAll('#sd-unit button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === sdUnit)));
@@ -1132,7 +1137,7 @@
     g += `<text x="${L + iw / 2}" y="${H - 4}" text-anchor="middle">${unitName} 증가율 (${y0}→${y1}년 말) →</text><text x="${L - 40}" y="12" text-anchor="start">↑ ${kindName} 증가율 (${y0}→${y1}년)</text>`;
     const dot = (p, i, sel) => `<circle data-i="${i}" cx="${X(p.gs)}" cy="${Yp(p.gd)}" r="${sel ? 6.5 : 4}" fill="${out(p) ? 'none' : sel ? 'var(--c1)' : 'var(--c0)'}" stroke="${sel ? (out(p) ? 'var(--c1)' : '#fff') : out(p) ? 'var(--c0)' : 'none'}" stroke-width="1.5"${sel ? '' : ' opacity=".4"'}/>`;
     pts.forEach((p, i) => { if (!isSel(p)) g += dot(p, i, false); });
-    pts.forEach((p, i) => { if (isSel(p)) g += dot(p, i, true) + `<text x="${X(p.gs) + 9}" y="${Yp(p.gd) + 4}" style="font-size:12px;font-weight:700;fill:var(--fg)">${esc(S[p.si].sgg[p.gi])}</text>`; });
+    pts.forEach((p, i) => { if (isSel(p)) g += dot(p, i, true) + `<text x="${X(p.gs) + 9}" y="${Yp(p.gd) + 4}" style="font-size:12px;font-weight:700;fill:var(--fg)">${esc(ptName(p))}</text>`; });
     if (nat.gs != null && nat.gd != null) { const nx = X(nat.gs), ny = Yp(nat.gd);
       g += `<path d="M${nx} ${ny - 8}L${nx + 8} ${ny}L${nx} ${ny + 8}L${nx - 8} ${ny}Z" fill="var(--fg)" stroke="#fff" stroke-width="1.5"/><text x="${nx + 11}" y="${ny - 6}" style="font-size:12px;font-weight:700;fill:var(--fg)">전국</text>`; }
     $('sd-chart').innerHTML = g;
@@ -1141,7 +1146,7 @@
       tip.innerHTML = `<b>${esc(regLabel(p))}</b><br>${unitName} ${sq(p.st[2])} → ${sq(p.st[3])} (${pct1(p.gs)})<br>${kindName} ${pct1(p.gd)}<br>차이 ${pp(p.gap)}${out(p) ? '<br><small>축 밖 값이라 가장자리에 빈 원으로 표시</small>' : ''}`; tip.hidden = false;
       const b = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + 'px'; tip.style.top = (e.clientY - b.top + 10) + 'px'; };
     svg.onmouseleave = () => { tip.hidden = true; };
-    svg.onclick = async e => { const c = e.target.closest('circle[data-i]'); if (!c) return; const p = pts[+c.dataset.i]; if (state.sido !== p.si) await setSido(p.si); setSgg(p.gi); };
+    svg.onclick = async e => { const c = e.target.closest('circle[data-i]'); if (!c) return; const p = pts[+c.dataset.i]; if (state.sido !== p.si) await setSido(p.si); if (p.grp != null) setGroup(p.grp); else setSgg(p.gi); };
     // 표: 고른 광역(없으면 전국)의 시군구, 숙소가 방문보다 빨리 는 폭 큰 순
     const rows = all.filter(p => !cur || cur.si < 0 || p.si === cur.si).sort((a, b) => (b.gap ?? -9) - (a.gap ?? -9));
     $('sd-title').textContent = `${cur && cur.si >= 0 ? S[cur.si].name : '전국'} 시군구: ${unitName} 증가율 − 방문 증가율 큰 순`;

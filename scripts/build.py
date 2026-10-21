@@ -118,6 +118,8 @@ SIDO_ALIASES = {
 }
 MERGED_GWANGJU_JEONNAM = "전남광주통합특별시"
 GWANGJU_GU = ["동구", "서구", "남구", "북구", "광산구"]  # 통합 이전 광주광역시; the page offers them as one group "광주시"
+# 인천 2026 개편: 옛 중구·동구·서구 → 제물포구·영종구·서해구·검단구. 방문객 등 옛 구 기준 자료를 이어 보도록 새 4개 구를 한 묶음으로도 제공
+INCHEON_OLD, INCHEON_NEW, INCHEON_GROUP = ("중구", "동구", "서구"), ("제물포구", "영종구", "서해구", "검단구"), "옛 중구·동구·서구"
 
 to_wgs84 = Transformer.from_crs("EPSG:5174", "EPSG:4326", always_xy=True)
 KST = timezone(timedelta(hours=9))
@@ -327,22 +329,32 @@ def add_visitors(sidos, sgg_of, sido_meta):
     mlist = months[-24:]  # monthly 외지인 for the seasonality index; months reported for fewer days than the month has are flagged
     mix = {m: i for i, m in enumerate(mlist)}
     mseries = defaultdict(lambda: [None] * len(mlist))
+    # 인천 옛 중·동·서구 묶음: 새 구가 나온 달부터는 새 4개 구만, 그 전은 옛 3개 구를 더함(옛 이름이 몇 달 더 남아 있어 겹치지 않게)
+    inc = "인천광역시" if "인천광역시" in sidos else None
+    new_ym = {(r["ym"], r["kind"]) for r in sgg_rows if inc and code_sido.get(r["code"][:2]) == inc and r["name"] in INCHEON_NEW}
+    def grp_key(r, level):
+        if level != "sgg" or not inc or code_sido.get(r["code"][:2]) != inc:
+            return None
+        if r["name"] in INCHEON_NEW or (r["name"] in INCHEON_OLD and (r["ym"], r["kind"]) not in new_ym):
+            return (inc, "@" + INCHEON_GROUP)
+        return None
+
     for level, rows in (("sido", sido_rows), ("sgg", sgg_rows)):
         for r in rows:
             if r["kind"] not in ("2", "3"):
                 continue
-            k = key_of(r, level)
-            if not k:
-                continue
-            j = int(r["kind"]) - 2
-            arr = series[k][j]
-            q = qi[f"{r['ym'][:4]}Q{(int(r['ym'][4:]) - 1) // 3 + 1}"]
-            arr[q] = (arr[q] or 0) + r["n"]
-            if j == 0 and r["ym"] in mix:
-                mseries[k][mix[r["ym"]]] = (mseries[k][mix[r["ym"]]] or 0) + r["n"]
-            if r["ym"] in window:
-                year_sum[k][j] += r["n"]
-                year_days[k][r["ym"]] = max(year_days[k][r["ym"]], r["days"])
+            for k in (key_of(r, level), grp_key(r, level)):
+                if not k:
+                    continue
+                j = int(r["kind"]) - 2
+                arr = series[k][j]
+                q = qi[f"{r['ym'][:4]}Q{(int(r['ym'][4:]) - 1) // 3 + 1}"]
+                arr[q] = (arr[q] or 0) + r["n"]
+                if j == 0 and r["ym"] in mix:
+                    mseries[k][mix[r["ym"]]] = (mseries[k][mix[r["ym"]]] or 0) + r["n"]
+                if r["ym"] in window:
+                    year_sum[k][j] += r["n"]
+                    year_days[k][r["ym"]] = max(year_days[k][r["ym"]], r["days"])
     full = max(sum(year_days[(s, None)].values()) for s in sidos if (s, None) in year_days)
     partial = []
 
@@ -356,6 +368,9 @@ def add_visitors(sidos, sgg_of, sido_meta):
     for s, sm in zip(sidos, sido_meta):
         sm["vis"] = year((s, None))
         sm["visg"] = [year((s, g)) for g in sm["sgg"]]
+        for g in sm.get("groups", []):
+            if g.get("own"):
+                g["vis"] = year((s, "@" + g["name"]))
     # days covered per quarter (national), so the page can mark the quarter still in progress
     qdays = [0] * len(quarters)
     for ym in months:
@@ -366,7 +381,8 @@ def add_visitors(sidos, sgg_of, sido_meta):
               "m": mlist, "mfull": mfull, "msido": [mseries.get((s, None)) for s in sidos],
               "msgg": [[mseries.get((s, g)) for g in sgg_of[s]] for s in sidos],
               "sido": [series.get((s, None)) for s in sidos],
-              "sgg": [[series.get((s, g)) for g in sgg_of[s]] for s in sidos]}
+              "sgg": [[series.get((s, g)) for g in sgg_of[s]] for s in sidos],
+              "gsgg": [[series.get((s, "@" + g["name"])) for g in sm.get("groups", [])] for s, sm in zip(sidos, sido_meta)]}
     first_month = min(window)
     meta = {"from": first_month + "01", "to": last, "partial": partial, "unmatched": sorted(unmatched)}
     return meta, visits
@@ -1186,7 +1202,7 @@ def write_arrivals():
 
 
 DOWNLOAD_COLS = ["관리번호", "업소명", "업종대분류", "업종", "시도", "시군구", "읍면동", "리", "영업상태", "인허가일", "폐업일",
-                 "도로명주소", "지번주소", "위도", "경도", "위치근사", "용도지역", "건물용도", "인구감소지역"]
+                 "도로명주소", "지번주소", "위도", "경도", "위치근사", "용도지역", "건물용도", "인구감소지역", "객실수"]
 
 
 def write_download(rows, sidos, sido_meta):
@@ -1203,7 +1219,7 @@ def write_download(rows, sidos, sido_meta):
             lat, lon = r["ll"] if r["ll"] else ("", "")
             w.writerow([r["id"], r["name"], r["cat"], r["type"], r["sido"], r["sgg"], r["emd"] or "", r["ri"] or "", STATUS[r["status"]],
                         r["date"], r["closed"], r["road"], r["lot"], lat, lon, r.get("approx", 0) if r["ll"] else "",
-                        ZONES[r["zone"]] if r["zone"] >= 0 else "", BLDGS[r["bldg"]] if r["bldg"] >= 0 else "", decl(r)])
+                        ZONES[r["zone"]] if r["zone"] >= 0 else "", BLDGS[r["bldg"]] if r["bldg"] >= 0 else "", decl(r), r["rooms"] or ""])
     print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
 
 
@@ -1552,6 +1568,8 @@ def main():
         })
         if s == MERGED_GWANGJU_JEONNAM:
             sido_meta[-1]["groups"] = [{"name": "광주시", "gis": [sggs.index(g) for g in GWANGJU_GU if g in sggs]}]
+        if s == "인천광역시" and any(g in sggs for g in INCHEON_NEW):  # own = 방문객을 묶음 단위로 따로 가짐(구별 자료 없음)
+            sido_meta[-1]["groups"] = [{"name": INCHEON_GROUP, "gis": [sggs.index(g) for g in INCHEON_NEW + INCHEON_OLD if g in sggs], "own": 1}]
     if dpop_key:
         print(f"dong_pop: {dpop_year}, population found for {dpop_hit} of {dpop_all} 읍·면·동", flush=True)
     with open(os.path.join(OUT, "close.json"), "w", encoding="utf-8") as f:
