@@ -2533,28 +2533,24 @@
   /* ---------- tour / terrain controls, footer ---------- */
   $('tourlist').innerHTML = TOUR.types.map((n, i) => `<div class="chk"><input type="checkbox" id="tour${i}" data-i="${i}"${state.tour.has(i) ? ' checked' : ''}><label for="tour${i}"><span class="sw ring" style="border-color:${TOUR_COL[i]}"></span>${esc(n)}</label><span class="n">${fmt(TOUR.counts[i] || 0)}</span></div>`).join('');
   $('tourlist').addEventListener('change', e => { const i = +e.target.dataset.i; e.target.checked ? state.tour.add(i) : state.tour.delete(i); drawTour(); renderSupply(); });
-  // 지도 보기 프리셋: 정해 둔 레이어 체크 상태로 바꿈(관광 유형은 '관광·맛집'에서 관광지만 켬). 손으로 바꾸면 선택 표시가 풀림
-  const PRESET = {
-    base: {},
-    transit: { 'ck-rail': 1, 'ck-ktx': 1, 'ck-bus': 1, 'ck-air': 1 },
-    tour: { 'ck-park': 1, 'ck-food0': 1, 'ck-food1': 1, tour0: 1 },
-    decl: { 'ck-decl': 1 },
-  };
-  let presetting = false;
+  // 지도 보기: 교통·관광·인구감소 묶음을 켜고 끄며 여러 개를 함께 고를 수 있음. '기본'은 묶음을 모두 끔.
+  // 묶음 버튼은 그 레이어가 모두 켜져 있으면 눌린 상태(체크박스를 손으로 바꿔도 다시 계산). 관광지는 켤 때만 함께 켬(지표 계산에도 쓰여 끄지 않음)
+  const PRESET = { transit: ['ck-rail', 'ck-ktx', 'ck-bus', 'ck-air'], tour: ['ck-park', 'ck-food0', 'ck-food1'], decl: ['ck-decl'] };
+  const ALL_LAYERS = Object.values(PRESET).flat();
+  const setCk = (id, on) => { const el = $(id); if (el && el.checked !== on) { el.checked = on; el.dispatchEvent(new Event('change', { bubbles: true })); } };
+  const syncPreset = () => document.querySelectorAll('#map-preset button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === 'base'
+    ? ALL_LAYERS.every(id => !$(id).checked) : PRESET[b.dataset.v].every(id => $(id).checked))));
   $('map-preset').addEventListener('click', e => {
     const b = e.target.closest('button[data-v]'); if (!b) return;
-    const want = PRESET[b.dataset.v];
-    presetting = true;
-    for (const id of ['ck-park', 'ck-air', 'ck-decl', 'ck-rail', 'ck-ktx', 'ck-bus', 'ck-food0', 'ck-food1']) {
-      const el = $(id); if (el.checked !== !!want[id]) { el.checked = !!want[id]; el.dispatchEvent(new Event('change', { bubbles: true })); }
+    if (b.dataset.v === 'base') ALL_LAYERS.forEach(id => setCk(id, false));
+    else {
+      const on = b.getAttribute('aria-pressed') !== 'true';
+      PRESET[b.dataset.v].forEach(id => setCk(id, on));
+      if (on && b.dataset.v === 'tour') setCk('tour0', true);
     }
-    const t0 = $('tour0'); if (want.tour0 && t0 && !t0.checked) { t0.checked = true; t0.dispatchEvent(new Event('change', { bubbles: true })); }
-    presetting = false;
-    document.querySelectorAll('#map-preset button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    syncPreset();
   });
-  document.querySelector('.mapgrid .rail').addEventListener('change', e => {
-    if (!presetting && e.target.type === 'checkbox' && !e.target.closest('#typelist')) document.querySelectorAll('#map-preset button').forEach(x => x.setAttribute('aria-pressed', 'false'));
-  });
+  document.querySelector('.mapgrid .rail').addEventListener('change', e => { if (e.target.type === 'checkbox') syncPreset(); });
   $('ck-shade').onchange = e => { if (mapReady) map.setLayoutProperty('hillshade', 'visibility', e.target.checked ? 'visible' : 'none'); };
   $('ck-3d').onchange = e => {
     if (!mapReady) return;
