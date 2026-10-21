@@ -1,4 +1,4 @@
-# Temporary: columList.json with the page id itself.
+# Temporary: standard.json parameters.
 name: Probe misc
 on:
   push:
@@ -17,18 +17,13 @@ jobs:
           ref = "https://www.data.go.kr/data/15013205/standard.do"
           s = requests.Session(); s.headers.update({"User-Agent": "Mozilla/5.0", "Referer": ref, "X-Requested-With": "XMLHttpRequest"})
           s.get(ref, timeout=60)
+          h = s.get("https://www.data.go.kr/download/columList.json", params={"pk": "15013205", "ext": "JSON"}, timeout=60).json()
+          tv = h["tableVO"]
+          print("== TOTAL", h.get("totalCount"), "| svc", tv.get("svcTableNm"), "| colNmList", repr(tv.get("colNmList"))[:400], flush=True)
+          print("== OTHER KEYS", [k for k in h if k not in ("columList", "tableVO")], {k: h[k] for k in h if k not in ("columList", "tableVO")}, flush=True)
+          print("== TV nonempty", {k: v for k, v in tv.items() if v not in ("", None, [], False, 0, 1, 10)}, flush=True)
+          base = {"colNmList": tv.get("colNmList"), "totalCount": h.get("totalCount"), "svcTableNm": tv.get("svcTableNm"), "perPage": 10000}
           for pk in ("15013205", "15093755"):
-              for extra in ({}, {"recommendDataYn": "Y"}, {"recommendDataYn": "N"}):
-                  r = s.get("https://www.data.go.kr/download/columList.json", params={"pk": pk, "ext": "JSON", **extra}, timeout=60)
-                  t = r.text
-                  print("== COL", pk, extra, r.status_code, t[:300].replace("\n", " "), flush=True)
-                  try:
-                      h = r.json()
-                  except Exception:
-                      continue
-                  if "columList" in h:
-                      print("== HEAD", json.dumps({k: (v if k != "columList" else v[:12]) for k, v in h.items()}, ensure_ascii=False)[:1500], flush=True)
-                      d = s.get("https://www.data.go.kr/download/standard.json", params={"publicDataPk": pk, "colNmList": h["tableVO"]["colNmList"], "totalCount": h["totalCount"],
-                                "svcTableNm": h["tableVO"]["svcTableNm"], "perPage": 10000, "page": 0}, timeout=120)
-                      print("== DATA", d.status_code, d.text[:800].replace("\n", " "), flush=True)
-                      raise SystemExit
+              for page in (0, 1):
+                  d = s.get("https://www.data.go.kr/download/standard.json", params={"publicDataPk": pk, **base, "page": page}, timeout=120)
+                  print("== DATA", pk, page, d.status_code, len(d.text), d.text[:500].replace("\n", " "), flush=True)
