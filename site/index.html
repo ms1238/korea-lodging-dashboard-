@@ -28,6 +28,8 @@
       <div class="ex">예시 지역: <button class="btn" data-ex="강원특별자치도/강릉시">강릉시</button><button class="btn" data-ex="부산광역시/해운대구">부산 해운대구</button><button class="btn" data-ex="전북특별자치도/전주시">전주시</button><button class="btn" data-ex="제주특별자치도/제주시">제주시</button></div></div>
   </div></header>
 
+  <div class="loadfail" id="load-fail" role="alert" hidden></div>
+
   <div class="controls" role="group" aria-label="필터">
     <span class="suggwrap rsearch"><input type="search" id="reg-q" placeholder="지역 검색 (예: 강릉, 해운대)" autocomplete="off" role="combobox" aria-controls="reg-sugg" aria-label="지역 검색"><span class="sugg" id="reg-sugg" role="listbox" hidden></span></span>
     <label for="f-sido">광역<select id="f-sido"><option value="-1">전국</option></select></label>
@@ -83,25 +85,27 @@
     <div class="mapgrid">
       <div id="map" class="map" aria-label="숙박시설 지도"></div>
       <div class="card rail">
+        <div class="railhead"><h3>지도 보기</h3></div>
+        <div class="seg" id="map-preset" role="group" aria-label="지도 보기 프리셋" style="margin-bottom:14px"><button data-v="base" aria-pressed="true" title="숙소와 관광지(광역을 고른 경우)만">기본</button><button data-v="transit" aria-pressed="false">교통 접근성</button><button data-v="tour" aria-pressed="false">관광·맛집</button><button data-v="decl" aria-pressed="false">인구감소지역</button></div>
         <div class="railhead"><h3>업종 <small style="font-weight:400">▸ 소분류</small></h3><span><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">해제</button></span></div>
         <div id="typelist"></div>
         <div class="railhead" style="margin-top:16px"><h3>관광 (TourAPI)</h3></div>
         <div id="tourlist"></div>
         <p class="note" style="margin-top:4px">광역을 고르면 표시됩니다.</p>
         <div class="railhead" style="margin-top:16px"><h3>교통·자연</h3></div>
-        <div class="chk"><input type="checkbox" id="ck-park" checked><label for="ck-park"><span class="sw" style="background:#2e7d32"></span>국립공원</label><span class="n" id="n-park"></span></div>
-        <div class="chk"><input type="checkbox" id="ck-air" checked><label for="ck-air"><span class="sw" style="background:#1f3a93;border-radius:1px"></span>공항</label><span></span></div>
+        <div class="chk"><input type="checkbox" id="ck-park"><label for="ck-park"><span class="sw" style="background:#2e7d32"></span>국립공원</label><span class="n" id="n-park"></span></div>
+        <div class="chk"><input type="checkbox" id="ck-air"><label for="ck-air"><span class="sw" style="background:#1f3a93;border-radius:1px"></span>공항</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-decl"><label for="ck-decl"><span class="sw" style="background:#d35400"></span>인구감소지역</label><span class="n" id="n-decl"></span></div>
-        <div class="chk"><input type="checkbox" id="ck-rail" checked><label for="ck-rail"><span class="sw" style="background:linear-gradient(90deg,#0052a4 33%,#00a84d 33% 66%,#ef7c1c 66%)"></span>철도·지하철·역</label><span></span></div>
-        <div class="chk"><input type="checkbox" id="ck-ktx" checked><label for="ck-ktx"><span class="sw dash"></span>KTX 노선</label><span></span></div>
-        <div class="chk"><input type="checkbox" id="ck-bus" checked><label for="ck-bus"><span class="sw dia" style="background:#00695c"></span>버스터미널·정류장</label><span class="n" id="n-bus"></span></div>
+        <div class="chk"><input type="checkbox" id="ck-rail"><label for="ck-rail"><span class="sw" style="background:linear-gradient(90deg,#0052a4 33%,#00a84d 33% 66%,#ef7c1c 66%)"></span>철도·지하철·역</label><span></span></div>
+        <div class="chk"><input type="checkbox" id="ck-ktx"><label for="ck-ktx"><span class="sw dash"></span>KTX 노선</label><span></span></div>
+        <div class="chk"><input type="checkbox" id="ck-bus"><label for="ck-bus"><span class="sw dia" style="background:#00695c"></span>버스터미널·정류장</label><span class="n" id="n-bus"></span></div>
         <p class="note" style="margin-top:4px" id="bus-note">진한 마름모는 이름에 '터미널'이 들어간 곳, 옅은 마름모는 시외버스 정류장·매표소이고 정류장은 지도를 확대하면 나옵니다. 위치: OpenStreetMap(등록 상태는 지역마다 차이가 있음).</p>
         <div class="choro"><label for="choro-mode">시군구 색칠</label><select id="choro-mode"><option value="">없음</option><option value="net">최근 1년 순증률</option><option value="old">노후 숙박 비중 (여관·여인숙 20년+)</option></select>
           <div class="legend" id="choro-legend" hidden></div></div>
         <p class="note" style="margin-top:4px">인구감소지역은 주황, 인구감소관심지역은 노랑(행정안전부 2026.10.7 지정). 지하철·광역철도(서해선·경의중앙선·수인분당선·공항철도·GTX 등)는 노선 색, KTX는 짙은 점선(다른 노선과 같이 쓰는 구간은 그 노선 색), 그 밖의 철도는 회색, 역·공항은 네모로 표시합니다. 국립공원 경계·면적은 OpenStreetMap(금정산은 지정 도면 기반 근사), 공항·철도는 배경지도(OpenStreetMap) 자료입니다.</p>
         <div class="railhead" style="margin-top:16px"><h3>맛집</h3></div>
-        <div class="chk"><input type="checkbox" id="ck-food1" checked><label for="ck-food1"><span class="sw tri" style="background:#8e2c48"></span>백년가게</label><span class="n" id="n-food1"></span></div>
-        <div class="chk"><input type="checkbox" id="ck-food0" checked><label for="ck-food0"><span class="sw tri" style="background:#d4a017"></span>모범음식점</label><span class="n" id="n-food0"></span></div>
+        <div class="chk"><input type="checkbox" id="ck-food1"><label for="ck-food1"><span class="sw tri" style="background:#8e2c48"></span>백년가게</label><span class="n" id="n-food1"></span></div>
+        <div class="chk"><input type="checkbox" id="ck-food0"><label for="ck-food0"><span class="sw tri" style="background:#d4a017"></span>모범음식점</label><span class="n" id="n-food0"></span></div>
         <p class="note" style="margin-top:4px" id="food-note">모범음식점은 많아서 지도를 동네 수준까지 확대하면 나옵니다. 출처: 행정안전부 모범음식점, 소상공인시장진흥공단 백년가게. 위치는 같은 가게의 일반음식점 인허가 좌표이고, 음식점이 아닌 백년가게는 나오지 않습니다.</p>
         <p class="note" style="margin-top:4px" id="food-dem" hidden></p>
         <div class="railhead" style="margin-top:16px"><h3>지형</h3></div>

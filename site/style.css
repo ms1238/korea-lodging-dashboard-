@@ -87,6 +87,9 @@ svg .grid{stroke:var(--line)}
 .stackbar span{height:100%;min-width:1px}
 .kpis + .card,.card + .card{margin-top:0}
 .tlrow{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+.loadfail{padding:10px 14px;border-radius:var(--r,10px);background:#fff4e5;color:#7a4100;border:1px solid #f0c27a;font-size:13.5px}
+.loadfail .btn{margin-left:6px}
+@media (prefers-color-scheme: dark){.loadfail{background:#3a2a12;color:#f5d39a;border-color:#7a5520}}
 .seg{display:flex;flex-wrap:wrap;gap:2px;padding:2px;background:var(--bg);border-radius:10px;width:fit-content;max-width:100%}
 .seg button{border:0;border-radius:8px;background:none;color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--panel);color:var(--fg);font-weight:700;box-shadow:var(--sh)}

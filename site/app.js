@@ -16,9 +16,22 @@
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   // 배포마다 바뀌는 버전(app.js?v=…)을 데이터 요청에도 붙여 브라우저가 지난 데이터를 쓰지 않게 함
   const V = document.currentScript?.src.match(/[?&]v=([^&]+)/)?.[1];
-  const getJSON = (u, fb) => fetch(V ? `${u}?v=${V}` : u).then(r => r.ok ? r.json() : fb).catch(() => fb);
+  // 자료 파일을 못 받으면(네트워크·서버 오류, 깨진 파일) 상단에 알림. 404는 '아직 만들어지지 않은 자료'라 알리지 않음
+  const FILE_LABEL = { meta: '기본 정보', cube: '숙박 집계', close: '숙박 집계', cubeq: '분기 집계', closeq: '분기 집계', minbak: '도시민박', visits: '방문객',
+    arrivals: '외래객 입국', bus: '버스터미널', pts: '시설 목록', tour: '관광지', park_areas: '국립공원 경계', subway: '철도 노선', admin: '행정경계',
+    food: '맛집', survival: '생존 분석', stations: '역세권', festivals: '축제', park_lodging: '국립공원 숙소', kto_index: '관광수요지수', icn: '인천공항', kac: '공항 여객' };
+  const loadFail = new Set();
+  const failed = u => {
+    const k = u.replace(/^data\//, '').split(/[/.]/)[0];
+    loadFail.add(FILE_LABEL[k] || k);
+    const el = $('load-fail'); if (!el) return;
+    el.innerHTML = `<b>일부 자료를 불러오지 못했습니다</b> (${[...loadFail].map(esc).join(', ')}). 이 자료를 쓰는 화면은 비어 보일 수 있으며, '자료 없음'과는 다릅니다. <button class="btn" type="button" onclick="location.reload()">다시 시도</button>`;
+    el.hidden = false;
+  };
+  const getJSON = (u, fb) => fetch(V ? `${u}?v=${V}` : u).then(r => { if (r.ok) return r.json(); if (r.status !== 404) failed(u); return fb; }).catch(() => { failed(u); return fb; });
   const [meta, cube, close, minbak, visits, arrivals, cubeq, closeq] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []),
     getJSON('data/minbak.json', []), getJSON('data/visits.json', null), getJSON('data/arrivals.json', null), getJSON('data/cubeq.json', []), getJSON('data/closeq.json', [])]);
+  if (!meta) return;  // 기본 정보 없이는 화면을 그릴 수 없음(알림만 남김)
   const T = meta.types, CATS = meta.categories, S = meta.sido, ST = meta.status;
   const busData = getJSON('data/bus.json', null);  // 지도 레이어와 대중교통 탭의 터미널이 함께 씀
   const catOf = T.map(t => CATS.indexOf(t.cat));
@@ -2520,6 +2533,28 @@
   /* ---------- tour / terrain controls, footer ---------- */
   $('tourlist').innerHTML = TOUR.types.map((n, i) => `<div class="chk"><input type="checkbox" id="tour${i}" data-i="${i}"${state.tour.has(i) ? ' checked' : ''}><label for="tour${i}"><span class="sw ring" style="border-color:${TOUR_COL[i]}"></span>${esc(n)}</label><span class="n">${fmt(TOUR.counts[i] || 0)}</span></div>`).join('');
   $('tourlist').addEventListener('change', e => { const i = +e.target.dataset.i; e.target.checked ? state.tour.add(i) : state.tour.delete(i); drawTour(); renderSupply(); });
+  // 지도 보기 프리셋: 정해 둔 레이어 체크 상태로 바꿈(관광 유형은 '관광·맛집'에서 관광지만 켬). 손으로 바꾸면 선택 표시가 풀림
+  const PRESET = {
+    base: {},
+    transit: { 'ck-rail': 1, 'ck-ktx': 1, 'ck-bus': 1, 'ck-air': 1 },
+    tour: { 'ck-park': 1, 'ck-food0': 1, 'ck-food1': 1, tour0: 1 },
+    decl: { 'ck-decl': 1 },
+  };
+  let presetting = false;
+  $('map-preset').addEventListener('click', e => {
+    const b = e.target.closest('button[data-v]'); if (!b) return;
+    const want = PRESET[b.dataset.v];
+    presetting = true;
+    for (const id of ['ck-park', 'ck-air', 'ck-decl', 'ck-rail', 'ck-ktx', 'ck-bus', 'ck-food0', 'ck-food1']) {
+      const el = $(id); if (el.checked !== !!want[id]) { el.checked = !!want[id]; el.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
+    const t0 = $('tour0'); if (want.tour0 && t0 && !t0.checked) { t0.checked = true; t0.dispatchEvent(new Event('change', { bubbles: true })); }
+    presetting = false;
+    document.querySelectorAll('#map-preset button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  });
+  document.querySelector('.mapgrid .rail').addEventListener('change', e => {
+    if (!presetting && e.target.type === 'checkbox' && !e.target.closest('#typelist')) document.querySelectorAll('#map-preset button').forEach(x => x.setAttribute('aria-pressed', 'false'));
+  });
   $('ck-shade').onchange = e => { if (mapReady) map.setLayoutProperty('hillshade', 'visibility', e.target.checked ? 'visible' : 'none'); };
   $('ck-3d').onchange = e => {
     if (!mapReady) return;
