@@ -1,0 +1,31 @@
+# Temporary: inspect odcloud dataset 15066765 (schema + sample rows).
+name: Probe odcloud 15066765
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-odcloud.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, json, requests
+          spec = requests.get("https://infuser.odcloud.kr/oas/docs?namespace=15066765/v1", timeout=60).json()
+          print("TITLE", spec.get("info", {}).get("title"), "|", str(spec.get("info", {}).get("description"))[:300])
+          paths = spec["paths"]
+          print("NPATHS", len(paths))
+          for p, v in paths.items():
+              print("PATH", p, "|", v["get"].get("summary"))
+          for name, sch in list(spec.get("components", {}).get("schemas", {}).items())[:40]:
+              props = sch.get("properties", {})
+              if props and "data" not in props:
+                  print("SCHEMA", name, list(props)[:40])
+          latest = max(paths, key=lambda p: paths[p]["get"].get("summary", "")[-8:])
+          for p in dict.fromkeys([latest, *list(paths)[:1]]):
+              d = requests.get("https://api.odcloud.kr/api" + p, params={"serviceKey": os.environ["KEY"], "page": 1, "perPage": 3, "returnType": "JSON"}, timeout=90).json()
+              print("SAMPLE", p, "total", d.get("totalCount"), json.dumps(d.get("data", d), ensure_ascii=False)[:1500])
