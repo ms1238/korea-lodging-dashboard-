@@ -1,4 +1,4 @@
-# Temporary: run the rewritten metro_std fetch.
+# Temporary: what columList.json / standard.json return.
 name: Probe misc
 on:
   push:
@@ -9,13 +9,18 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install -q -r requirements.txt
-      - env:
-          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
-        run: python scripts/fetch.py metro_std 2>&1 | cut -c1-1500
+      - shell: python
+        run: |
+          import json, requests
+          ref = "https://www.data.go.kr/data/15013205/standard.do"
+          s = requests.Session(); s.headers.update({"User-Agent": "Mozilla/5.0", "Referer": ref, "X-Requested-With": "XMLHttpRequest"})
+          s.get(ref, timeout=60)
+          for ext in ("JSON", "CSV", "XLS"):
+              r = s.get("https://www.data.go.kr/download/columList.json", params={"pk": "15093755", "ext": ext}, timeout=60)
+              print("== COL", ext, r.status_code, r.headers.get("content-type"), r.text[:900].replace("\n", " "), flush=True)
+              try:
+                  h = r.json(); print("== KEYS", list(h) if isinstance(h, dict) else type(h), flush=True)
+              except Exception as e:
+                  print("== NOTJSON", e, flush=True)
