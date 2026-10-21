@@ -1,4 +1,4 @@
-# Temporary: list R-ONE (한국부동산원 부동산통계) tables reachable with REB_KEY.
+# Temporary: inspect a few R-ONE tables (items and a data sample).
 name: Probe R-ONE
 on:
   push:
@@ -14,34 +14,41 @@ jobs:
           KEY: ${{ secrets.REB_KEY }}
         shell: python
         run: |
-          import os, json, re, requests
-          K = os.environ["KEY"]
-          print("key set:", bool(K), flush=True)
-          base = "https://www.reb.or.kr/r-one/openapi/"
-          rows, page = [], 1
-          while page <= 30:
-              r = requests.get(base + "SttsApiTbl.do", params={"KEY": K, "Type": "json", "pIndex": page, "pSize": 1000}, timeout=60)
-              try:
-                  d = r.json()
-              except Exception:
-                  print("NONJSON", r.status_code, r.text[:500]); break
-              blk = d.get("SttsApiTbl")
-              if not blk:
-                  print("RESP", json.dumps(d, ensure_ascii=False)[:600]); break
-              head = blk[0].get("head", [])
-              got = blk[1].get("row", []) if len(blk) > 1 else []
-              if page == 1:
-                  print("HEAD", json.dumps(head, ensure_ascii=False)[:400])
-              rows += got
-              total = next((h.get("list_total_count") for h in head if "list_total_count" in h), 0)
-              if not got or len(rows) >= int(total or 0):
-                  break
-              page += 1
-          print("TOTAL TABLES", len(rows))
-          if rows:
-              print("FIELDS", list(rows[0].keys()))
-          pat = re.compile("지가|숙박|상업용|임대|거래|투자수익|공실|오피스|상가|토지")
-          for t in rows:
-              nm = t.get("STATBL_NM", "")
-              if pat.search(nm):
-                  print("T", t.get("STATBL_ID"), t.get("DTACYCLE_CD"), nm)
+          import os, json, re, requests, collections
+          K, base = os.environ["KEY"], "https://www.reb.or.kr/r-one/openapi/"
+          def get(svc, **p):
+              rows, page = [], 1
+              while page <= 20:
+                  d = requests.get(base + svc, params={"KEY": K, "Type": "json", "pIndex": page, "pSize": 1000, **p}, timeout=90).json()
+                  blk = d.get(svc.replace(".do", ""))
+                  if not blk:
+                      print("  RESP", json.dumps(d, ensure_ascii=False)[:300]); break
+                  total = next((h.get("list_total_count") for h in blk[0].get("head", []) if "list_total_count" in h), 0)
+                  got = blk[1].get("row", []) if len(blk) > 1 else []
+                  rows += got
+                  if not got or len(rows) >= int(total or 0):
+                      break
+                  page += 1
+              return rows
+          for tid, cyc, y0, y1 in (("A_2024_00902", "YY", "2023", "2025"), ("A_2024_00567", "YY", "2024", "2025"), ("A_2024_00576", "MM", "202501", "202502"),
+                                   ("A_2024_00501", "YY", "2022", "2024"), ("A_2024_00541", "YY", "2024", "2025")):
+              print("=====", tid, flush=True)
+              it = get("SttsApiTblItm.do", STATBL_ID=tid)
+              if it:
+                  print("  ITEM FIELDS", list(it[0].keys()))
+                  tags = collections.Counter(r.get("ITM_TAG") or r.get("ITM_TAG_NM") or "?" for r in it)
+                  print("  TAGS", dict(tags))
+                  for tag in tags:
+                      xs = [r for r in it if (r.get("ITM_TAG") or r.get("ITM_TAG_NM") or "?") == tag]
+                      names = [r.get("ITM_FULLNM") or r.get("ITM_NM") for r in xs]
+                      print(f"  [{tag}] {len(xs)}:", " | ".join(str(n) for n in names[:40]))
+                      hit = [n for n in names if n and re.search("숙박|강릉|해운대|중구", str(n))]
+                      if hit: print(f"  [{tag}] hits:", " | ".join(hit[:20]))
+              dt = get("SttsApiTblData.do", STATBL_ID=tid, DTACYCLE_CD=cyc, START_WRTTIME=y0, END_WRTTIME=y1)
+              print("  DATA rows", len(dt))
+              for r in dt[:3]:
+                  print("  ", json.dumps(r, ensure_ascii=False)[:400])
+              hit = [r for r in dt if re.search("숙박", json.dumps(r, ensure_ascii=False))]
+              print("  DATA 숙박 rows", len(hit))
+              for r in hit[:4]:
+                  print("  H", json.dumps(r, ensure_ascii=False)[:400])
