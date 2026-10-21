@@ -1,0 +1,40 @@
+# Temporary: find which R-ONE pages of the 지가변동률 table fail.
+name: Probe R-ONE
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-reb.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - env:
+          KEY: ${{ secrets.REB_KEY }}
+        shell: python
+        run: |
+          import os, time, requests
+          K = os.environ["KEY"]
+          url = "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do"
+          fails, ok, n3 = [], 0, 0
+          for page in range(1, 60):
+              for attempt in range(3):
+                  t = time.time()
+                  try:
+                      d = requests.get(url, params={"KEY": K, "Type": "json", "pIndex": page, "pSize": 100, "STATBL_ID": "A_2024_00902", "DTACYCLE_CD": "YY",
+                                                    "START_WRTTIME": 2025, "END_WRTTIME": 2025}, headers={"Connection": "close"}, timeout=(10, 40)).json()
+                      blk = d.get("SttsApiTblData")
+                      got = blk[1].get("row", []) if blk and len(blk) > 1 else []
+                      n3 += sum(1 for r in got if (r.get("CLS_FULLNM") or "").count(">") <= 1)
+                      print(f"page {page} try {attempt} ok {len(got)} rows {time.time() - t:.1f}s", flush=True); ok += 1
+                      break
+                  except Exception as e:
+                      print(f"page {page} try {attempt} FAIL {type(e).__name__} {time.time() - t:.1f}s", flush=True); time.sleep(3)
+              else:
+                  fails.append(page)
+              if not got and attempt < 3 and page > 1:
+                  break
+              time.sleep(0.5)
+          print("SUMMARY ok pages", ok, "failed pages", fails, "sido/sgg rows", n3, flush=True)
