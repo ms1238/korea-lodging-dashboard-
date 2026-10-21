@@ -440,23 +440,30 @@ def fetch_bus_official(key):
 
 def fetch_land_price(_key):
     """한국부동산원 (연) 지역별 지가변동률 of the latest published year, 시도 and 시군구 rows only (읍면동 dropped):
-    {"rows": [[year, "강원>강릉시", %], …]}. Uses REB_KEY (R-ONE), not the data.go.kr key. The server drops large or
-    kept-alive requests, so pages are small, each on a fresh connection, with retries."""
+    {"rows": [[year, "강원>강릉시", %], …]}. Uses REB_KEY (R-ONE), not the data.go.kr key.
+    The table only changes once a year and the server refuses connections that come too quickly (paging the ~5,400 rows
+    takes about 10 minutes), so a saved copy that already holds last year is kept."""
     key = os.environ.get("REB_KEY")
     if not key:
         raise RuntimeError("REB_KEY is not set")
+    path = os.path.join(RAW_DIR, "land_price.json")
+    if os.path.exists(path):
+        have = {r[0] for r in json.load(open(path, encoding="utf-8"))["rows"]}
+        if date.today().year - 1 in have:
+            print(f"land_price: kept the saved copy ({max(have)})", flush=True)
+            return
 
     def page_of(year, page):
         for attempt in range(6):
             try:
-                time.sleep(0.5)
+                time.sleep(1.5)
                 return requests.get(REB_API, params={"KEY": key, "Type": "json", "pIndex": page, "pSize": 100, "STATBL_ID": LAND_PRICE_TABLE,
                                                      "DTACYCLE_CD": "YY", "START_WRTTIME": year, "END_WRTTIME": year},
                                     headers={"Connection": "close"}, timeout=(10, 40)).json()
             except (requests.RequestException, ValueError):
                 if attempt == 5:
                     raise
-                time.sleep(3 * (attempt + 1))
+                time.sleep(12)  # refused right after a request: it answers again after a pause
 
     rows = []
     for year in (date.today().year - 1, date.today().year - 2):  # last year's table appears during the spring
