@@ -707,8 +707,9 @@ def write_stations(rows, sidos, sgg_of, tidx):
           f"same name far apart (skipped): {' '.join(amb)}; not found: {' '.join(sorted(n for n in main if not by_name.get(n)))}", flush=True)
     std = load("metro_std.json")
     if std:
-        col = lambda *keys: next((c for c in std[0] if any(k in c for k in keys)), None)
-        cn, cl, cy, cx = col("역사명", "역명"), col("노선명"), col("위도"), col("경도")
+        # exact names first: the JSON also has 영문역사명 / 환승노선명, which contain the shorter names
+        col = lambda *keys: next((k for k in keys if k in std[0]), None) or next((c for c in std[0] if any(k in c for k in keys)), None)
+        cn, cl, cy, cx = col("역사명", "역명"), col("노선명"), col("역위도", "위도"), col("역경도", "경도")
         for r in std:
             try:
                 nodes.append({"name": r[cn].strip(), "lat": round(float(r[cy]), 5), "lon": round(float(r[cx]), 5), "src": "std", "line": (r.get(cl) or "").strip()})
