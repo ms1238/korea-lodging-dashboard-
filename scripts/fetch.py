@@ -11,8 +11,6 @@ Endpoint pattern: https://apis.data.go.kr/1741000/<endpoint>/info
 The service key is read from the DATA_GO_KR_KEY environment variable (a GitHub Actions secret);
 it must never be written into the repository.
 """
-import csv
-import io
 import json
 import math
 import os
@@ -682,29 +680,30 @@ def fetch_korail_main(key):
 
 
 def fetch_metro_std(_key):
-    """전국도시철도역사정보표준데이터: the file behind the dataset page (hidden form fields name it), CSV in UTF-8 or CP949."""
-    ua = {"User-Agent": "Mozilla/5.0"}
+    """전국도시철도역사정보표준데이터: the JSON the dataset page's own download button reads (the page names the dataset
+    in a hidden publicDataPk field; columList.json gives the table and columns, standard.json the rows).
+    Saved as a list of rows keyed by the Korean column names (역사명, 노선명, 위도, 경도 …)."""
+    ua = {"User-Agent": "Mozilla/5.0", "Referer": METRO_STD}
     t = requests.get(METRO_STD, headers=ua, timeout=60).text
-    def hidden(name):
-        m = re.search(r'id="%s"[^>]*value="([^"]*)"' % name, t) or re.search(r'value="([^"]*)"[^>]*id="%s"' % name, t)
-        return m.group(1) if m else None
-    atch, sn = hidden("limitAtchFileId"), hidden("limitFileDetailSn")
-    if not atch:
-        raise RuntimeError("file id not found: " + " | ".join(re.findall(r".{0,80}limitAtchFileId.{0,120}", t)[:3]))
-    r = requests.get("https://www.data.go.kr/cmm/cmm/fileDownload.do", params={"atchFileId": atch, "fileDetailSn": sn or "1"}, headers=ua, timeout=120)
-    raw = r.content
-    if raw[:2] == b"PK" or b"<html" in raw[:500].lower():
-        raise RuntimeError(f"not a CSV file (HTTP {r.status_code}, {r.headers.get('content-type')}, {raw[:80]!r})")
-    for enc in ("utf-8-sig", "cp949"):
-        try:
-            text = raw.decode(enc)
+    m = re.search(r'value="([^"]+)"[^>]*id="publicDataPk"', t) or re.search(r'id="publicDataPk"[^>]*value="([^"]+)"', t)
+    if not m:
+        raise RuntimeError("publicDataPk not found on the dataset page")
+    pk = m.group(1)
+    head = requests.get("https://www.data.go.kr/download/columList.json", params={"pk": pk, "ext": "JSON"}, headers=ua, timeout=60).json()
+    cols = {c["columCode"]: c["columNm"] for c in head["columList"]}
+    rows, page = [], 0
+    while True:
+        d = requests.get("https://www.data.go.kr/download/standard.json", headers=ua, timeout=120,
+                         params={"publicDataPk": pk, "colNmList": head["tableVO"]["colNmList"], "totalCount": head["totalCount"],
+                                 "svcTableNm": head["tableVO"]["svcTableNm"], "perPage": 10000, "page": page}).json()
+        got = d if isinstance(d, list) else next((v for v in d.values() if isinstance(v, list)), [])
+        rows += [{cols.get(k, k): v for k, v in r.items()} for r in got]
+        if not got or len(rows) >= int(head["totalCount"]):
             break
-        except UnicodeDecodeError:
-            continue
-    rows = list(csv.DictReader(io.StringIO(text)))
-    print(f"metro_std: {len(rows)} rows; columns {list(rows[0]) if rows else []}; first {rows[:1]}", flush=True)
+        page += 1
+    print(f"metro_std: {len(rows)} rows (of {head['totalCount']}); columns {list(rows[0]) if rows else []}; first {rows[:1]}", flush=True)
     if not rows:
-        raise RuntimeError("empty file")
+        raise RuntimeError("empty: " + str(d)[:200])
     save_json("metro_std.json", rows)
 
 
