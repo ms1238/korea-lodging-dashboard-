@@ -1041,14 +1041,17 @@
     if (U) rows = U.regs.map(r => [regLabel(r), r]);
     else if (!cur || cur.si < 0) rows = S.map((sd, si) => [sd.name, { si, gi: -1 }]);
     else rows = S[cur.si].sgg.map((g, gi) => [g, { si: cur.si, gi }]);
-    rows = rows.map(([nm, r]) => { const a = agg(r); return [nm, r, a, netRate(a), a.n >= 10 ? a.o / a.n : null]; }).sort((x, y) => (y[3] ?? -9) - (x[3] ?? -9));
+    // 지가변동률(한국부동산원): 광역 또는 시군구 하나일 때만(묶음은 비움)
+    const LY = meta.land_year, landOf = r => !LY || r.si < 0 || r.grp != null ? null : r.gi < 0 ? S[r.si].land_sido : (S[r.si].land || [])[r.gi];
+    const lp = v => v == null ? '·' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%`;
+    rows = rows.map(([nm, r]) => { const a = agg(r); return [nm, r, a, netRate(a), a.n >= 10 ? a.o / a.n : null, landOf(r)]; }).sort((x, y) => (y[3] ?? -9) - (x[3] ?? -9));
     const isCur = r => cur && cur.si === r.si && (cur.gi === r.gi || (r.gi >= 0 && (gisOf(cur) || []).includes(r.gi)));
     $('chg-sub').textContent = `${U ? '선택 지역' : !cur || cur.si < 0 ? '광역' : S[cur.si].name + ' 시군구'}별 · 최근 365일(${meta.updated.slice(0, 10).replace(/-/g, '.')}까지)${state.types.size < T.length ? ' · 선택 업종' : ''} · 순증률 높은 순`;
-    $('chg-table').innerHTML = '<thead><tr><th>지역</th><th>영업·휴업</th><th>신규</th><th>폐업</th><th>순증</th><th>순증률</th><th>여관·여인숙</th><th>20년 이상</th></tr></thead><tbody>'
-      + rows.map(([nm, r, a, nr, od]) => `<tr${isCur(r) ? ' class="sum"' : ''}><td>${esc(nm)}</td><td>${fmt(a.live)}</td><td>${fmt(a.nw)}</td><td>${fmt(a.cl)}</td><td>${a.nw - a.cl >= 0 ? '+' : '−'}${fmt(Math.abs(a.nw - a.cl))}</td>`
-        + `<td style="color:${nr == null ? '' : nr > .01 ? 'var(--ok)' : nr < -.01 ? 'var(--closed)' : ''}">${nr == null ? '·' : pct1(nr)}</td><td>${fmt(a.n)}</td><td>${od == null ? '·' : Math.round(od * 100) + '%'}</td></tr>`).join('') + '</tbody>';
-    csvSet('chg-table', ['지역', '영업·휴업', '최근1년 신규', '최근1년 폐업', '순증', '순증률(%)', '여관·여인숙 영업', '그중 인허가 20년 이상'],
-      rows.map(([nm, , a, nr]) => [nm, a.live, a.nw, a.cl, a.nw - a.cl, nr == null ? '' : +(nr * 100).toFixed(2), a.n, a.o]));
+    $('chg-table').innerHTML = `<thead><tr><th>지역</th><th>영업·휴업</th><th>신규</th><th>폐업</th><th>순증</th><th>순증률</th><th>여관·여인숙</th><th>20년 이상</th>${LY ? `<th>지가변동률 ${LY}</th>` : ''}</tr></thead><tbody>`
+      + rows.map(([nm, r, a, nr, od, lv]) => `<tr${isCur(r) ? ' class="sum"' : ''}><td>${esc(nm)}</td><td>${fmt(a.live)}</td><td>${fmt(a.nw)}</td><td>${fmt(a.cl)}</td><td>${a.nw - a.cl >= 0 ? '+' : '−'}${fmt(Math.abs(a.nw - a.cl))}</td>`
+        + `<td style="color:${nr == null ? '' : nr > .01 ? 'var(--ok)' : nr < -.01 ? 'var(--closed)' : ''}">${nr == null ? '·' : pct1(nr)}</td><td>${fmt(a.n)}</td><td>${od == null ? '·' : Math.round(od * 100) + '%'}</td>${LY ? `<td>${lp(lv)}</td>` : ''}</tr>`).join('') + '</tbody>';
+    csvSet('chg-table', ['지역', '영업·휴업', '최근1년 신규', '최근1년 폐업', '순증', '순증률(%)', '여관·여인숙 영업', '그중 인허가 20년 이상', ...(LY ? [`지가변동률 ${LY}(%)`] : [])],
+      rows.map(([nm, , a, nr, , lv]) => [nm, a.live, a.nw, a.cl, a.nw - a.cl, nr == null ? '' : +(nr * 100).toFixed(2), a.n, a.o, ...(LY ? [lv ?? ''] : [])]));
   }
 
   /* ---------- 공급 vs 수요 증가율: 시군구별 연말 재고(build.py → meta.sido[].stk) × 데이터랩 방문객(visits.json) ---------- */

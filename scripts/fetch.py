@@ -52,6 +52,8 @@ ARRIVALS = "https://apis.data.go.kr/B551940/EdrcntTourismStatsService/getEdrcntT
 ICN = "https://apis.data.go.kr/B551177/AviationStatsByCountry/getTotalNumberOfPassenger"  # 인천공항 국가별 여객
 KORAIL_WIDE = "https://apis.data.go.kr/B551457/issueStatistics/wideRailloadStationPer"  # 코레일 광역철도 역별 승하차
 PARK_VISIT_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15107577/v1"  # 국립공원공단 탐방객 통계 (odcloud, cumulative daily table)
+REB_API = "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do"  # 한국부동산원 부동산통계(R-ONE); key in REB_KEY
+LAND_PRICE_TABLE = "A_2024_00902"  # (연) 지역별 지가변동률, 시도 > 시군구 > 읍면동
 BUS_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15066765/v1"  # 한국교통안전공단 전국 버스터미널 현황 (odcloud, counts per 시도, one table per year)
 KAC_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1"  # 한국공항공사 공항별 여객실적 (odcloud)
 # 관광수요지수 구성 지표 (한국관광데이터랩): (operation, indicator parameter, indicator codes). Values are indices, not counts.
@@ -109,8 +111,8 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -289,7 +291,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
@@ -299,7 +301,7 @@ def main():
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -434,6 +436,40 @@ def fetch_bus_official(key):
     title = spec["paths"][path]["get"].get("summary", "")
     print(f"bus_official: {title}: {len(d['data'])} rows", flush=True)
     save_json("bus_official.json", {"table": title, "rows": d["data"]})
+
+
+def fetch_land_price(_key):
+    """한국부동산원 (연) 지역별 지가변동률 for the last two years, 시도 and 시군구 rows only (읍면동 dropped):
+    {"rows": [[year, "강원>강릉시", %], …]}. Uses REB_KEY (R-ONE), not the data.go.kr key."""
+    key = os.environ.get("REB_KEY")
+    if not key:
+        raise RuntimeError("REB_KEY is not set")
+    y = date.today().year
+    rows, page = [], 1
+    while True:
+        for attempt in range(4):  # the server sometimes drops the connection
+            try:
+                d = requests.get(REB_API, params={"KEY": key, "Type": "json", "pIndex": page, "pSize": 1000, "STATBL_ID": LAND_PRICE_TABLE,
+                                                  "DTACYCLE_CD": "YY", "START_WRTTIME": y - 2, "END_WRTTIME": y - 1}, timeout=(10, 60)).json()
+                break
+            except (requests.RequestException, ValueError):
+                if attempt == 3:
+                    raise
+                time.sleep(5 * (attempt + 1))
+        blk = d.get("SttsApiTblData")
+        if not blk:
+            raise RuntimeError(str(d)[:200])
+        total = next((h["list_total_count"] for h in blk[0].get("head", []) if "list_total_count" in h), 0)
+        got = blk[1].get("row", []) if len(blk) > 1 else []
+        rows += [[int(r["WRTTIME_IDTFR_ID"]), r["CLS_FULLNM"], r["DTA_VAL"]] for r in got
+                 if r.get("DTA_VAL") is not None and r["CLS_FULLNM"].count(">") <= 2]
+        if not got or page * 1000 >= int(total):
+            break
+        page += 1
+    print(f"land_price: {len(rows)} 시도·시군구 rows, years {sorted({r[0] for r in rows})}", flush=True)
+    if not rows:
+        raise RuntimeError("no rows")
+    save_json("land_price.json", {"rows": rows})
 
 
 def fetch_park_visitors(key):

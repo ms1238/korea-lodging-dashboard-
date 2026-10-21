@@ -45,6 +45,7 @@ Steps
 29. bus.json: bus terminals and intercity bus 정류장 (OpenStreetMap amenity=bus_station) as [lat, lon, 1 = name has 터미널, name];
     terminals also get 시도/시군구 and the operating lodgings per type within 1 / 3 km, for the 대중교통 tab;
     meta.json "bus" = the official national count (한국교통안전공단 전국 버스터미널 현황, latest table).
+30. meta.json sido[]["land"] / ["land_sido"] / "land_year": 지가변동률 per 시군구 and 시도 (한국부동산원 R-ONE, latest year).
 """
 import calendar
 import csv
@@ -1258,6 +1259,41 @@ def add_change_old(rows, sidos, sido_meta, tidx):
     return years, cov
 
 
+def add_land_price(sidos, sgg_of, sido_meta):
+    """meta.sido[]["land"] = per 시군구 지가변동률 (%) of the latest year in raw/land_price.json (한국부동산원), None when
+    the table has no row of that name (e.g. 구 created after that year); ["land_sido"] = the 시도 value. Rows are
+    "시도>시군구" (구 of a 시 are skipped, the 시 row is used); "전남광주>광주>동구" counts toward the merged 시도.
+    Returns the year, or None without the file."""
+    path = os.path.join(RAW, "land_price.json")
+    if not os.path.exists(path):
+        return None
+    rows = json.load(open(path, encoding="utf-8"))["rows"]
+    year = max(r[0] for r in rows)
+    val, missed = {}, []
+    for y, full, v in rows:
+        if y != year:
+            continue
+        parts = full.split(">")
+        if parts[0] == "전남광주":  # "전남광주" = the merged 시도; "전남광주>광주" / ">전남" = the former 시도, skipped
+            if len(parts) == 1:
+                val[(MERGED_GWANGJU_JEONNAM, None)] = round(float(v), 3)
+            if len(parts) <= 2:
+                continue
+            parts = parts[1:]
+        sido = SIDO_ALIASES.get(parts[0])
+        if sido in ("광주광역시", "전라남도") and MERGED_GWANGJU_JEONNAM in sidos:
+            sido = MERGED_GWANGJU_JEONNAM
+        if sido not in sidos or len(parts) > 2:
+            continue
+        val[(sido, parts[1] if len(parts) == 2 else None)] = round(float(v), 3)
+    for s, sm in zip(sidos, sido_meta):
+        sm["land_sido"] = val.get((s, None))
+        sm["land"] = [val.get((s, g), val.get((s, None)) if g == s else None) for g in sgg_of[s]]
+        missed += [f"{s} {g}" for g, v in zip(sgg_of[s], sm["land"]) if v is None]
+    print(f"land_price {year}: {sum(v is not None for sm in sido_meta for v in sm['land'])} 시군구 matched; no value: {' '.join(missed)}", flush=True)
+    return year
+
+
 def national_brief(rows, tidx):
     """National numbers for the page's briefing, per 업종 index: new permits and closings from 1 Jan to today this year
     and over the same dates last year ("ytd"), and operating facilities with the share licensed 20+ years ago ("age")."""
@@ -1585,6 +1621,7 @@ def main():
     pop_ym = add_population(sidos, sgg_of, sido_meta)
     decl_date = add_decline(sidos, sgg_of, sido_meta, merged)
     stock_years, room_cov = add_change_old(rows, sidos, sido_meta, tidx)
+    land_year = add_land_price(sidos, sgg_of, sido_meta)
     write_download(rows, sidos, sido_meta)
     write_arrivals()
     write_icn()
@@ -1628,6 +1665,7 @@ def main():
         "bus": bus,
         "stock_years": stock_years,
         "room_cov": room_cov,
+        "land_year": land_year,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
