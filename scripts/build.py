@@ -41,6 +41,7 @@ Steps
 28. meta.json sido[]["r12"] / ["old"]: per 시군구 new permits and closings over the last 365 days (per 업종), and
     operating 여관·여인숙 with the share licensed 20+ years ago, for the map colouring and the 동향 table.
 29. bus.json: bus terminals and intercity bus 정류장 (OpenStreetMap amenity=bus_station) as [lat, lon, 1 = name has 터미널, name];
+    terminals also get 시도/시군구 and the operating lodgings per type within 1 / 3 km, for the 대중교통 tab;
     meta.json "bus" = the official national count (한국교통안전공단 전국 버스터미널 현황, latest table).
 """
 import calendar
@@ -888,13 +889,45 @@ def write_food(sidos, sido_meta, merged):
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
 
-def write_bus():
-    """bus.json from raw/bus_stations.json; returns {"table", "n"} from raw/bus_official.json for meta (None if absent)."""
+TERM_RADII = (1, 3)  # km, rings around bus terminals
+
+
+def write_bus(rows, sidos, sgg_of, tidx):
+    """bus.json from raw/bus_stations.json: {"r": TERM_RADII, "b": [[lat, lon, 1 = name has 터미널, name, …]]}. Terminals
+    also carry 시도/시군구 index (the most common among the counted lodgings within 3 km, else -1) and the operating
+    lodgings (exact positions) within TERM_RADII per type. Same name within 300 m = one point; a trailing romanized
+    name ("… Bus Terminal") is dropped. Returns {"table", "n"} from raw/bus_official.json for meta (None if absent)."""
     path = os.path.join(RAW, "bus_stations.json")
-    out = [[s["lat"], s["lon"], int("터미널" in s["name"]), s["name"]] for s in json.load(open(path, encoding="utf-8"))] if os.path.exists(path) else []
+    grid = defaultdict(list)
+    for r in rows:
+        if r["status"] == 0 and r["ll"] and not r.get("approx"):
+            grid[(int(r["ll"][0] * 100), int(r["ll"][1] * 100))].append(r)
+    out = []
+    for st in json.load(open(path, encoding="utf-8")) if os.path.exists(path) else []:
+        name, lat, lon = re.sub(r"\s+[^가-힣]*$", "", st["name"]).strip() or st["name"], st["lat"], st["lon"]
+        kx = 111.32 * math.cos(math.radians(lat))
+        if any(o[3] == name and ((o[0] - lat) * 110.95) ** 2 + ((o[1] - lon) * kx) ** 2 <= 0.09 for o in out):
+            continue
+        o = [lat, lon, int("터미널" in name), name]
+        if o[2]:
+            cnt, reg = defaultdict(lambda: [0] * len(TERM_RADII)), Counter()
+            ci, cj = int(lat * 100), int(lon * 100)
+            for i in range(ci - 3, ci + 4):
+                for j in range(cj - 4, cj + 5):
+                    for r in grid.get((i, j), ()):
+                        d2 = ((r["ll"][0] - lat) * 110.95) ** 2 + ((r["ll"][1] - lon) * kx) ** 2
+                        if d2 <= TERM_RADII[-1] ** 2:
+                            reg[(r["sido"], r["sgg"])] += 1
+                        for k, rad in enumerate(TERM_RADII):
+                            if d2 <= rad * rad:
+                                cnt[tidx[(r["cat"], r["type"])]][k] += 1
+            sd, g = reg.most_common(1)[0][0] if reg else (None, None)
+            o += [sidos.index(sd) if sd in sidos else -1, sgg_of[sd].index(g) if sd in sidos and g in sgg_of[sd] else -1,
+                  [[t, *c] for t, c in sorted(cnt.items())]]
+        out.append(o)
     print(f"bus: {sum(o[2] for o in out)} 터미널, {sum(1 - o[2] for o in out)} other bus stations", flush=True)
     with open(os.path.join(OUT, "bus.json"), "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"r": TERM_RADII, "b": out}, f, ensure_ascii=False, separators=(",", ":"))
     path = os.path.join(RAW, "bus_official.json")
     if not os.path.exists(path):
         return None
@@ -1521,7 +1554,7 @@ def main():
     write_festivals(rows, sidos, sgg_of, tidx, merged)
     write_park_lodging(rows, parks, sidos, sgg_of, tidx)
     write_food(sidos, sido_meta, merged)
-    bus = write_bus()
+    bus = write_bus(rows, sidos, sgg_of, tidx)
     write_survival(rows, sidos, sgg_of)
     admin_ver = write_admin(sidos, sido_meta, merged)
     if visits:

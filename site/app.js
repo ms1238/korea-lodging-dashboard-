@@ -20,6 +20,7 @@
   const [meta, cube, close, minbak, visits, arrivals, cubeq, closeq] = await Promise.all([getJSON('data/meta.json'), getJSON('data/cube.json', []), getJSON('data/close.json', []),
     getJSON('data/minbak.json', []), getJSON('data/visits.json', null), getJSON('data/arrivals.json', null), getJSON('data/cubeq.json', []), getJSON('data/closeq.json', [])]);
   const T = meta.types, CATS = meta.categories, S = meta.sido, ST = meta.status;
+  const busData = getJSON('data/bus.json', null);  // 지도 레이어와 대중교통 탭의 터미널이 함께 씀
   const catOf = T.map(t => CATS.indexOf(t.cat));
   const col = c => css('--c' + c);
   const STC = ['var(--ok)', 'var(--pause)', 'var(--closed)'];
@@ -373,8 +374,9 @@
         map.addLayer({ id: 'bus' + k, type: 'symbol', source: 'bus', minzoom, filter: ['==', ['get', 'k'], k],
           layout: { 'icon-image': 'dia' + k, 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, .95, 16, 1.2] } });
       }
-      getJSON('data/bus.json', null).then(rows => {
-        if (!rows || !rows.length) return;
+      busData.then(d => {
+        const rows = d ? d.b : [];
+        if (!rows.length) return;
         map.getSource('bus').setData({ type: 'FeatureCollection', features: rows.map(r => ({ type: 'Feature', properties: { k: r[2], n: r[3] },
           geometry: { type: 'Point', coordinates: [r[1], r[0]] } })) });
         $('n-bus').textContent = fmt(rows.length) + '곳';
@@ -671,7 +673,7 @@
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
-    renderStations();
+    renderStations(); renderTerminals();
     renderRecent(); renderYTD(); renderChange(); if ($('choro-mode').value === 'net') renderChoro();
     renderSurv();
     syncMore();
@@ -1185,17 +1187,18 @@
     csvSet('stn-table', ['역', '업종', ...R.map(km => `반경 ${kmLabel(km)}`)], rows.map(c => [s[2], T[c[0]].name, ...c.slice(1)]));
     drawRings(s);
   }
-  function drawRings(s, fly, kind = 'transit') {  // kind: 반경을 보여 줄 탭(역 = transit, 축제 = festival). 다른 탭에서는 그리지 않음
+  function drawRings(s, fly, kind = 'transit', R) {  // kind: 반경을 보여 줄 탭(역 = transit, 축제 = festival). 다른 탭에서는 그리지 않음. R: 반경(터미널)
     if (!mapReady || tab !== kind) return;
     const feats = [];
     if (s) {
       const [lat, lon] = s, kx = 111.32 * Math.cos(lat * Math.PI / 180);
-      for (const km of (kind === 'festival' ? FEST : STN).r) {
+      for (const km of R || (kind === 'festival' ? FEST : STN).r) {
         const g = []; for (let k = 0; k <= 72; k++) { const a = k / 72 * 2 * Math.PI; g.push([lon + km / kx * Math.sin(a), lat + km / 110.95 * Math.cos(a)]); }
         feats.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: g } },
           { type: 'Feature', properties: { l: kmLabel(km) }, geometry: { type: 'Point', coordinates: [lon, lat + km / 110.95] } });
       }
-      if (fly) map.fitBounds([[lon - 1.05 / kx, lat - 1.05 / 110.95], [lon + 1.05 / kx, lat + 1.05 / 110.95]], { padding: 30, duration: 800 });
+      const b = R ? R.at(-1) * 1.05 : 1.05;
+      if (fly) map.fitBounds([[lon - b / kx, lat - b / 110.95], [lon + b / kx, lat + b / 110.95]], { padding: 30, duration: 800 });
     }
     map.getSource('stn-ring').setData({ type: 'FeatureCollection', features: feats });
   }
@@ -1238,6 +1241,41 @@
   }, i => { stnSel = i; renderStations(); drawRings(STN.st[i], true); });
   $('stn-sel').onchange = e => { stnSel = +e.target.value; renderStation(); drawRings(STN.st[stnSel], true); };
   getJSON('data/stations.json', null).then(d => { STN = d; renderStations(); renderOverview(); });
+
+  /* ---------- 대중교통: 버스터미널 주변 숙소 (이름에 '터미널'이 들어간 곳만, build.py → bus.json) ---------- */
+  let TRM = null, trmSel = -1;
+  const trmCount = (t, k) => t[6].reduce((a, c) => a + (state.types.has(c[0]) ? c[k + 1] : 0), 0);
+  function trmInReg() {
+    const regs = U ? U.regs : [curReg()];
+    return TRM.t.map((_, i) => i).filter(i => regs.some(r => inReg(r, TRM.t[i][4], TRM.t[i][5])));
+  }
+  function renderTerminals() {
+    if (!TRM || !TRM.t.length) { $('trm-sub').textContent = '터미널 자료가 아직 없습니다. 다음 데이터 갱신 후 표시됩니다.'; $('trm-sel').disabled = true; return; }
+    const ids = trmInReg();
+    if (!ids.includes(trmSel)) trmSel = ids.length ? ids.reduce((a, b) => trmCount(TRM.t[b], 0) > trmCount(TRM.t[a], 0) ? b : a) : -1;
+    $('trm-sel').innerHTML = ids.sort((a, b) => TRM.t[a][3].localeCompare(TRM.t[b][3], 'ko')).map(i => `<option value="${i}">${esc(TRM.t[i][3])}</option>`).join('');
+    $('trm-sel').disabled = !ids.length;
+    if (trmSel >= 0) $('trm-sel').value = String(trmSel);
+    $('trm-sub').textContent = !ids.length ? `${regionName()}에는 지도에 등록된 버스터미널이 없습니다.`
+      : `${regionName()} 터미널 ${fmt(ids.length)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.`;
+    renderTerminal();
+  }
+  function renderTerminal(fly) {
+    const t = TRM.t[trmSel];
+    if (!t) { $('trm-kpis').innerHTML = ''; $('trm-table').innerHTML = ''; $('trm-place').textContent = ''; $('trm-table-title').textContent = '업종별 숙소 수'; return; }
+    const R = TRM.r;
+    $('trm-place').textContent = t[4] >= 0 ? `${short(S[t[4]].name)} ${S[t[4]].sgg[t[5]]}` : '';
+    $('trm-kpis').innerHTML = R.map((km, k) => `<div class="kpi"><b>${fmt(trmCount(t, k))}</b><span>반경 ${kmLabel(km)} 안 영업 숙소</span></div>`).join('');
+    const rows = t[6].filter(c => state.types.has(c[0])).sort((a, b) => b[R.length] - a[R.length]);
+    $('trm-table-title').textContent = `${t[3]} 업종별 숙소 수`;
+    $('trm-table').innerHTML = `<thead><tr><th>업종</th>${R.map(km => `<th>${kmLabel(km)}</th>`).join('')}</tr></thead><tbody>`
+      + rows.map(c => `<tr><td><span class="sw" style="background:var(--c${catOf[c[0]]})"></span>${esc(T[c[0]].name)}</td>${c.slice(1).map(v => `<td>${fmt(v)}</td>`).join('')}</tr>`).join('')
+      + `<tr><td><b>합계</b></td>${R.map((_, k) => `<td><b>${fmt(trmCount(t, k))}</b></td>`).join('')}</tr></tbody>`;
+    csvSet('trm-table', ['터미널', '업종', ...R.map(km => `반경 ${kmLabel(km)}`)], rows.map(c => [t[3], T[c[0]].name, ...c.slice(1)]));
+    if (fly) drawRings(t, true, 'transit', R);
+  }
+  $('trm-sel').onchange = e => { trmSel = +e.target.value; renderTerminal(true); };
+  busData.then(d => { if (d) TRM = { r: d.r, t: d.b.filter(b => b[2]) }; renderTerminals(); });
 
   /* ---------- 축제: 축제 위치 반경 안 영업 숙소, 축제 달 외지인 (TourAPI 행사·축제, build.py → festivals.json) ---------- */
   // FEST.f: [lat, lon, 이름, si, gi, [[시작, 끝(YYYYMMDD)]…회차], 주소, 사진, 전화, [[업종, 0.5km, 1km, 3km, 5km]…]]

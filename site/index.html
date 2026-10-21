@@ -195,6 +195,16 @@
       <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 역 위치에서 잰 직선거리입니다. 역 위치와 노선: OpenStreetMap. 역의 시·군·구는 반경 1km 안 숙소 주소로 정했습니다.</p></div>
   </section>
 
+  <section data-tab="transit" id="trm-sec">
+    <div class="sechead"><h2>버스터미널 주변 숙소</h2><p class="sub" id="trm-sub"></p></div>
+    <div class="card">
+      <div class="tlrow" style="margin-bottom:10px"><label for="trm-sel" style="font-size:13px;color:var(--muted)">터미널</label><select id="trm-sel"></select><small id="trm-place" style="color:var(--muted)"></small></div>
+      <div class="kpis" id="trm-kpis"></div>
+    </div>
+    <div class="card"><button class="btn csv" data-csv="trm-table" data-name="터미널주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="trm-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="trm-table"></table></div>
+      <p class="note">이름에 '터미널'이 들어간 곳만 다룹니다(시외버스 정류장·매표소 제외). 영업 중이고 좌표가 정확한 숙소만, 터미널 위치에서 잰 직선거리로 셉니다. 터미널 위치: OpenStreetMap(지역마다 빠진 곳이 있을 수 있음). 터미널의 시·군·구는 반경 3km 안 숙소 주소로 정했습니다.</p></div>
+  </section>
+
   <section data-tab="festival" id="fest-sec">
     <div class="sechead"><h2>축제 주변 숙소</h2><p class="sub" id="fest-sub"></p></div>
     <div class="card">
