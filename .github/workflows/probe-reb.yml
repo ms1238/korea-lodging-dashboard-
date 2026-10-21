@@ -16,10 +16,19 @@ jobs:
         run: |
           import os, json, re, requests, collections
           K, base = os.environ["KEY"], "https://www.reb.or.kr/r-one/openapi/"
+          import time
+          def call(svc, params):
+              for attempt in range(4):
+                  try:
+                      time.sleep(1)
+                      return requests.get(base + svc, params=params, timeout=90, headers={"User-Agent": "Mozilla/5.0"}).json()
+                  except Exception as e:
+                      print("  retry", attempt, type(e).__name__, flush=True); time.sleep(3 * (attempt + 1))
+              return {}
           def get(svc, **p):
               rows, page = [], 1
-              while page <= 20:
-                  d = requests.get(base + svc, params={"KEY": K, "Type": "json", "pIndex": page, "pSize": 1000, **p}, timeout=90).json()
+              while page <= 40:
+                  d = call(svc, {"KEY": K, "Type": "json", "pIndex": page, "pSize": 100, **p})
                   blk = d.get(svc.replace(".do", ""))
                   if not blk:
                       print("  RESP", json.dumps(d, ensure_ascii=False)[:300]); break
