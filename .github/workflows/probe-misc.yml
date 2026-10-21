@@ -1,4 +1,4 @@
-# Temporary: what columList.json / standard.json return.
+# Temporary: columList.json with the page id itself.
 name: Probe misc
 on:
   push:
@@ -17,10 +17,18 @@ jobs:
           ref = "https://www.data.go.kr/data/15013205/standard.do"
           s = requests.Session(); s.headers.update({"User-Agent": "Mozilla/5.0", "Referer": ref, "X-Requested-With": "XMLHttpRequest"})
           s.get(ref, timeout=60)
-          for ext in ("JSON", "CSV", "XLS"):
-              r = s.get("https://www.data.go.kr/download/columList.json", params={"pk": "15093755", "ext": ext}, timeout=60)
-              print("== COL", ext, r.status_code, r.headers.get("content-type"), r.text[:900].replace("\n", " "), flush=True)
-              try:
-                  h = r.json(); print("== KEYS", list(h) if isinstance(h, dict) else type(h), flush=True)
-              except Exception as e:
-                  print("== NOTJSON", e, flush=True)
+          for pk in ("15013205", "15093755"):
+              for extra in ({}, {"recommendDataYn": "Y"}, {"recommendDataYn": "N"}):
+                  r = s.get("https://www.data.go.kr/download/columList.json", params={"pk": pk, "ext": "JSON", **extra}, timeout=60)
+                  t = r.text
+                  print("== COL", pk, extra, r.status_code, t[:300].replace("\n", " "), flush=True)
+                  try:
+                      h = r.json()
+                  except Exception:
+                      continue
+                  if "columList" in h:
+                      print("== HEAD", json.dumps({k: (v if k != "columList" else v[:12]) for k, v in h.items()}, ensure_ascii=False)[:1500], flush=True)
+                      d = s.get("https://www.data.go.kr/download/standard.json", params={"publicDataPk": pk, "colNmList": h["tableVO"]["colNmList"], "totalCount": h["totalCount"],
+                                "svcTableNm": h["tableVO"]["svcTableNm"], "perPage": 10000, "page": 0}, timeout=120)
+                      print("== DATA", d.status_code, d.text[:800].replace("\n", " "), flush=True)
+                      raise SystemExit
