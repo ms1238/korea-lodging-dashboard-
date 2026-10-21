@@ -14,13 +14,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -q requests
+      - run: pip install -q -r requirements.txt
       - env:
           KEY: ${{ secrets.DATA_GO_KR_KEY }}
         shell: python
         working-directory: scripts
         run: |
           import os, json, requests, collections
+          import sys; sys.path.insert(0, ".")
           from fetch import overpass
           d = requests.get("https://api.odcloud.kr/api/15066765/v1/uddi:192731a4-3542-49f2-bb00-e662b33b8862", params={"serviceKey": os.environ["KEY"], "page": 1, "perPage": 100, "returnType": "JSON"}, timeout=90).json()
           print("TABLE2024", json.dumps(d.get("data"), ensure_ascii=False))
