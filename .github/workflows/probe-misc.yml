@@ -24,6 +24,7 @@ jobs:
               d = r.json()
           except Exception:
               print("== TEXT", r.text[:800], flush=True); raise SystemExit
+          print("== RAW", json.dumps(d, ensure_ascii=False)[:1500], flush=True)
           body = d.get("response", {}).get("body", {})
           print("== HEADER", d.get("response", {}).get("header"), "total", body.get("totalCount"), flush=True)
           items = body.get("items") or []
