@@ -1,0 +1,37 @@
+# Temporary: inspect 전국관광지정보표준데이터 API.
+name: Probe misc
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-misc.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import os, json, collections, requests
+          K = os.environ["KEY"]
+          url = "https://api.data.go.kr/openapi/tn_pubr_public_trrsrt_api"
+          r = requests.get(url, params={"serviceKey": K, "pageNo": 1, "numOfRows": 100, "type": "json"}, timeout=60)
+          print("== STATUS", r.status_code, r.headers.get("content-type"), flush=True)
+          try:
+              d = r.json()
+          except Exception:
+              print("== TEXT", r.text[:800], flush=True); raise SystemExit
+          body = d.get("response", {}).get("body", {})
+          print("== HEADER", d.get("response", {}).get("header"), "total", body.get("totalCount"), flush=True)
+          items = body.get("items") or []
+          if isinstance(items, dict): items = items.get("item", [])
+          if items:
+              print("== FIELDS", list(items[0].keys()), flush=True)
+              print("== FIRST", json.dumps(items[0], ensure_ascii=False)[:1500], flush=True)
+              for k in items[0]:
+                  filled = sum(1 for it in items if str(it.get(k) or "").strip())
+                  print(f"== FILL {k} {filled}/{len(items)}", flush=True)
+              print("== 구분", collections.Counter(it.get("trrsrtSe") for it in items), flush=True)
