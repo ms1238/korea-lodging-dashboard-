@@ -39,7 +39,7 @@ Steps
 27. meta.json "brief": national new permits / closings this year vs the same dates last year, and the share of operating
     facilities licensed 20+ years ago, per 업종.
 28. meta.json sido[]["r12"] / ["old"]: per 시군구 new permits and closings over the last 365 days (per 업종), and
-    operating 여관·여인숙 with the share licensed 20+ years ago, for the map colouring and the 동향 table;
+    operating 여관·여인숙 with those licensed 20+ and 30+ years ago, for the map colouring and the 동향 table;
     ["stk"] / "stock_years" / "room_cov": per 시군구 and 업종 the stock and its 객실 수 at the end of each of the last
     four years, and per 업종 the share of operating facilities with a 객실 수 (supply vs demand chart).
 29. bus.json: bus terminals and intercity bus 정류장 (OpenStreetMap amenity=bus_station) as [lat, lon, 1 = name has 터미널, name];
@@ -1230,13 +1230,13 @@ OLD_TYPES = {("숙박업", "여관업"), ("숙박업", "여인숙업")}  # 노�
 def add_change_old(rows, sidos, sido_meta, tidx):
     """Per 시군구 in meta.sido[]: "r12" = [[업종, new permits, closings, operating or paused now], …] over the last
     365 days (only 업종 with any), for the map's net-change colouring; "old" = [operating 여관·여인숙, of them licensed
-    20+ years ago]; "stk" = [[업종, stock at the end of each of STOCK_YEARS], …] (operating or paused that day, from the
+    20+ years ago, 30+ years ago]; "stk" = [[업종, stock at the end of each of STOCK_YEARS], …] (operating or paused that day, from the
     permit and closing dates; closed records without a date are left out), followed by the summed 객실 수 at the same
     year ends (an empty one takes the median of the 업종, one above the 업종's 99.9th percentile is cut to it; 0 for 업종
     without a 객실 column), for the supply vs demand growth chart. Returns (STOCK_YEARS, per 업종 the share of operating
     facilities with a 객실 수)."""
     today = datetime.now(KST).date()
-    since, y20 = (today - timedelta(days=365)).isoformat(), today.year - 20
+    since, y20, y30 = (today - timedelta(days=365)).isoformat(), today.year - 20, today.year - 30
     years = list(range(today.year - 4, today.year))
     by_t = defaultdict(list)
     for r in rows:
@@ -1252,7 +1252,7 @@ def add_change_old(rows, sidos, sido_meta, tidx):
         gi_of = {g: i for i, g in enumerate(sm["sgg"])}
         r12 = [defaultdict(lambda: [0, 0, 0]) for _ in sm["sgg"]]
         stk = [defaultdict(lambda: [0] * (2 * len(years))) for _ in sm["sgg"]]
-        old = [[0, 0] for _ in sm["sgg"]]
+        old = [[0, 0, 0] for _ in sm["sgg"]]
         for r in rows:
             if r["sido"] != s:
                 continue
@@ -1264,6 +1264,7 @@ def add_change_old(rows, sidos, sido_meta, tidx):
             if r["status"] == 0 and (r["cat"], r["type"]) in OLD_TYPES:
                 old[gi][0] += 1
                 old[gi][1] += bool(r["date"]) and int(r["date"][:4]) <= y20
+                old[gi][2] += bool(r["date"]) and int(r["date"][:4]) <= y30
             if r["date"] and (r["status"] < 2 or r["closed"]):
                 rooms = min(r["rooms"], cap.get(t, r["rooms"])) if r["rooms"] else med.get(t, 0)
                 for k, y in enumerate(years):

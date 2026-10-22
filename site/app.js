@@ -307,8 +307,8 @@
       $('choro-mode').onchange = renderChoro;
       map.on('click', 'choro-fill', e => { if (radiusOn) return;
         if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'bus0', 'bus1'].filter(l => map.getLayer(l)) }).length) return;
-        const p = e.features[0].properties, x = r12Of(p.si, p.gi), [n, o] = oldOf(p.si, p.gi), nr = netRate(x);
-        new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(regLabel({ si: p.si, gi: p.gi }))}</b><br>최근 1년 신규 ${fmt(x.nw)} · 폐업 ${fmt(x.cl)} · 순증률 ${nr == null ? '-' : pct1(nr)}<br>여관·여인숙 ${fmt(n)}곳 중 20년 이상 ${n ? Math.round(o / n * 100) + '%' : '-'}`).addTo(map);
+        const p = e.features[0].properties, x = r12Of(p.si, p.gi), [n, o, o3] = oldOf(p.si, p.gi), nr = netRate(x);
+        new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(regLabel({ si: p.si, gi: p.gi }))}</b><br>최근 1년 신규 ${fmt(x.nw)} · 폐업 ${fmt(x.cl)} · 순증률 ${nr == null ? '-' : pct1(nr)}<br>여관·여인숙 ${fmt(n)}곳 중 20년 이상 ${n ? Math.round(o / n * 100) + '%' : '-'} · 30년 이상 ${n ? Math.round(o3 / n * 100) + '%' : '-'}`).addTo(map);
       });
       // 고른 지역의 행정구역 경계(흰 테두리 위 진한 선)
       map.addSource('admin', { type: 'geojson', data: empty, attribution: '행정경계: 통계청 SGIS · <a href="https://github.com/vuski/admdongkor" target="_blank">admdongkor</a> (CC BY 4.0)' });
@@ -1020,13 +1020,16 @@
     for (const [t, a, b, c] of ((S[si].r12 || [])[gi] || [])) if (state.types.has(t)) { nw += a; cl += b; live += c; }
     return { nw, cl, live }; };
   const netRate = x => { const base = x.live - (x.nw - x.cl); return base >= 20 ? (x.nw - x.cl) / base : null; };
-  const oldOf = (si, gi) => (S[si].old || [])[gi] || [0, 0];
+  const oldOf = (si, gi) => (S[si].old || [])[gi] || [0, 0, 0];  // [영업 여관·여인숙, 인허가 20년 이상, 30년 이상]
   const pct1 = v => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
   const CHORO = {
     net: { val: (si, gi) => netRate(r12Of(si, gi)), bins: [-.05, -.01, .01, .05, .15], cols: ['#b2182b', '#ef8a62', '#e5e5e5', '#9ecae1', '#3182bd', '#08306b'],
       labs: ['−5% 미만', '−5~−1%', '±1%', '+1~5%', '+5~15%', '+15% 이상'] },
     old: { val: (si, gi) => { const [n, o] = oldOf(si, gi); return n >= 10 ? o / n : null; }, bins: [.4, .6, .8, .9], cols: ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
       labs: ['40% 미만', '40~60%', '60~80%', '80~90%', '90% 이상'] },
+    // 20년 기준은 대부분 80~90%라 지역 차이가 잘 안 보여 30년 기준도 둠
+    old30: { val: (si, gi) => { const [n, , o3] = oldOf(si, gi); return n >= 10 ? o3 / n : null; }, bins: [.2, .4, .6, .8], cols: ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
+      labs: ['20% 미만', '20~40%', '40~60%', '60~80%', '80% 이상'] },
   };
   let choroFeats = null;
   async function renderChoro() {
@@ -1050,7 +1053,7 @@
   }
   function renderChange() {
     const gis = r => gisOf(r) || S[r.si].sgg.map((_, gi) => gi);
-    const agg = r => gis(r).reduce((s, gi) => { const x = r12Of(r.si, gi), [n, o] = oldOf(r.si, gi); return { nw: s.nw + x.nw, cl: s.cl + x.cl, live: s.live + x.live, n: s.n + n, o: s.o + o }; }, { nw: 0, cl: 0, live: 0, n: 0, o: 0 });
+    const agg = r => gis(r).reduce((s, gi) => { const x = r12Of(r.si, gi), [n, o, o3] = oldOf(r.si, gi); return { nw: s.nw + x.nw, cl: s.cl + x.cl, live: s.live + x.live, n: s.n + n, o: s.o + o, o3: s.o3 + o3 }; }, { nw: 0, cl: 0, live: 0, n: 0, o: 0, o3: 0 });
     const cur = U ? null : curReg();
     let rows;
     if (U) rows = U.regs.map(r => [regLabel(r), r]);
@@ -1062,11 +1065,11 @@
     rows = rows.map(([nm, r]) => { const a = agg(r); return [nm, r, a, netRate(a), a.n >= 10 ? a.o / a.n : null, landOf(r)]; }).sort((x, y) => (y[3] ?? -9) - (x[3] ?? -9));
     const isCur = r => cur && cur.si === r.si && (cur.gi === r.gi || (r.gi >= 0 && (gisOf(cur) || []).includes(r.gi)));
     $('chg-sub').textContent = `${U ? '선택 지역' : !cur || cur.si < 0 ? '광역' : S[cur.si].name + ' 시군구'}별 · 최근 365일(${meta.updated.slice(0, 10).replace(/-/g, '.')}까지)${state.types.size < T.length ? ' · 선택 업종' : ''} · 순증률 높은 순`;
-    $('chg-table').innerHTML = `<thead><tr><th>지역</th><th>영업·휴업</th><th>신규</th><th>폐업</th><th>순증</th><th>순증률</th><th>여관·여인숙</th><th>20년 이상</th>${LY ? `<th>지가변동률 ${LY}</th>` : ''}</tr></thead><tbody>`
+    $('chg-table').innerHTML = `<thead><tr><th>지역</th><th>영업·휴업</th><th>신규</th><th>폐업</th><th>순증</th><th>순증률</th><th>여관·여인숙</th><th>20년 이상</th><th>30년 이상</th>${LY ? `<th>지가변동률 ${LY}</th>` : ''}</tr></thead><tbody>`
       + rows.map(([nm, r, a, nr, od, lv]) => `<tr${isCur(r) ? ' class="sum"' : ''}><td>${esc(nm)}</td><td>${fmt(a.live)}</td><td>${fmt(a.nw)}</td><td>${fmt(a.cl)}</td><td>${a.nw - a.cl >= 0 ? '+' : '−'}${fmt(Math.abs(a.nw - a.cl))}</td>`
-        + `<td style="color:${nr == null ? '' : nr > .01 ? 'var(--ok)' : nr < -.01 ? 'var(--closed)' : ''}">${nr == null ? '·' : pct1(nr)}</td><td>${fmt(a.n)}</td><td>${od == null ? '·' : Math.round(od * 100) + '%'}</td>${LY ? `<td>${lp(lv)}</td>` : ''}</tr>`).join('') + '</tbody>';
-    csvSet('chg-table', ['지역', '영업·휴업', '최근1년 신규', '최근1년 폐업', '순증', '순증률(%)', '여관·여인숙 영업', '그중 인허가 20년 이상', ...(LY ? [`지가변동률 ${LY}(%)`] : [])],
-      rows.map(([nm, , a, nr, , lv]) => [nm, a.live, a.nw, a.cl, a.nw - a.cl, nr == null ? '' : +(nr * 100).toFixed(2), a.n, a.o, ...(LY ? [lv ?? ''] : [])]));
+        + `<td style="color:${nr == null ? '' : nr > .01 ? 'var(--ok)' : nr < -.01 ? 'var(--closed)' : ''}">${nr == null ? '·' : pct1(nr)}</td><td>${fmt(a.n)}</td><td>${od == null ? '·' : Math.round(od * 100) + '%'}</td><td>${a.n >= 10 ? Math.round(a.o3 / a.n * 100) + '%' : '·'}</td>${LY ? `<td>${lp(lv)}</td>` : ''}</tr>`).join('') + '</tbody>';
+    csvSet('chg-table', ['지역', '영업·휴업', '최근1년 신규', '최근1년 폐업', '순증', '순증률(%)', '여관·여인숙 영업', '그중 인허가 20년 이상', '그중 인허가 30년 이상', ...(LY ? [`지가변동률 ${LY}(%)`] : [])],
+      rows.map(([nm, , a, nr, , lv]) => [nm, a.live, a.nw, a.cl, a.nw - a.cl, nr == null ? '' : +(nr * 100).toFixed(2), a.n, a.o, a.o3, ...(LY ? [lv ?? ''] : [])]));
   }
 
   /* ---------- 공급 vs 수요 증가율: 시군구별 연말 재고(build.py → meta.sido[].stk) × 데이터랩 방문객(visits.json) ---------- */
