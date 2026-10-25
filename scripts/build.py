@@ -46,6 +46,7 @@ Steps
     terminals also get 시도/시군구 and the operating lodgings per type within 1 / 3 km, for the 대중교통 tab;
     meta.json "bus" = the official national count (한국교통안전공단 전국 버스터미널 현황, latest table).
 30. meta.json sido[]["land"] / ["land_sido"] / "land_year": 지가변동률 per 시군구 and 시도 (한국부동산원 R-ONE, latest year).
+31. trrsrt.json: 관광지·관광단지 (전국관광지정보표준데이터) with the operating lodgings and 객실 수 within 1 / 3 / 5 km.
 """
 import calendar
 import csv
@@ -884,6 +885,59 @@ def write_festivals(rows, sidos, sgg_of, tidx, merged):
         json.dump({"r": RADII, "f": out}, f, ensure_ascii=False, separators=(",", ":"))
 
 
+TRRSRT_RADII = (1, 3, 5)  # km, rings around 관광지·관광단지
+
+
+def write_trrsrt(rows, sidos, sgg_of, tidx, merged):
+    """trrsrt.json: 관광지·관광단지 (전국관광지정보표준데이터) with the operating lodgings (exact positions) per type and their
+    객실 수 (room_rule) within TRRSRT_RADII: {"r": radii, "t": [[lat, lon, name, 1 = 관광단지, si, gi, 수용인원 or None,
+    지정일, 숙박시설 정보, [[업종, n per radius], …], [객실 per radius]], …]}. 시도/시군구 from the address (-1 if not found)."""
+    path = os.path.join(RAW, "trrsrt.json")
+    if not os.path.exists(path):
+        return
+    med, cap, _ = room_rule(rows, tidx)
+    grid = defaultdict(list)
+    for r in rows:
+        if r["status"] == 0 and r["ll"] and not r.get("approx"):
+            grid[(int(r["ll"][0] * 100), int(r["ll"][1] * 100))].append(r)
+    out, skipped, noreg = [], 0, []
+    for rec in json.load(open(path, encoding="utf-8")):
+        try:
+            lat, lon = float(rec["latitude"]), float(rec["longitude"])
+        except (TypeError, ValueError):
+            lat = lon = 0
+        if not (32.8 < lat < 38.9 and 124.2 < lon < 132.2):
+            skipped += 1
+            continue
+        sido, sgg = region(clean(rec.get("rdnmadr") or rec.get("lnmadr")), merged)
+        si = sidos.index(sido) if sido in sidos else -1
+        gi = sgg_of[sido].index(sgg) if si >= 0 and sgg in sgg_of[sido] else -1
+        if gi < 0:
+            noreg.append(clean(rec.get("trrsrtNm")))
+        kx = 111.32 * math.cos(math.radians(lat))
+        cnt, rooms = defaultdict(lambda: [0] * len(TRRSRT_RADII)), [0] * len(TRRSRT_RADII)
+        ci, cj, span = int(lat * 100), int(lon * 100), int(TRRSRT_RADII[-1] / 1.1) + 1
+        for i in range(ci - span, ci + span + 1):
+            for j in range(cj - span - 2, cj + span + 3):
+                for r in grid.get((i, j), ()):
+                    d2 = ((r["ll"][0] - lat) * 110.95) ** 2 + ((r["ll"][1] - lon) * kx) ** 2
+                    t = tidx[(r["cat"], r["type"])]
+                    for k, rad in enumerate(TRRSRT_RADII):
+                        if d2 <= rad * rad:
+                            cnt[t][k] += 1
+                            rooms[k] += min(r["rooms"], cap.get(t, r["rooms"])) if r["rooms"] else med.get(t, 0)
+        try:
+            acpt = int(float(rec.get("aceptncCo"))) or None
+        except (TypeError, ValueError):
+            acpt = None
+        out.append([round(lat, 5), round(lon, 5), clean(rec.get("trrsrtNm")), int(rec.get("trrsrtSe") == "관광단지"), si, gi, acpt,
+                    clean(rec.get("appnDate")), clean(rec.get("stayngInfo")), [[t, *c] for t, c in sorted(cnt.items())], [round(x) for x in rooms]])
+    print(f"trrsrt: {len(out)} 관광지·관광단지 ({sum(o[3] for o in out)} 관광단지); no position {skipped}; "
+          f"시군구 not found ({len(noreg)}): {' '.join(noreg[:30])}", flush=True)
+    with open(os.path.join(OUT, "trrsrt.json"), "w", encoding="utf-8") as f:
+        json.dump({"r": TRRSRT_RADII, "t": out}, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def write_food(sidos, sido_meta, merged):
     """모범음식점 (still designated and open) and 백년가게 placed at the coordinates of their 일반음식점 인허가 record
     (fetch.py food_coords; same EPSG:5174 coordinates as the lodging records). Those not matched yet are left out.
@@ -1227,6 +1281,23 @@ def write_download(rows, sidos, sido_meta):
 OLD_TYPES = {("숙박업", "여관업"), ("숙박업", "여인숙업")}  # 노후 숙박: the old roadside-inn stock
 
 
+def room_rule(rows, tidx):
+    """객실 수 rule shared by the charts: per 업종 index the median and 99.9th percentile of the operating facilities'
+    reported 객실 수 (an empty one takes the median, one above the percentile is cut to it), and per 업종 the share of
+    operating facilities that report one."""
+    by_t = defaultdict(list)
+    for r in rows:
+        if r["status"] == 0:
+            by_t[tidx[(r["cat"], r["type"])]].append(r["rooms"])
+    med, cap = {}, {}
+    for t, xs in by_t.items():
+        v = sorted(x for x in xs if x)
+        if v:
+            med[t], cap[t] = statistics.median(v), v[int(len(v) * 0.999)]
+    cov = [round(sum(1 for x in by_t.get(t, []) if x) / len(by_t[t]), 3) if by_t.get(t) else 0 for t in range(max(tidx.values()) + 1)]
+    return med, cap, cov
+
+
 def add_change_old(rows, sidos, sido_meta, tidx):
     """Per 시군구 in meta.sido[]: "r12" = [[업종, new permits, closings, operating or paused now], …] over the last
     365 days (only 업종 with any), for the map's net-change colouring; "old" = [operating 여관·여인숙, of them licensed
@@ -1238,16 +1309,7 @@ def add_change_old(rows, sidos, sido_meta, tidx):
     today = datetime.now(KST).date()
     since, y20, y30 = (today - timedelta(days=365)).isoformat(), today.year - 20, today.year - 30
     years = list(range(today.year - 4, today.year))
-    by_t = defaultdict(list)
-    for r in rows:
-        if r["status"] == 0:
-            by_t[tidx[(r["cat"], r["type"])]].append(r["rooms"])
-    med, cap = {}, {}
-    for t, xs in by_t.items():
-        v = sorted(x for x in xs if x)
-        if v:
-            med[t], cap[t] = statistics.median(v), v[int(len(v) * 0.999)]
-    cov = [round(sum(1 for x in by_t.get(t, []) if x) / len(by_t[t]), 3) if by_t.get(t) else 0 for t in range(max(tidx.values()) + 1)]
+    med, cap, cov = room_rule(rows, tidx)
     for si, (s, sm) in enumerate(zip(sidos, sido_meta)):
         gi_of = {g: i for i, g in enumerate(sm["sgg"])}
         r12 = [defaultdict(lambda: [0, 0, 0]) for _ in sm["sgg"]]
@@ -1651,6 +1713,7 @@ def main():
     parks = write_park_areas()
     write_stations(rows, sidos, sgg_of, tidx)
     write_festivals(rows, sidos, sgg_of, tidx, merged)
+    write_trrsrt(rows, sidos, sgg_of, tidx, merged)
     write_park_lodging(rows, parks, sidos, sgg_of, tidx)
     write_food(sidos, sido_meta, merged)
     bus = write_bus(rows, sidos, sgg_of, tidx)

@@ -19,7 +19,7 @@
   // 자료 파일을 못 받으면(네트워크·서버 오류, 깨진 파일) 상단에 알림. 404는 '아직 만들어지지 않은 자료'라 알리지 않음
   const FILE_LABEL = { meta: '기본 정보', cube: '숙박 집계', close: '숙박 집계', cubeq: '분기 집계', closeq: '분기 집계', minbak: '도시민박', visits: '방문객',
     arrivals: '외래객 입국', bus: '버스터미널', pts: '시설 목록', tour: '관광지', park_areas: '국립공원 경계', subway: '철도 노선', admin: '행정경계',
-    food: '맛집', survival: '생존 분석', stations: '역세권', festivals: '축제', park_lodging: '국립공원 숙소', kto_index: '관광수요지수', icn: '인천공항', kac: '공항 여객' };
+    food: '맛집', survival: '생존 분석', stations: '역세권', festivals: '축제', park_lodging: '국립공원 숙소', kto_index: '관광수요지수', icn: '인천공항', kac: '공항 여객', trrsrt: '법정 관광지' };
   const loadFail = new Set();
   const failed = u => {
     const k = u.replace(/^data\//, '').split(/[/.]/)[0];
@@ -347,6 +347,25 @@
       map.addSource('fest', { type: 'geojson', data: empty });
       map.addLayer({ id: 'fest', type: 'symbol', source: 'fest', layout: { visibility: tab === 'festival' ? 'visible' : 'none',
         'icon-image': ['concat', 'star', ['to-string', ['get', 's']]], 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, .55, 12, 1] } });
+      // 법정 관광지·관광단지(관광지·단지 탭에서만): 보라 육각형, 관광단지는 진하게
+      const hexa = (fill, px) => {
+        const c = document.createElement('canvas'); c.width = c.height = px; const g = c.getContext('2d'), r = px / 2;
+        g.beginPath(); for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; g.lineTo(r + (r - 2) * Math.cos(a), r + (r - 2) * Math.sin(a)); }
+        g.closePath(); g.fillStyle = fill; g.fill(); g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+        return g.getImageData(0, 0, px, px);
+      };
+      ['#b39ddb', '#5e35b1'].forEach((c, k) => map.addImage('hexa' + k, hexa(c, 40), { pixelRatio: 2 }));
+      map.addSource('trr', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'trr', type: 'symbol', source: 'trr', layout: { visibility: tab === 'tourist' ? 'visible' : 'none',
+        'icon-image': ['concat', 'hexa', ['to-string', ['get', 'k']]], 'icon-allow-overlap': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 6, .6, 12, 1] } });
+      map.on('click', 'trr', e => { if (radiusOn) return;
+        const i = e.features[0].properties.i, t = TRR.t[i];
+        pop(e.lngLat, `<b>${esc(t[2])}</b><br>${t[3] ? '관광단지' : '관광지'}${t[7] ? ` · ${esc(t[7].slice(0, 4))}년 지정` : ''}${t[6] ? ` · 수용인원 ${fmt(t[6])}명` : ''}<br>반경 3km 영업 숙소 ${fmt(trrCount(t, 1))}곳 · 객실 ${fmt(t[10][1])}실<br><small>출처: 전국관광지정보표준데이터</small>`);
+        trrSel = i; if ($('trr-sel').querySelector(`option[value="${i}"]`)) { $('trr-sel').value = String(i); renderTrrOne(); }
+      });
+      map.on('mouseenter', 'trr', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'trr', () => { map.getCanvas().style.cursor = ''; });
+      setTrrMap();
       map.on('click', 'fest', e => { if (radiusOn) return;
         const i = e.features[0].properties.i, f = FEST.f[i];
         pop(e.lngLat, `${f[7] ? `<img src="${esc(f[7])}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(f[2])}</b><br>${edSpan(f[5].at(-1))} · ${FST[festState(f)]}<br>${esc(f[6])}<br>영업 숙소 반경 1km ${fmt(festCount(f, 1))}곳 · 3km ${fmt(festCount(f, 2))}곳<br><small>출처: 한국관광공사 TourAPI</small>`);
@@ -686,7 +705,7 @@
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
-    renderStations(); renderTerminals();
+    renderStations(); renderTerminals(); renderTrr();
     renderRecent(); renderYTD(); renderChange(); renderSD(); if ($('choro-mode').value === 'net') renderChoro();
     renderSurv();
     syncMore();
@@ -1389,6 +1408,62 @@
   }
   $('trm-sel').onchange = e => { trmSel = +e.target.value; renderTerminal(true); };
   busData.then(d => { if (d) TRM = { r: d.r, t: d.b.filter(b => b[2]) }; renderTerminals(); });
+
+  /* ---------- 입지 분석: 법정 관광지·관광단지 주변 숙소 (전국관광지정보표준데이터, build.py → trrsrt.json) ---------- */
+  // t = [lat, lon, 이름, 관광단지 1, si, gi, 수용인원, 지정일, 숙박시설 정보, [[업종, 1·3·5km 영업 숙소]], [1·3·5km 객실(전체 업종)]]
+  let TRR = null, trrSel = -1;
+  const trrCount = (t, k) => t[9].reduce((a, c) => a + (state.types.has(c[0]) ? c[k + 1] : 0), 0);
+  const trrRatio = t => t[6] ? t[10][1] / (t[6] / 1e3) : null;  // 수용인원 1천 명당 반경 3km 객실
+  function trrInReg() {
+    const regs = U ? U.regs : [curReg()];
+    return TRR.t.map((_, i) => i).filter(i => regs.some(r => inReg(r, TRR.t[i][4], TRR.t[i][5])));
+  }
+  function setTrrMap() {
+    if (!TRR || !mapReady || !map.getSource('trr')) return;
+    map.getSource('trr').setData({ type: 'FeatureCollection', features: TRR.t.map((t, i) => ({ type: 'Feature', properties: { i, k: t[3] }, geometry: { type: 'Point', coordinates: [t[1], t[0]] } })) });
+    if (tab === 'tourist') drawRings(TRR.t[trrSel], true, 'tourist', TRR.r);  // 자료가 지도보다 먼저 온 경우
+  }
+  function renderTrr() {
+    if (!TRR || !TRR.t.length) { $('trr-sub').textContent = '관광지 자료가 아직 없습니다. 다음 데이터 갱신 후 표시됩니다.'; $('trr-sel').disabled = true; return; }
+    const ids = trrInReg().sort((a, b) => TRR.t[b][3] - TRR.t[a][3] || TRR.t[a][2].localeCompare(TRR.t[b][2], 'ko'));
+    if (!ids.includes(trrSel)) trrSel = ids.length ? ids.reduce((a, b) => (TRR.t[b][6] || 0) > (TRR.t[a][6] || 0) ? b : a) : -1;
+    $('trr-sel').innerHTML = ids.map(i => `<option value="${i}">${esc(TRR.t[i][2])}${TRR.t[i][3] ? ' (관광단지)' : ''}</option>`).join('');
+    $('trr-sel').disabled = !ids.length;
+    if (trrSel >= 0) $('trr-sel').value = String(trrSel);
+    const nd = ids.filter(i => TRR.t[i][3]).length;
+    $('trr-sub').textContent = !ids.length ? `${regionName()}에는 등록된 관광지·관광단지가 없습니다.`
+      : `${regionName()} 관광지 ${fmt(ids.length - nd)}곳 · 관광단지 ${fmt(nd)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.`;
+    // 목록: 수용인원 1천 명당 반경 3km 객실이 적은 순(수용인원이 없는 곳은 뒤로)
+    const rows = ids.map(i => [i, trrRatio(TRR.t[i])]).sort((a, b) => (a[1] ?? Infinity) - (b[1] ?? Infinity));
+    const place = t => t[4] >= 0 ? `${short(S[t[4]].name)} ${t[5] >= 0 ? S[t[4]].sgg[t[5]] : ''}` : '';
+    $('trr-list-title').textContent = `${regionName()} 관광지·관광단지: 수용인원 대비 주변 객실이 적은 순`;
+    $('trr-list').innerHTML = '<thead><tr><th>관광지</th><th>구분</th><th>지역</th><th>수용인원</th><th>3km 숙소</th><th>3km 객실</th><th>수용 1천 명당 객실</th></tr></thead><tbody>'
+      + rows.map(([i, rt]) => { const t = TRR.t[i];
+        return `<tr data-i="${i}" style="cursor:pointer"${i === trrSel ? ' class="sum"' : ''}><td>${esc(t[2])}</td><td>${t[3] ? '관광단지' : '관광지'}</td><td>${esc(place(t))}</td><td>${t[6] ? fmt(t[6]) : '·'}</td><td>${fmt(trrCount(t, 1))}</td><td>${fmt(t[10][1])}</td><td>${rt == null ? '·' : rt < 10 ? rt.toFixed(1) : fmt(Math.round(rt))}</td></tr>`; }).join('') + '</tbody>';
+    csvSet('trr-list', ['관광지', '구분', '지역', '수용인원', '반경 3km 영업 숙소(선택 업종)', '반경 3km 객실(전체)', '수용인원 1천 명당 3km 객실', '지정일'],
+      rows.map(([i, rt]) => { const t = TRR.t[i]; return [t[2], t[3] ? '관광단지' : '관광지', place(t), t[6] ?? '', trrCount(t, 1), t[10][1], rt == null ? '' : +rt.toFixed(2), t[7]]; }));
+    renderTrrOne();
+  }
+  function renderTrrOne(fly) {
+    const t = TRR.t[trrSel];
+    if (!t) { $('trr-kpis').innerHTML = ''; $('trr-table').innerHTML = ''; $('trr-place').textContent = ''; $('trr-info').textContent = ''; $('trr-table-title').textContent = '업종별 숙소 수'; return; }
+    const R = TRR.r;
+    $('trr-place').textContent = t[4] >= 0 ? `${short(S[t[4]].name)} ${t[5] >= 0 ? S[t[4]].sgg[t[5]] : ''}` : '';
+    $('trr-kpis').innerHTML = R.map((km, k) => `<div class="kpi"><b>${fmt(trrCount(t, k))}</b><span>반경 ${kmLabel(km)} 안 영업 숙소</span></div>`).join('')
+      + `<div class="kpi"><b>${fmt(t[10][1])}</b><span>반경 3km 객실(전체 업종)</span></div><div class="kpi"><b>${t[6] ? fmt(t[6]) : '-'}</b><span>수용인원(지자체 입력)</span></div>`;
+    $('trr-info').textContent = `${t[3] ? '관광단지' : '관광지'}${t[7] ? ` · ${t[7]} 지정` : ''}${t[8] ? ` · 단지 안 숙박시설: ${t[8]}` : ''}`;
+    const rows = t[9].filter(c => state.types.has(c[0])).sort((a, b) => b[R.length] - a[R.length]);
+    $('trr-table-title').textContent = `${t[2]} 업종별 숙소 수`;
+    $('trr-table').innerHTML = `<thead><tr><th>업종</th>${R.map(km => `<th>${kmLabel(km)}</th>`).join('')}</tr></thead><tbody>`
+      + rows.map(c => `<tr><td><span class="sw" style="background:var(--c${catOf[c[0]]})"></span>${esc(T[c[0]].name)}</td>${c.slice(1).map(v => `<td>${fmt(v)}</td>`).join('')}</tr>`).join('')
+      + `<tr><td><b>합계</b></td>${R.map((_, k) => `<td><b>${fmt(trrCount(t, k))}</b></td>`).join('')}</tr></tbody>`;
+    csvSet('trr-table', ['관광지', '업종', ...R.map(km => `반경 ${kmLabel(km)}`)], rows.map(c => [t[2], T[c[0]].name, ...c.slice(1)]));
+    document.querySelectorAll('#trr-list tr[data-i]').forEach(tr => tr.classList.toggle('sum', +tr.dataset.i === trrSel));
+    if (fly) drawRings(t, true, 'tourist', R);
+  }
+  $('trr-sel').onchange = e => { trrSel = +e.target.value; renderTrrOne(true); };
+  $('trr-list').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (!tr) return; trrSel = +tr.dataset.i; $('trr-sel').value = String(trrSel); renderTrrOne(true); });
+  getJSON('data/trrsrt.json', null).then(d => { TRR = d; renderTrr(); setTrrMap(); });
 
   /* ---------- 축제: 축제 위치 반경 안 영업 숙소, 축제 달 외지인 (TourAPI 행사·축제, build.py → festivals.json) ---------- */
   // FEST.f: [lat, lon, 이름, si, gi, [[시작, 끝(YYYYMMDD)]…회차], 주소, 사진, 전화, [[업종, 0.5km, 1km, 3km, 5km]…]]
@@ -2422,7 +2497,7 @@
   /* ---------- 탭 ---------- */
   // 탭은 5개 묶음, 묶음 안에 세부 탭(하나뿐이면 세부 줄을 숨김). tab은 세부 탭 이름이라 공유 링크(#tab=…)도 그대로 씀
   const GROUPS = [['diag', [['summary', '종합']]], ['supply', [['now', '현황'], ['trend', '동향'], ['minbak', '도시민박']]],
-    ['dem', [['demand', '방문객·수요'], ['food', '미식'], ['festival', '축제']]], ['place', [['transit', '대중교통'], ['park', '국립공원']]], ['cmp', [['compare', '지역 비교']]]];
+    ['dem', [['demand', '방문객·수요'], ['food', '미식'], ['festival', '축제']]], ['place', [['transit', '대중교통'], ['tourist', '관광지·단지'], ['park', '국립공원']]], ['cmp', [['compare', '지역 비교']]]];
   const TABS = GROUPS.flatMap(g => g[1].map(x => x[0])), groupOf = t => GROUPS.find(g => g[1].some(x => x[0] === t));
   const lastSub = {};
   let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'summary';
@@ -2436,8 +2511,8 @@
     $('subtabs').innerHTML = g[1].map(([id, nm]) => `<button type="button" data-t="${id}" aria-selected="${id === t}">${nm}</button>`).join('');
     $('summary-card').hidden = t === 'summary';  // 종합 탭에는 자체 '한눈에 보기'가 있음
     if (t === 'now' && mapReady) map.resize();
-    drawRings(t === 'transit' && STN ? STN.st[stnSel] : t === 'festival' && FEST ? FEST.f[fSel] : null, true, t);
-    if (mapReady) map.setLayoutProperty('fest', 'visibility', t === 'festival' ? 'visible' : 'none');
+    drawRings(t === 'transit' && STN ? STN.st[stnSel] : t === 'festival' && FEST ? FEST.f[fSel] : t === 'tourist' && TRR ? TRR.t[trrSel] : null, true, t, t === 'tourist' && TRR ? TRR.r : undefined);
+    if (mapReady) { map.setLayoutProperty('fest', 'visibility', t === 'festival' ? 'visible' : 'none'); map.setLayoutProperty('trr', 'visibility', t === 'tourist' ? 'visible' : 'none'); }
     if (t === 'park') loadPark();
     if (PARK) showPark(t === 'park');
     if (t === 'summary') renderOverview();
