@@ -571,49 +571,87 @@ def fetch_dong_pop(key):
     save_json("dong_pop.json", {"year": latest, "rows": out})
 
 
+def road_of(addr):
+    """(road, building number, 시군구 or None) of a road address written loosely, e.g. '서울 영등포구 시흥대로 185길 11'
+    → ('시흥대로185길', '11', '영등포구'), '제주 서귀포시 부두로43' → ('부두로', '43', '서귀포시'); None for a 지번 address."""
+    a = re.sub(r"(로|길)\s+(\d+[가-힣]?번?길)", r"\1\2", addr or "")  # '시흥대로 185길' is one road name
+    m = re.search(r"([가-힣\d.]+(?:로|길))\s*(\d+(?:-\d+)?)(?![\d-])", a)
+    if not m:
+        return None
+    sgg = [t for t in a[:m.start()].split() if re.fullmatch(r"[가-힣]+[시군구]", t)]
+    return m.group(1), m.group(2), sgg[-1] if sgg else None
+
+
+def at_road(it, rd):
+    """Whether an 인허가 record's road address is that road and building number (not '별내중앙로 89' or '중앙로 89-2')
+    in the same 시군구 when the shop's address names one."""
+    return (not rd[2] or rd[2] in (it.get("ROAD_NM_ADDR") or "")) and bool(re.search(rf"(?<![가-힣\d]){re.escape(rd[0])}\s*{re.escape(rd[1])}(?![\d-])", it.get("ROAD_NM_ADDR") or ""))
+
+
+def same_name(a, b):
+    """Names equal after dropping spaces, brackets and company marks, or one inside the other ('을지' / '을지 본점')."""
+    norm = lambda s: re.sub(r"\([^)]*\)|㈜|주식회사|본점|\s", "", s or "")
+    a, b = norm(a), norm(b)
+    return len(a) >= 2 and len(b) >= 2 and (a in b or b in a)
+
+
 def fetch_food_coords(key):
     """Positions of 모범음식점 (designated, open) and 백년가게 from the 일반음식점 인허가 API, whose records carry
     coordinates: 모범음식점 by searching the same 지자체 for the name and taking the record with the same 관리번호;
     백년가게 (no 관리번호) by name, keeping a record whose road address has the shop's street and number.
+    Those still unplaced get one more try by address (keys cen2: / ex2:): a common name returns more than the 100
+    records of one page, while the same building usually holds only a few restaurants. Shops that are not
+    restaurants (about half of the unplaced 백년가게: shops, bookstores, 한약방 …) have no such record.
     Cached in raw/food_coords.json ({key: [CRD_INFO_X, CRD_INFO_Y] or null}); a few thousand lookups per run."""
     path = os.path.join(RAW_DIR, "food_coords.json")
     cache = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
-    todo = []  # 백년가게 first: fewer, and shown from the national view
+    todo = []  # (key, [conditions tried in turn], record -> same place?); 백년가게 first: fewer, and shown from the national view
     cen = os.path.join(RAW_DIR, "century_shops.json")
     for r in json.load(open(cen, encoding="utf-8")) if os.path.exists(cen) else []:
         k, addr = f"cen:{r.get('업체명')}|{r.get('업체주소')}", r.get("업체주소") or ""
         street = re.search(r"(\S+(?:로|길)\S*\s+\d+(?:-\d+)?)", addr)  # e.g. 덕진연못3길 6
         if k not in cache and street:
-            todo.append((k, {"cond[BPLC_NM::LIKE]": r.get("업체명")}, None, street.group(1).replace(" ", "")))
+            st = street.group(1).replace(" ", "")
+            todo.append((k, [{"cond[BPLC_NM::LIKE]": r.get("업체명")}], lambda it, st=st: st in (it.get("ROAD_NM_ADDR") or "").replace(" ", "")))
+        elif not cache.get(k) and "cen2:" + k[4:] not in cache and (rd := road_of(addr)):
+            near = rd[2] and {"cond[ROAD_NM_ADDR::LIKE]": f"{rd[2]} {rd[0]} {rd[1]}"}  # with the 시군구 first: '중앙로 89' is in many cities
+            todo.append(("cen2:" + k[4:], [c for c in (near, {"cond[ROAD_NM_ADDR::LIKE]": f"{rd[0]} {rd[1]}"}) if c],
+                         lambda it, rd=rd, nm=r.get("업체명"): at_road(it, rd) and same_name(it.get("BPLC_NM"), nm)))
     ex = os.path.join(RAW_DIR, "excellent_restaurant_info.jsonl")
     for line in open(ex, encoding="utf-8") if os.path.exists(ex) else []:
         r = json.loads(line)
-        if not r.get("DSGN_RTRCN_YMD") and r.get("SALS_STTS_NM") == "영업" and f"ex:{r['MNG_NO']}" not in cache:
-            todo.append((f"ex:{r['MNG_NO']}", {"cond[OPN_ATMY_GRP_CD::EQ]": r["OPN_ATMY_GRP_CD"], "cond[BPLC_NM::LIKE]": r["BSNSSP_NM"]}, r["MNG_NO"], None))
+        if r.get("DSGN_RTRCN_YMD") or r.get("SALS_STTS_NM") != "영업":
+            continue
+        k, mng = f"ex:{r['MNG_NO']}", r["MNG_NO"]
+        if k not in cache:
+            todo.append((k, [{"cond[OPN_ATMY_GRP_CD::EQ]": r["OPN_ATMY_GRP_CD"], "cond[BPLC_NM::LIKE]": r["BSNSSP_NM"]}], lambda it, mng=mng: it.get("MNG_NO") == mng))
+        elif cache[k] is None and "ex2:" + mng not in cache and (rd := road_of(r.get("ROAD_NM_ADDR"))):
+            todo.append(("ex2:" + mng, [{"cond[OPN_ATMY_GRP_CD::EQ]": r["OPN_ATMY_GRP_CD"], "cond[ROAD_NM_ADDR::LIKE]": f"{rd[0]} {rd[1]}"}], lambda it, mng=mng: it.get("MNG_NO") == mng))
     todo = todo[:FOOD_MATCH_BUDGET]
     deadline, spent = time.time() + FOOD_MATCH_MINUTES * 60, []
 
     def one(t):
-        k, cond, mng, street = t
-        if spent or time.time() > deadline:
-            return k, "retry"
-        params = {"serviceKey": key, "pageNo": 1, "numOfRows": 100, "returnType": "json", **cond}
-        for attempt in range(4):
-            try:
-                d = requests.get(BASE.format("general_restaurants"), params=params, timeout=60).json()
-                if "SERVICETIMEOUT" in str(d)[:300]:  # a passing gateway timeout: try again
-                    raise ValueError("service timeout")
-                break
-            except (requests.RequestException, ValueError):
-                time.sleep(3 + attempt * 3)
-        else:
-            return k, "retry"
-        if "response" not in d:  # e.g. the daily limit or a key the service has not approved yet: stop this run
-            spent.append(json.dumps(d, ensure_ascii=False)[:200])
-            return k, "retry"
-        for it in items_of(d["response"]["body"]):
-            same = it.get("MNG_NO") == mng if mng else street in (it.get("ROAD_NM_ADDR") or "").replace(" ", "")
-            if same and it.get("CRD_INFO_X") and it.get("CRD_INFO_Y"):
+        k, conds, same = t
+        for cond in conds:
+            if spent or time.time() > deadline:
+                return k, "retry"
+            params = {"serviceKey": key, "pageNo": 1, "numOfRows": 100, "returnType": "json", **cond}
+            for attempt in range(4):
+                try:
+                    d = requests.get(BASE.format("general_restaurants"), params=params, timeout=60).json()
+                    if "SERVICETIMEOUT" in str(d)[:300]:  # a passing gateway timeout: try again
+                        raise ValueError("service timeout")
+                    break
+                except (requests.RequestException, ValueError):
+                    time.sleep(3 + attempt * 3)
+            else:
+                return k, "retry"
+            if "response" not in d:  # e.g. the daily limit or a key the service has not approved yet: stop this run
+                spent.append(json.dumps(d, ensure_ascii=False)[:200])
+                return k, "retry"
+            hits = [it for it in items_of(d["response"]["body"]) if same(it) and it.get("CRD_INFO_X") and it.get("CRD_INFO_Y")]
+            if hits:  # an open record first, if the same place also has a closed one
+                it = min(hits, key=lambda it: "폐업" in (it.get("SALS_STTS_NM") or ""))
                 return k, [it["CRD_INFO_X"], it["CRD_INFO_Y"]]
         return k, None
     got = []
