@@ -1593,7 +1593,7 @@
   function renderFestVis(f) {
     const ser = visits && visits.msgg ? (f[4] >= 0 ? visits.msgg[f[3]][f[4]] : visits.msido[f[3]]) : null;
     $('fest-vis-title').textContent = `${festPlace(f)} 월별 외지인 방문객과 축제 달`;
-    if (!ser) { $('fest-vis').innerHTML = ''; $('fest-vis-note').textContent = '이 지역의 월별 방문객 자료가 없습니다.'; return; }
+    if (!ser) { $('fest-vis').innerHTML = ''; $('fest-vis-note').textContent = '이 지역의 월별 방문객 자료가 없습니다.'; csvSet('fest-vis', ['월', '외지인 방문객'], []); return; }
     const M = visits.m, fm = festMonths(f, M), n = M.length;
     const W = 900, H = 260, L = 56, Rt = 12, Tp = 14, B = 26, iw = W - L - Rt, ih = H - Tp - B, bw = iw / n;
     const mx = Math.max(1, ...ser.filter(v => v != null)), step = niceStep(mx / 1e4) * 1e4, top = Math.ceil(mx / step) * step;
@@ -1608,6 +1608,7 @@
       svg += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
     });
     $('fest-vis').innerHTML = svg;
+    csvSet('fest-vis', ['월', '외지인 방문객', '축제 달', '진행 중'], M.map((m, i) => [`${m.slice(0, 4)}-${m.slice(4)}`, ser[i] ?? '', fm.has(m) ? (fm.get(m) ? '추정(예년 일정)' : 'Y') : '', visits.mfull[i] ? '' : 'Y']));
     attachTip($('fest-vis'), $('fest-vis-tip'), i => `<b>${M[i].slice(0, 4)}.${M[i].slice(4)}${visits.mfull[i] ? '' : ' (진행 중)'}</b><br>외지인 ${ser[i] == null ? '자료 없음' : fmt(Math.round(ser[i] / 1e4)) + '만 명'}${fm.has(M[i]) ? `<br>${fm.get(M[i]) ? '축제 달(예년 일정으로 추정)' : '축제 달'}` : ''}`);
     // 참고: 축제 달 외지인이 같은 기간 나머지 달 평균보다 얼마나 많은지 (다 찬 달만)
     const full = M.map((_, i) => i).filter(i => visits.mfull[i] && ser[i] != null), on = full.filter(i => fm.has(M[i])), off = full.filter(i => !fm.has(M[i]));
@@ -1783,6 +1784,9 @@
     $('arr-title').textContent = PER_NAME[arrPer] + ' 방한 외래관광객' + (P.partial[P.partial.length - 1] ? ' (* 진행 중)' : '');
     lineChart($('arr'), $('arr-tip'), P.labels, [{ name: '방한 외래관광객', color: 'var(--c0)', vals: P.vals[0] }],
       { div: 1e4, partial: P.partial, unit: v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(v) + '명' });
+    // CSV: 차트와 같은 기간 단위로 전체와 국적별 상위 10
+    const PT = perAgg(months, [total, ...top.map(t => t.n)], arrPer);
+    csvSet('arr', ['기간', '방한 외래관광객', ...top.map(t => t.name), '진행 중'], PT.labels.map((l, i) => [l, ...PT.vals.map(v => v[i]), PT.partial[i] ? 'Y' : '']));
     const rows = top.map(t => ({ name: t.name, v: sum(t.n, n - 12, n), p: sum(t.n, n - 24, n - 12) }));
     $('arr-top-title').textContent = `국적별 상위 10 · 최근 12개월 (괄호는 직전 12개월 대비)`;
     $('arr-top').innerHTML = rowsHTML(rows.map(r => ({ name: r.name, value: r.v, label: man(r.v), extra: `${pc1(r.v / l12)} · ${yoy(r.v, r.p)}` })), {});
@@ -2225,6 +2229,9 @@
     $('icn-title').textContent = PER_NAME[icnPer] + ' 인천공항 여객' + (P.partial[P.partial.length - 1] ? ' (* 진행 중)' : '');
     lineChart($('icn'), $('icn-tip'), P.labels, [{ name: '도착', color: 'var(--c0)', vals: P.vals[0] }, { name: '출발', color: 'var(--c1)', vals: P.vals[1] }],
       { div: 1e4, partial: P.partial, unit: v => !v ? '0' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(v) + '명' });
+    // CSV: 차트와 같은 기간 단위로 도착·출발과 국가(노선)별 도착
+    const PT = perAgg(months, [arr, dep, ...top.map(t => t.arr)], icnPer);
+    csvSet('icn', ['기간', '도착', '출발', ...top.map(t => `${t.name} 도착`), '진행 중'], PT.labels.map((l, i) => [l, ...PT.vals.map(v => v[i]), PT.partial[i] ? 'Y' : '']));
     const rows = top.map(t => ({ name: t.name, region: t.region, v: sum(t.arr, n - 12, n), p: sum(t.arr, n - 24, n - 12) }));
     $('icn-top').innerHTML = rowsHTML(rows.map(r => ({ name: `${r.name} (${r.region})`, value: r.v, label: man(r.v), extra: `${pc1(r.v / a12)} · ${yoy(r.v, r.p)}` })), {});
     csvSet('icn-top', ['국가(노선)', '지역', '최근 12개월 도착', '직전 12개월 도착', '증감률(%)', '비중(%)'],
@@ -2298,6 +2305,7 @@
       svg += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
     });
     $('dv').innerHTML = svg;
+    csvSet('dv', ['기간', '외지인', '외국인', '외국인 비중(%)', '진행 중'], P.keys.map((k, i) => [k, b[i] ?? '', c[i] ?? '', b[i] && c[i] ? +(c[i] / (b[i] + c[i]) * 100).toFixed(2) : '', P.partial[i] ? 'Y' : '']));
     attachTip($('dv'), $('dv-tip'), i => `<b>${esc(labels[i])}${P.partial[i] ? ' (진행 중)' : ''}</b><br><span class="sw" style="background:var(--c0)"></span>외지인 ${b[i] == null ? '자료 없음' : fmt(Math.round(b[i] / 1e4)) + '만 명'}<br><span class="sw" style="background:var(--c1)"></span>외국인 ${c[i] == null ? '자료 없음' : fmt(Math.round(c[i] / 1e4)) + '만 명'}${b[i] && c[i] ? `<br>외국인 비중 ${(c[i] / (b[i] + c[i]) * 100).toFixed(2)}%` : ''}`);
     const name = U ? regionName() : regLabel(curReg());
     $('dv-sub').textContent = `${name}${!U && state.dong >= 0 ? ' (방문객 자료는 시군구 단위)' : ''} · 한국관광공사 데이터랩 휴대폰 기반 연인원, ${visits.last.slice(0, 4)}.${visits.last.slice(4, 6)}.${visits.last.slice(6)}까지`;

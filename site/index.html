@@ -249,7 +249,7 @@
     </div>
     <div class="card"><button class="btn csv" data-csv="fest-table" data-name="축제주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="fest-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="fest-table"></table></div>
       <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 한국관광공사가 등록한 축제 위치에서 잰 직선거리입니다. 행사장이 넓거나 여러 곳이면 실제 생활권과 다를 수 있습니다.</p></div>
-    <div class="card"><h3 style="margin-bottom:6px" id="fest-vis-title">축제 달과 월별 외지인 방문객</h3>
+    <div class="card"><button class="btn csv" data-csv="fest-vis" data-name="축제지역_월별_외지인">CSV</button><h3 style="margin-bottom:6px" id="fest-vis-title">축제 달과 월별 외지인 방문객</h3>
       <div class="legend"><span><i style="background:var(--c0)"></i>외지인 방문객</span><span><i style="background:#e67e22"></i>축제가 열린 달</span><span><i style="background:#e67e22;opacity:.4"></i>열렸을 것으로 추정한 달(예년 일정 기준)</span></div>
       <div class="chartwrap"><svg id="fest-vis" viewBox="0 0 900 260" role="img" aria-label="축제 달과 월별 외지인 방문객"></svg><div class="tip" id="fest-vis-tip" hidden></div></div>
       <p class="note" id="fest-vis-note"></p></div>
@@ -296,7 +296,7 @@
 
   <section data-tab="demand" id="dv-sec">
     <div class="sechead"><h2>외지인·외국인 방문객 추이</h2><p class="sub" id="dv-sub"></p></div>
-    <div class="card">
+    <div class="card"><button class="btn csv" data-csv="dv" data-name="외지인_외국인_방문객">CSV</button>
       <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="dv-per" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div>
         <div class="seg" id="dv-mode" role="group" aria-label="그래프 모양"><button data-v="bar" aria-pressed="true">막대</button><button data-v="line" aria-pressed="false">선</button></div>
         <div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>외지인(내국인)</span><span><i style="background:var(--c1)"></i>외국인</span><span id="dv-hint">막대 위 숫자 = 외국인 비중</span></div></div>
@@ -351,7 +351,7 @@
   <section data-tab="demand" id="arr-sec">
     <div class="sechead"><h2>방한 외래관광객 (전국)</h2><p class="sub" id="arr-sub"></p></div>
     <div class="kpis" id="arr-kpis"></div>
-    <div class="card"><div class="tlrow" style="margin-bottom:10px"><h3 style="margin:0" id="arr-title">월별 방한 외래관광객</h3>
+    <div class="card"><button class="btn csv" data-csv="arr" data-name="방한_외래관광객_추이">CSV</button><div class="tlrow" style="margin-bottom:10px"><h3 style="margin:0" id="arr-title">월별 방한 외래관광객</h3>
         <div class="seg" id="arr-per" role="group" aria-label="기간"><button data-v="m" aria-pressed="true">월별</button><button data-v="q" aria-pressed="false">분기별</button><button data-v="y" aria-pressed="false">연도별</button></div></div>
       <div class="chartwrap"><svg id="arr" viewBox="0 0 900 260" role="img" aria-label="방한 외래관광객 추이"></svg><div class="tip" id="arr-tip" hidden></div></div></div>
     <div class="card"><button class="btn csv" data-csv="arr-top" data-name="방한객_국적별">CSV</button><h3 style="margin-bottom:10px" id="arr-top-title"></h3><div class="sharelist" id="arr-top"></div>
@@ -361,7 +361,7 @@
   <section data-tab="demand" id="icn-sec" hidden>
     <div class="sechead"><h2>인천공항 여객 (국가별 노선)</h2><p class="sub">인천공항에 도착·출발한 여객 수입니다. 국가는 노선 기준이고 내국인도 포함됩니다.</p></div>
     <div class="kpis" id="icn-kpis"></div>
-    <div class="card"><div class="tlrow" style="margin-bottom:10px"><h3 style="margin:0" id="icn-title">월별 인천공항 여객</h3>
+    <div class="card"><button class="btn csv" data-csv="icn" data-name="인천공항_여객_추이">CSV</button><div class="tlrow" style="margin-bottom:10px"><h3 style="margin:0" id="icn-title">월별 인천공항 여객</h3>
         <div class="seg" id="icn-per" role="group" aria-label="기간"><button data-v="m" aria-pressed="true">월별</button><button data-v="q" aria-pressed="false">분기별</button><button data-v="y" aria-pressed="false">연도별</button></div>
         <div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>도착</span><span><i style="background:var(--c1)"></i>출발</span></div></div>
       <div class="chartwrap"><svg id="icn" viewBox="0 0 900 260" role="img" aria-label="인천공항 여객 추이"></svg><div class="tip" id="icn-tip" hidden></div></div></div>
