@@ -579,18 +579,69 @@ def write_admin(sidos, sido_meta, merged):
     def lines(polys):
         return [_simplify(l, 0.0005) for l in _outline(polys) if l[0] != l[-1] or _km2(l) >= 0.05]
     missing = []
+    edge_of = defaultdict(set)  # 행정동 edge -> the (시도, 시군구) owning it, for the neighbours below
+    pts_of = defaultdict(list)  # (시도, 시군구) -> every 5th boundary point, for islands' neighbours across the sea
     for si, s in enumerate(sidos):
         groups = by_sido.get(s, {})
         sgg = []
-        for g in sido_meta[si]["sgg"]:
+        for gi, g in enumerate(sido_meta[si]["sgg"]):
             polys = groups.get(g) or (groups.get(s) if g == s else None) or ([p for v in groups.values() for p in v] if g == s else None)
             sgg.append(lines(polys) if polys else None)
             if not polys:
                 missing.append(f"{s} {g}")
+            for ring in (r for rings in polys or [] for r in rings):
+                pts_of[(si, gi)].extend(ring[::5])
+                for a, b in zip(ring, ring[1:]):
+                    if a != b:
+                        edge_of[(tuple(a), tuple(b)) if a < b else (tuple(b), tuple(a))].add((si, gi))
         with open(os.path.join(OUT, "admin", f"{si}.json"), "w", encoding="utf-8") as f:
             json.dump({"sido": lines([p for v in groups.values() for p in v]) if groups else None, "sgg": sgg}, f, separators=(",", ":"))
     print(f"admin: 시도 {sum(1 for s in sidos if by_sido.get(s))} of {len(sidos)} outlined; 시군구 without an outline: {' '.join(missing) or '-'}", flush=True)
+    add_neighbours(edge_of, pts_of, sido_meta)
     return raw.get("ver") if isinstance(raw, dict) else None
+
+
+ADJ_MIN_KM = 0.2  # shared boundary needed to count as neighbours (not a corner touch)
+ADJ_SEA_KM = 5  # a 시군구 with no land neighbour (거제·남해·영도 …) takes those this close across the sea (bridges)
+
+
+def add_neighbours(edge_of, pts_of, sido_meta):
+    """Neighbours from the 행정동 edges two areas share (shared vertices are identical in that data): sido_meta[si]["adj"]
+    = per 시군구 [[si, gi], …] and ["adj_sido"] = [si, …], longest shared boundary first. A 시군구 without any takes the
+    ones within ADJ_SEA_KM across the sea, nearest first (울릉군 stays without)."""
+    km = lambda a, b: math.hypot((a[0] - b[0]) * 88.8, (a[1] - b[1]) * 111.0)  # ~km at Korean latitudes
+    pair, spair = Counter(), Counter()
+    for (a, b), own in edge_of.items():
+        if len(own) == 2:
+            p, q = sorted(own)
+            pair[(p, q)] += km(a, b)
+            if p[0] != q[0]:
+                spair[(p[0], q[0])] += km(a, b)
+    for sm in sido_meta:
+        sm["adj"], sm["adj_sido"] = [[] for _ in sm["sgg"]], []
+    for (p, q), d in pair.most_common():
+        if d >= ADJ_MIN_KM:
+            sido_meta[p[0]]["adj"][p[1]].append(list(q))
+            sido_meta[q[0]]["adj"][q[1]].append(list(p))
+    for (p, q), d in spair.most_common():
+        if d >= ADJ_MIN_KM:
+            sido_meta[p]["adj_sido"].append(q)
+            sido_meta[q]["adj_sido"].append(p)
+    box = {k: (min(x for x, _ in v), min(y for _, y in v), max(x for x, _ in v), max(y for _, y in v)) for k, v in pts_of.items()}
+    sea = []
+    for p in [(si, gi) for si, sm in enumerate(sido_meta) for gi, a in enumerate(sm["adj"]) if not a and pts_of.get((si, gi))]:
+        bx, pad = box[p], ADJ_SEA_KM / 80
+        near = []
+        for q, qb in box.items():
+            if q != p and qb[0] < bx[2] + pad and qb[2] > bx[0] - pad and qb[1] < bx[3] + pad and qb[3] > bx[1] - pad:
+                d = min(km(a, b) for a in pts_of[p] for b in pts_of[q])
+                if d <= ADJ_SEA_KM:
+                    near.append((d, q))
+        sido_meta[p[0]]["adj"][p[1]] = [list(q) for _, q in sorted(near)]
+        sea.append(f"{sido_meta[p[0]]['sgg'][p[1]]}({len(near)})")
+    n = [len(a) for sm in sido_meta for a in sm["adj"]]
+    print(f"neighbours: 시군구 with none {sum(1 for x in n if not x)}, max {max(n, default=0)}, mean {sum(n) / max(len(n), 1):.1f}; "
+          f"across the sea: {' '.join(sea) or '-'}; 시도 pairs {sum(len(sm['adj_sido']) for sm in sido_meta) // 2}", flush=True)
 
 
 PARK_BANDS = (1, 3, 5)  # km from a national park's boundary

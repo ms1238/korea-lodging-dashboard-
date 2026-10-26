@@ -2,7 +2,7 @@
 :root{
   --bg:#f5f6f8; --panel:#fff; --fg:#0f1b2d; --muted:#5b6778; --line:#e6e9ee; --accent:#0f1b2d; --brand:#2f6bff;
   --sh:0 1px 2px rgba(15,27,45,.04),0 4px 16px rgba(15,27,45,.06); --r:16px;
-  --c0:#2a78d6; --c1:#eb6834; --c2:#1baf7a; --c3:#eda100; --c4:#e87ba4; --c5:#008300; --c6:#6250d6;
+  --c0:#2a78d6; --c1:#eb6834; --c2:#1baf7a; --c3:#eda100; --c4:#e87ba4; --c5:#008300; --c6:#6250d6; --c7:#8c564b; --c8:#0e8fa3; --c9:#4d5b6b;  /* c7~c9: 인접 지역 비교(최대 10곳)용 */
   --ok:#2f8a4e; --pause:#d99a00; --closed:#b8473e;
   --f-body:'Pretendard Variable',Pretendard,-apple-system,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
   --f-head:var(--f-body);
@@ -10,7 +10,7 @@
 @media (prefers-color-scheme: dark){:root{
   --bg:#0b1220; --panel:#121b2b; --fg:#e9eef6; --muted:#93a1b5; --line:#1f2a3d; --accent:#e9eef6; --brand:#6c9bff;
   --sh:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
-  --c0:#3987e5; --c1:#d95926; --c2:#199e70; --c3:#c98500; --c4:#d55181; --c5:#008300; --c6:#9085e9; --ok:#4caf6e; --pause:#e0a91c; --closed:#d9675c; color-scheme:dark}}
+  --c0:#3987e5; --c1:#d95926; --c2:#199e70; --c3:#c98500; --c4:#d55181; --c5:#008300; --c6:#9085e9; --c7:#b98577; --c8:#33b3c7; --c9:#a3b1bf; --ok:#4caf6e; --pause:#e0a91c; --closed:#d9675c; color-scheme:dark}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 var(--f-body);letter-spacing:-.01em;overflow-x:clip;
   padding:0 max(16px,env(safe-area-inset-right,0px)) 56px max(16px,env(safe-area-inset-left,0px))}

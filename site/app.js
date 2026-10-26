@@ -861,6 +861,22 @@
     return true;
   }
   $('cmp-add').onclick = () => addCmp(curReg());
+  // 지금 고른 광역·기초와 맞닿은 지역(build.py add_neighbours, 경계가 많이 맞닿은 순)을 함께 담기: 인접 비교만 10곳까지
+  $('cmp-adj').onclick = () => {
+    const r = curReg(), b = $('cmp-adj'), label = b.textContent;
+    const nb = r.si < 0 || r.grp != null ? null : r.gi < 0 ? (S[r.si].adj_sido || []).map(si => ({ si, gi: -1 })) : ((S[r.si].adj || [])[r.gi] || []).map(([si, gi]) => ({ si, gi }));
+    let msg;
+    if (!nb) msg = '광역·기초 하나를 고르세요';
+    else if (!nb.length) msg = '맞닿은 지역 없음';
+    else {
+      let n = 0;
+      for (const x of [r, ...nb]) if (state.cmp.length < 10 && !state.cmp.some(y => regKey(y) === regKey(x))) { state.cmp.push(x); n++; }
+      renderChips(); renderCompare(); applyUnion(); writeHash();
+      if (!unionOn()) fitRegs(state.cmp);
+      msg = n ? `${n}곳 담음${state.cmp.length >= 10 && n < nb.length + 1 ? ' (10곳까지)' : ''}` : '이미 담겨 있음';
+    }
+    b.textContent = msg; setTimeout(() => { b.textContent = label; }, 1800);
+  };
   $('cmp-chips').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.id === 'cmp-clear') state.cmp = []; else state.cmp.splice(+b.dataset.i, 1);
