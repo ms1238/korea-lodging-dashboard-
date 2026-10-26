@@ -1,4 +1,4 @@
-# Temporary: what the VWorld 2D data API and geocoder return (VWORLD_KEY secret only, never in the repository).
+# Temporary: is VWorld reachable from GitHub Actions at all (overseas IP block?), and the data.go.kr fallback for 개별공시지가.
 name: Probe VWorld API
 on:
   workflow_dispatch:
@@ -11,28 +11,33 @@ jobs:
   probe:
     runs-on: ubuntu-24.04
     steps:
-      - run: pip install requests
+      - run: curl -sS -m 20 https://ipinfo.io/country || true
       - env:
           KEY: ${{ secrets.VWORLD_KEY }}
+          DKEY: ${{ secrets.DATA_GO_KR_KEY }}
         shell: python
         run: |
           import os, requests
-          K = os.environ["KEY"]
-          print("key set:", bool(K), flush=True)
-          DOMAIN = "https://ms1238.github.io/korea-lodging-dashboard-/"
-          pt = "POINT(126.97797 37.56654)"  # 서울시청 앞
-          def get(url, **p):
-              for dom in (None, DOMAIN):
-                  q = {"key": K, "format": "json", **p, **({"domain": dom} if dom else {})}
-                  try:
-                      r = requests.get(url, params=q, timeout=30)
-                      print(f"== {p.get('data') or p.get('request')} domain={bool(dom)} {r.status_code} {r.text[:2500]!r}", flush=True)
-                  except Exception as e:
-                      print(f"== {p.get('data') or p.get('request')} domain={bool(dom)} ERR {str(e)[:200]}", flush=True)
-          for layer in ("LP_PA_CBND_BUBUN", "LT_C_UQ111"):  # 연속지적도(공시지가 칸 여부), 용도지역(도시지역)
-              get("https://api.vworld.kr/req/data", service="data", request="GetFeature", data=layer,
-                  geomFilter=pt, crs="EPSG:4326", size=1, geometry="false")
-          get("https://api.vworld.kr/req/address", service="address", request="getcoord", version="2.0",
-              crs="epsg:4326", type="road", address="서울특별시 중구 세종대로 110")
-          get("https://api.vworld.kr/req/address", service="address", request="getcoord", version="2.0",
-              crs="epsg:4326", type="parcel", address="전라북도 전주시 완산구 풍남동3가 64-1")
+          K, DK = os.environ["KEY"], os.environ["DKEY"]
+          UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/141.0 Safari/537.36",
+                "Referer": "https://ms1238.github.io/korea-lodging-dashboard-/"}
+          def show(tag, url, **kw):
+              try:
+                  r = requests.get(url, timeout=30, **kw)
+                  print(f"== {tag}: {r.status_code} {dict((k, v) for k, v in r.headers.items() if k.lower() in ('server', 'content-type'))} {r.text[:600]!r}", flush=True)
+              except Exception as e:
+                  print(f"== {tag}: ERR {str(e)[:200]}", flush=True)
+          show("www.vworld.kr main", "https://www.vworld.kr/")
+          p = {"service": "data", "request": "GetFeature", "data": "LP_PA_CBND_BUBUN", "key": K, "format": "json",
+               "geomFilter": "POINT(126.97797 37.56654)", "crs": "EPSG:4326", "size": 1, "geometry": "false",
+               "domain": "https://ms1238.github.io/korea-lodging-dashboard-/"}
+          for scheme in ("https", "http"):
+              show(f"{scheme} data plain", f"{scheme}://api.vworld.kr/req/data", params=p)
+              show(f"{scheme} data browser-UA", f"{scheme}://api.vworld.kr/req/data", params=p, headers=UA)
+          show("https address browser-UA", "https://api.vworld.kr/req/address", headers=UA,
+               params={"service": "address", "request": "getcoord", "version": "2.0", "crs": "epsg:4326", "type": "road",
+                       "address": "서울특별시 중구 세종대로 110", "format": "json", "key": K})
+          # fallback: 국토교통부 개별공시지가 속성조회 on data.go.kr (needs a PNU; 서울시청 부지 태평로1가 31)
+          for base in ("https://apis.data.go.kr/1611000/nsdi/IndvdLandPriceService/attr/getIndvdLandPriceAttr",):
+              show("data.go.kr 개별공시지가", base, params={"serviceKey": DK, "pnu": "1114010300100310000", "stdrYear": "2025",
+                                                       "format": "json", "numOfRows": 3, "pageNo": 1})
