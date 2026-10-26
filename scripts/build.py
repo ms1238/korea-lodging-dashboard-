@@ -47,6 +47,8 @@ Steps
     meta.json "bus" = the official national count (한국교통안전공단 전국 버스터미널 현황, latest table).
 30. meta.json sido[]["land"] / ["land_sido"] / "land_year": 지가변동률 per 시군구 and 시도 (한국부동산원 R-ONE, latest year).
 31. trrsrt.json: 관광지·관광단지 (전국관광지정보표준데이터) with the operating lodgings and 객실 수 within 1 / 3 / 5 km.
+32. meta.json sido[]["oldland"] / ["oldland_sido"] / "vworld_year": median 개별공시지가 and 상업지역 count of 여관·여인숙
+    licensed 30+ years ago (VWorld, scripts/static/vworld_land.csv from scripts/vworld_land.py); also 3 download columns.
 """
 import calendar
 import csv
@@ -1258,10 +1260,11 @@ def write_arrivals():
 
 
 DOWNLOAD_COLS = ["관리번호", "업소명", "업종대분류", "업종", "시도", "시군구", "읍면동", "리", "영업상태", "인허가일", "폐업일",
-                 "도로명주소", "지번주소", "위도", "경도", "위치근사", "용도지역", "건물용도", "인구감소지역", "객실수"]
+                 "도로명주소", "지번주소", "위도", "경도", "위치근사", "용도지역", "건물용도", "인구감소지역", "객실수",
+                 "공시지가", "공시지가기준연도", "용도지역(VWorld)"]
 
 
-def write_download(rows, sidos, sido_meta):
+def write_download(rows, sidos, sido_meta, land):
     """Every facility (after duplicate removal and region matching) as data/download/lodging.csv.gz for researchers;
     the columns are described in site/codebook.html. UTF-8 with BOM so spreadsheet programs read Korean."""
     os.makedirs(os.path.join(OUT, "download"), exist_ok=True)
@@ -1273,13 +1276,37 @@ def write_download(rows, sidos, sido_meta):
         w.writerow(DOWNLOAD_COLS)
         for r in sorted(rows, key=lambda r: (r["sido"], r["sgg"], r["emd"] or "", r["name"])):
             lat, lon = r["ll"] if r["ll"] else ("", "")
+            jiga, gosi, zone = land.get(r["id"], (None, "", ""))
             w.writerow([r["id"], r["name"], r["cat"], r["type"], r["sido"], r["sgg"], r["emd"] or "", r["ri"] or "", STATUS[r["status"]],
                         r["date"], r["closed"], r["road"], r["lot"], lat, lon, r.get("approx", 0) if r["ll"] else "",
-                        ZONES[r["zone"]] if r["zone"] >= 0 else "", BLDGS[r["bldg"]] if r["bldg"] >= 0 else "", decl(r), r["rooms"] or ""])
+                        ZONES[r["zone"]] if r["zone"] >= 0 else "", BLDGS[r["bldg"]] if r["bldg"] >= 0 else "", decl(r), r["rooms"] or "",
+                        jiga or "", gosi if jiga else "", zone])
     print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
 
 
 OLD_TYPES = {("숙박업", "여관업"), ("숙박업", "여인숙업")}  # 노후 숙박: the old roadside-inn stock
+COMMERCIAL = {"중심상업지역", "일반상업지역", "근린상업지역", "유통상업지역"}
+
+
+def load_vworld_land():
+    """관리번호 -> (개별공시지가 원/㎡ or None, 기준연도, 용도지역) of open 여관·여인숙 from scripts/static/vworld_land.csv(.gz),
+    written by scripts/vworld_land.py on a PC in Korea (VWorld refuses GitHub Actions). {} without the file."""
+    for path in (os.path.join(ROOT, "scripts", "static", f) for f in ("vworld_land.csv.gz", "vworld_land.csv")):
+        if os.path.exists(path):
+            with (gzip.open(path, "rt", encoding="utf-8-sig") if path.endswith(".gz") else open(path, encoding="utf-8-sig")) as f:
+                out = {r["관리번호"]: (int(r["cbnd.jiga"]) if r.get("cbnd.jiga") else None, r.get("cbnd.gosi_year") or "", r.get("zone.uname") or "")
+                       for r in csv.DictReader(f)}
+            print(f"vworld_land: {len(out)} facilities, {sum(1 for v in out.values() if v[0])} with 공시지가, "
+                  f"{sum(1 for v in out.values() if v[2])} with 용도지역", flush=True)
+            return out
+    return {}
+
+
+def land_stats(xs):
+    """[median 공시지가 (원/㎡), facilities with one, facilities with a known 용도지역, of them in a 상업지역] or None when
+    fewer than 5 have a 공시지가. The 용도지역 is often blank (a quarter of Seoul's), so its share counts only known ones."""
+    v = [j for j, _, z in xs if j]
+    return [round(statistics.median(v)), len(v), sum(1 for *_, z in xs if z), sum(1 for *_, z in xs if z in COMMERCIAL)] if len(v) >= 5 else None
 
 
 def room_rule(rows, tidx):
@@ -1299,10 +1326,11 @@ def room_rule(rows, tidx):
     return med, cap, cov
 
 
-def add_change_old(rows, sidos, sido_meta, tidx):
+def add_change_old(rows, sidos, sido_meta, tidx, land):
     """Per 시군구 in meta.sido[]: "r12" = [[업종, new permits, closings, operating or paused now], …] over the last
     365 days (only 업종 with any), for the map's net-change colouring; "old" = [operating 여관·여인숙, of them licensed
-    20+ years ago, 30+ years ago]; "stk" = [[업종, stock at the end of each of STOCK_YEARS], …] (operating or paused that day, from the
+    20+ years ago, 30+ years ago]; "oldland" (and "oldland_sido" for the whole 시도) = land_stats of the 30+ year ones
+    from `land` (VWorld 공시지가·용도지역); "stk" = [[업종, stock at the end of each of STOCK_YEARS], …] (operating or paused that day, from the
     permit and closing dates; closed records without a date are left out), followed by the summed 객실 수 at the same
     year ends (an empty one takes the median of the 업종, one above the 업종's 99.9th percentile is cut to it; 0 for 업종
     without a 객실 column), for the supply vs demand growth chart. Returns (STOCK_YEARS, per 업종 the share of operating
@@ -1316,6 +1344,7 @@ def add_change_old(rows, sidos, sido_meta, tidx):
         r12 = [defaultdict(lambda: [0, 0, 0]) for _ in sm["sgg"]]
         stk = [defaultdict(lambda: [0] * (2 * len(years))) for _ in sm["sgg"]]
         old = [[0, 0, 0] for _ in sm["sgg"]]
+        old_land = [[] for _ in sm["sgg"]]
         for r in rows:
             if r["sido"] != s:
                 continue
@@ -1328,6 +1357,8 @@ def add_change_old(rows, sidos, sido_meta, tidx):
                 old[gi][0] += 1
                 old[gi][1] += bool(r["date"]) and int(r["date"][:4]) <= y20
                 old[gi][2] += bool(r["date"]) and int(r["date"][:4]) <= y30
+                if r["date"] and int(r["date"][:4]) <= y30 and r["id"] in land:
+                    old_land[gi].append(land[r["id"]])
             if r["date"] and (r["status"] < 2 or r["closed"]):
                 rooms = min(r["rooms"], cap.get(t, r["rooms"])) if r["rooms"] else med.get(t, 0)
                 for k, y in enumerate(years):
@@ -1337,6 +1368,9 @@ def add_change_old(rows, sidos, sido_meta, tidx):
         sm["r12"] = [[[t, *v] for t, v in sorted(d.items()) if any(v)] for d in r12]
         sm["stk"] = [[[t, *v[:len(years)], *(round(x) for x in v[len(years):])] for t, v in sorted(d.items()) if any(v)] for d in stk]
         sm["old"] = old
+        if land:
+            sm["oldland"] = [land_stats(xs) for xs in old_land]
+            sm["oldland_sido"] = land_stats([x for xs in old_land for x in xs])
     return years, cov
 
 
@@ -1703,9 +1737,10 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     pop_ym = add_population(sidos, sgg_of, sido_meta)
     decl_date = add_decline(sidos, sgg_of, sido_meta, merged)
-    stock_years, room_cov = add_change_old(rows, sidos, sido_meta, tidx)
+    vland = load_vworld_land()
+    stock_years, room_cov = add_change_old(rows, sidos, sido_meta, tidx, vland)
     land_year = add_land_price(sidos, sgg_of, sido_meta)
-    write_download(rows, sidos, sido_meta)
+    write_download(rows, sidos, sido_meta, vland)
     write_arrivals()
     write_icn()
     write_kto_index(sidos, sgg_of)
@@ -1750,6 +1785,7 @@ def main():
         "stock_years": stock_years,
         "room_cov": room_cov,
         "land_year": land_year,
+        "vworld_year": Counter(v[1] for v in vland.values() if v[1]).most_common(1)[0][0] if vland else None,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
