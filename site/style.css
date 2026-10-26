@@ -73,6 +73,8 @@ button.row:hover{background:color-mix(in srgb,var(--fg) 6%,transparent)}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--muted);margin-bottom:8px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
 .chartwrap{position:relative}
+/* 휴대폰: 차트는 900 폭으로 그려 화면에 맞추면 글자가 4px 남짓이 되므로 최소 820px로 두고 가로로 밀어 봄(글자 약 10px) */
+@media (max-width:640px){.chartwrap{overflow-x:auto;overscroll-behavior-x:contain}.chartwrap > svg{min-width:820px}}
 svg{display:block;width:100%;height:auto;overflow:visible}
 svg text{font-family:var(--f-body);fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 svg .tot{fill:var(--fg);font-weight:500}

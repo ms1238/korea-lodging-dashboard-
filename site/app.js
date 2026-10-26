@@ -1170,7 +1170,7 @@
     const svg = $('sd-chart'), tip = $('sd-tip'), wrap = svg.parentElement;
     svg.onmousemove = e => { const c = e.target.closest('circle[data-i]'); if (!c) { tip.hidden = true; return; } const p = pts[+c.dataset.i];
       tip.innerHTML = `<b>${esc(regLabel(p))}</b><br>${unitName} ${sq(p.st[2])} → ${sq(p.st[3])} (${pct1(p.gs)})<br>${kindName} ${pct1(p.gd)}<br>차이 ${pp(p.gap)}${out(p) ? '<br><small>축 밖 값이라 가장자리에 빈 원으로 표시</small>' : ''}`; tip.hidden = false;
-      const b = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + 'px'; tip.style.top = (e.clientY - b.top + 10) + 'px'; };
+      const b = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + wrap.scrollLeft + 'px'; tip.style.top = Math.max(0, Math.min(e.clientY - b.top + 10, b.height - tip.offsetHeight - 4)) + 'px'; };
     svg.onmouseleave = () => { tip.hidden = true; };
     svg.onclick = async e => { const c = e.target.closest('circle[data-i]'); if (!c) return; const p = pts[+c.dataset.i]; if (state.sido !== p.si) await setSido(p.si); if (p.grp != null) setGroup(p.grp); else setSgg(p.gi); };
     // 표: 고른 광역(없으면 전국)의 시군구, 숙소가 방문보다 빨리 는 폭 큰 순
@@ -1744,7 +1744,7 @@
   const pc1 = x => (x * 100).toFixed(1) + '%';
 
   /* ---------- 종합: 한 지역의 요약과 연구에서 쓰는 지표 ----------
-     입지계수(LQ), 업종 균등도(Pielou J), 3년 생존율, 계절 편중(Gini), 역세권 비율, 방문객 대비 숙소 밀도.
+     입지계수(LQ), 업종 다양도(전국 업종 수로 정규화한 Shannon), 3년 생존율, 계절 편중(Gini), 역세권 비율, 방문객 대비 숙소 밀도.
      비교 대상(전국 시군구 또는 광역)에서의 백분위를 함께 보여줌. 상태는 '영업', 업종은 업종 필터를 따름 */
   let ovCache = null;
   function areaTable() {  // 시군구별 [업종별 영업 수, 3년 코호트, 그중 3년 안 폐업, 최근 3년 신규, 최근 3년 폐업, 3년 전 기준 재고]
@@ -1757,7 +1757,7 @@
       if (!state.types.has(c[2])) continue;
       const x = at(c[0], c[1]);
       if (c[3] === 0) x.a[c[2]] += c[5];
-      if (c[4] >= C0 && c[4] <= C1) x.co += c[5];
+      if (c[4] >= C0 && c[4] <= C1 && c[3] < 2) x.co += c[5];  // 폐업은 폐업일이 있는 것만 아래 close에서 더함(생존 곡선과 같은 규칙)
       if (c[4] > Y3) x.nw += c[5];
       if (c[3] < 2 && c[4] && c[4] <= Y3) x.base += c[5];
       if (c[4] && c[4] <= Y0) x.s0[c[2]] += c[5];
@@ -1768,7 +1768,7 @@
       const x = at(c[0], c[1]);
       if (c[4] && c[4] <= Y0 && c[3] <= Y0) x.s0[c[2]] -= c[5];
       if (c[4] && c[4] <= Y1 && c[3] <= Y1) x.s1[c[2]] -= c[5];
-      if (c[4] >= C0 && c[4] <= C1 && c[3] - c[4] <= 3) x.c3 += c[5];
+      if (c[4] >= C0 && c[4] <= C1) { x.co += c[5]; if (c[3] - c[4] <= 3) x.c3 += c[5]; }
       if (c[3] > Y3) x.cl += c[5];
       if (c[4] && c[4] <= Y3 && c[3] > Y3) x.base += c[5];
     }
@@ -1816,10 +1816,10 @@
   const OV = [  // [키, 이름, 표시, 산식, 근거] (쉬운 설명은 OV_EASY)
     ['dens', '외지인 100만 명당 숙소', v => v.toFixed(1) + '곳', '영업 숙소 ÷ (연간 외지인 방문객 ÷ 100만)', 'Defert(1967) 관광기능지수의 변형: 원식은 병상÷주민 수이나, 인구·병상 자료 대신 방문객과 시설 수를 씀'],
     ['growth', '최근 3년 순증률', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', '(최근 3년 신규 − 최근 3년 폐업) ÷ 3년 전 영업 숙소', '순증가율(공급 증가 속도)'],
-    ['surv', '3년 생존율', v => (v * 100).toFixed(1) + '%', `${yNow - 6}~${yNow - 4}년 인허가 중 허가 후 3년 안에 폐업하지 않은 비율`, '통계청 기업생멸행정통계의 생존율 개념(연 단위 근사)'],
-    ['even', '업종 균등도', v => v.toFixed(2), 'Pielou J = −Σpᵢ ln pᵢ ÷ ln K (pᵢ 업종 비중, K 전국 업종 수)', 'Shannon 다양도 지수, Pielou(1966) 균등도'],
+    ['surv', '3년 생존율', v => (v * 100).toFixed(1) + '%', `${yNow - 6}~${yNow - 4}년 인허가 중 허가 후 3년 안에 폐업하지 않은 비율(폐업일이 없는 폐업 기록은 뺌)`, '통계청 기업생멸행정통계의 생존율 개념(연 단위 근사)'],
+    ['even', '업종 다양도', v => v.toFixed(2), '−Σpᵢ ln pᵢ ÷ ln K (pᵢ 업종 비중, K 전국에 있는 업종 수)', 'Shannon 다양도 지수를 전국 업종 수로 정규화(Pielou 1966 균등도는 분모에 지역 업종 수를 쓰지만, 그러면 두 업종만 반반인 지역도 1이 되어 전국 업종 수를 씀)'],
     ['gini', '계절 편중', v => v.toFixed(3), '최근 12개월 외지인 방문객의 지니계수', 'Lundtorp(2001) 관광 계절성 지니계수'],
-    ['station', '역세권 숙소 비율', v => (v * 100).toFixed(1) + '%', '역(지하철·광역·간선) 1km 안 영업 숙소 ÷ 위치가 정확한 영업 숙소', '대중교통 도보권(반경 1km) 접근성 지표'],
+    ['station', '역세권 숙소 비율', v => (v * 100).toFixed(1) + '%', '역(지하철·광역·간선)에서 직선거리 1km 안 영업 숙소 ÷ 위치가 정확한 영업 숙소', '역 반경 1km(직선거리) 입지 지표. 실제 걷는 거리·시간은 아님'],
     ['rsr', '지역 고유 성장 효과', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', `변이할당분석: Σ 기준재고ᵢ×(지역 업종 성장률ᵢ − 전국 업종 성장률ᵢ) ÷ 기준재고 (${SS_Y0}→${SS_Y1}년 말 재고)`, 'Dunn(1960) 변이할당분석(Shift-share)'],
     ['hansen', '역 접근성 점수', v => v.toFixed(2), '숙소마다 Σ exp(−2·d) (d: 3km 안 역까지 km)의 평균', 'Hansen(1959) 중력형 접근성. 거리 감쇠 β=2/km는 가정값(0.5km 역=0.37, 1km=0.14)'],
     ['tfi', '주민 1천 명당 숙소', v => v.toFixed(2) + '곳', `영업 숙소 ÷ (주민등록인구 ÷ 1천), 인구는 ${meta.pop_ym ? meta.pop_ym.slice(0, 4) + '.' + meta.pop_ym.slice(4) : '-'} 말 기준`, 'Defert(1967) 관광기능지수(원식은 병상 수 기준; 객실 자료가 부정확해 시설 수로 대체). 인구: 행정안전부 행정동별 주민등록 인구'],
@@ -1836,20 +1836,20 @@
     dens: '이 지역을 찾는 외지 방문객 100만 명에 숙소가 몇 곳 있는지입니다. 높으면 방문객에 비해 숙소가 많아 경쟁이 치열하고, 낮으면 숙소가 모자랄 수 있습니다.',
     growth: '최근 3년 동안 새로 연 숙소에서 문 닫은 숙소를 뺀 뒤, 3년 전 숙소 수와 비교한 증가율입니다. 높을수록 숙소가 빠르게 늘고 있습니다.',
     surv: '몇 해 전에 문을 연 숙소 가운데 3년 넘게 영업을 이어간 비율입니다. 낮으면 생겼다가 금방 사라지는 숙소가 많다는 뜻입니다.',
-    even: '호텔·여관·민박 같은 숙소 종류가 얼마나 골고루 섞여 있는지를 0~1로 나타낸 값입니다. 1에 가까우면 다양하고, 0에 가까우면 한두 종류에 몰려 있습니다.',
+    even: '전국에 있는 숙소 종류(호텔·여관·민박 등) 가운데 이 지역에 얼마나 여러 종류가 고르게 있는지를 0~1로 나타낸 값입니다. 1에 가까우면 다양하고, 0에 가까우면 한두 종류에 몰려 있습니다.',
     gini: '한 해 동안 방문객이 특정 달에 얼마나 몰리는지를 0~1로 나타낸 값입니다. 높을수록 성수기와 비수기 차이가 큽니다.',
-    station: '역(지하철·광역철도·기차역)에서 1km, 걸어서 15분 안팎 거리에 있는 숙소의 비율입니다. 높을수록 대중교통으로 숙소에 가기 편합니다.',
-    rsr: '숙소 증감 가운데 전국적인 흐름이나 숙소 종류 구성으로는 설명되지 않는, 이 지역만의 몫입니다. 플러스면 관광 수요·개발·정책 같은 지역 자체 요인으로 더 늘었다는 뜻입니다.',
-    hansen: '숙소 주변에 역이 얼마나 많고 가까운지를 점수로 나타낸 값입니다. 가까운 역일수록 크게 쳐서 더하므로, 높을수록 걸어서 이용할 수 있는 역이 많습니다.',
+    station: '역(지하철·광역철도·기차역)에서 직선거리 1km 안에 있는 숙소의 비율입니다. 높을수록 역 가까이에 숙소가 많습니다. 하천·도로·출입구 위치는 반영하지 않아 실제로 걷는 거리는 더 길 수 있습니다.',
+    rsr: '숙소 증감 가운데 전국적인 흐름이나 숙소 종류 구성으로는 설명되지 않는 나머지 몫입니다. 플러스면 그 두 가지로 예상되는 것보다 더 늘었다는 뜻이며, 왜 늘었는지(관광 수요·개발·정책·자료 차이 등)는 이 값만으로 알 수 없습니다.',
+    hansen: '숙소 주변에 역이 얼마나 많고 가까운지를 점수로 나타낸 값입니다(직선거리 기준). 가까운 역일수록 크게 쳐서 더하므로, 높을수록 가까이에 역이 많습니다.',
     tfi: '주민 1천 명당 숙소가 몇 곳인지입니다. 높을수록 주민 수에 비해 숙박업이 큰, 관광 중심 지역입니다.',
     tpi: '하루 평균 외지 방문객이 주민 1천 명당 몇 명인지입니다. 높을수록 주민이 느끼는 관광객 밀도(혼잡·생활 불편)가 클 수 있습니다.',
     fshare: '이 지역을 찾는 방문객 가운데 외국인의 비율입니다. 높을수록 외국인 관광 수요의 영향이 큽니다.',
-    fdens: '이 지역을 찾는 외국인 방문객 100만 명에 모든 업종의 숙소가 몇 곳 있는지입니다. 낮으면 외국인 수요에 비해 숙박 공급이 빠듯하고, 높으면 외국인이 적게 오는데 숙소는 많은 지역입니다.',
+    fdens: '이 지역을 찾는 외국인 방문객 100만 명에 모든 업종의 숙소가 몇 곳 있는지입니다. 낮으면 외국인 수요에 비해 숙박 공급이 빠듯할 수 있고, 높으면 외국인이 적게 오는데 숙소는 많은 지역입니다. 방문객에는 당일 방문도 섞여 있어 숙박 부족을 단정하는 값은 아닙니다.',
     k21: '방문객이 잠깐 들르기보다 머물다 가는 정도를 한국관광공사가 지수로 만든 값입니다. 높을수록 체류형 관광지에 가깝습니다(실제 일수가 아닌 상대 지수).',
     k2102: '방문객 가운데 숙박하고 가는 사람의 비중을 지수로 나타낸 값입니다. 높을수록 숙박 수요가 큰 지역입니다(실제 비율이 아닌 상대 지수).',
     k1107: '숙박업종에서 쓴 신용카드 소비를 지수로 나타낸 값입니다. 가격·가동률 자료가 없을 때 숙박 시장의 매출 흐름을 가늠하는 대리 지표입니다(금액이 아닌 상대 지수).',
     lq: '전국 평균과 비교해 이 지역에 특히 많은 숙소 종류입니다. 2.0이면 그 종류의 비중이 전국 평균의 2배라는 뜻입니다.',
-    ss: '늘어난(줄어든) 숙소를 원인별로 나눈 것입니다. 전국이 다 같이 늘어서 생긴 몫, 늘어나는 종류의 숙소가 많아서 생긴 몫, 이 지역만의 요인으로 생긴 몫으로 나눕니다.',
+    ss: '늘어난(줄어든) 숙소를 원인별로 나눈 것입니다. 전국이 다 같이 늘어서 생긴 몫, 늘어나는 종류의 숙소가 많아서 생긴 몫, 그 두 가지로 설명되지 않는 나머지 몫(지역 고유 효과)으로 나눕니다. 나머지 몫의 원인은 따로 확인해야 합니다.',
   };
   // 카드 설명은 'i' 단추에 넣어 숫자가 먼저 보이게 함(마우스를 올리거나 눌러서 읽음)
   const tip = t => `<button type="button" class="info" aria-label="설명: ${esc(t)}" data-tip="${esc(t)}">i</button>`;
@@ -1937,12 +1937,12 @@
     if (hiP('gini')) L.push(`방문객이 특정 달에 몰리는 편이라(계절 편중 ${top('gini')}) 성수기·비수기 차이가 큽니다.`);
     else if (loP('gini')) L.push('방문객이 연중 고르게 오는 편입니다.');
     // 0%가 많은 비교 대상에서는 0%도 백분위가 높게 나오므로 값이 있을 때만 '좋다'고 씀
-    if (hiP('station') && me.station > 0) L.push(`숙소 ${F.station(me.station)}가 역 1km 안에 있어 대중교통 접근이 좋습니다.`);
-    else if (loP('station') || me.station === 0) L.push(`역에서 1km 안에 있는 숙소가 ${F.station(me.station || 0)}로 자동차 의존이 큰 지역입니다.`);
+    if (hiP('station') && me.station > 0) L.push(`숙소 ${F.station(me.station)}가 역에서 직선 1km 안에 있어 역 가까이에 숙소가 많은 편입니다.`);
+    else if (loP('station') || me.station === 0) L.push(`역에서 직선 1km 안에 있는 숙소가 ${F.station(me.station || 0)}로, 숙소가 역에서 떨어져 있는 편입니다(자동차 이용 비중이 클 수 있음).`);
     if (hiP('k2102')) L.push(`숙박 비중 지수가 높아(${me.k2102.toFixed(1)}) 머무는 방문객이 많은 지역입니다.`);
     if (me.ss && peerLevel) {
-      const big = [['전국 추세', me.ss.ns], ['업종 구성', me.ss.im], ['지역 고유 요인', me.ss.rs]].sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0];
-      L.push(`${SS_Y0}→${SS_Y1}년 숙소 ${me.ss.d >= 0 ? '증가' : '감소'}(${me.ss.d >= 0 ? '+' : ''}${fmt(Math.round(me.ss.d))}곳)는 주로 ${big[0]} 때문입니다(변이할당분석${P.rsr != null ? `, 지역 고유 효과 ${top('rsr')}` : ''}).`);
+      const big = [['전국 추세로 설명되는 몫', me.ss.ns], ['업종 구성으로 설명되는 몫', me.ss.im], ['전국 추세·업종 구성으로 설명되지 않는 몫(지역 고유 효과, 원인은 별도 확인 필요)', me.ss.rs]].sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0];
+      L.push(`${SS_Y0}→${SS_Y1}년 숙소 ${me.ss.d >= 0 ? '증가' : '감소'}(${me.ss.d >= 0 ? '+' : ''}${fmt(Math.round(me.ss.d))}곳)에서 가장 큰 부분은 ${big[0]}입니다(변이할당분석${P.rsr != null ? `, 지역 고유 효과 ${top('rsr')}` : ''}).`);
     }
     // 올해 vs 작년 같은 기간(읍·면·동을 고르면 시군구 종합과 맞지 않아 생략)
     const yc = state.dong < 0 ? ytdCounts() : null;
@@ -2136,7 +2136,7 @@
     const svg = $('fd-chart'), tip = $('fd-tip'), wrap = svg.parentElement;
     svg.onmousemove = e => { const c = e.target.closest('circle[data-i]'); if (!c) { tip.hidden = true; return; } const p = pts[+c.dataset.i];
       tip.innerHTML = `<b>${esc(regLabel(p))}</b><br>식음료 소비 ${p.f.toFixed(1)} (백분위 ${p.fp.toFixed(0)})<br>숙박업 소비 ${p.l.toFixed(1)} (백분위 ${p.lp.toFixed(0)})${p.sns != null ? `<br>미식 SNS ${p.sns.toFixed(1)}` : ''}`; tip.hidden = false;
-      const b = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + 'px'; tip.style.top = (e.clientY - b.top + 10) + 'px'; };
+      const b = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + wrap.scrollLeft + 'px'; tip.style.top = Math.max(0, Math.min(e.clientY - b.top + 10, b.height - tip.offsetHeight - 4)) + 'px'; };
     svg.onmouseleave = () => { tip.hidden = true; };
     svg.onclick = async e => { const c = e.target.closest('circle[data-i]'); if (!c) return; const p = pts[+c.dataset.i]; if (state.sido !== p.si) await setSido(p.si); setSgg(p.gi); };
     // 표: 먹고 가는 정도(식음료 백분위 − 숙박 백분위) 큰 순
@@ -2450,13 +2450,16 @@
     return s;
   }
   const niceStep = mx => [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].find(s => mx / s <= 5) || 50000;
+  // 휴대폰에서 가로로 밀어 보는 차트는 다시 그릴 때마다 최근 쪽(오른쪽 끝)을 보여줌(시간 순서가 아닌 산점도·생존 곡선은 그대로)
+  document.querySelectorAll('.chartwrap > svg:not(#sd-chart):not(#fd-chart):not(#surv)').forEach(svg => new MutationObserver(() => {
+    const w = svg.parentElement; if (w.scrollWidth > w.clientWidth) w.scrollLeft = w.scrollWidth; }).observe(svg, { childList: true }));
   function attachTip(svg, tip, html) {
     const wrap = svg.parentElement;
     svg.onmousemove = e => {
       const r = e.target.closest('rect[data-i]'); if (!r) { tip.hidden = true; return; }
       tip.innerHTML = html(+r.dataset.i); tip.hidden = false;
       const b = wrap.getBoundingClientRect();
-      tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + 'px'; tip.style.top = (e.clientY - b.top + 10) + 'px';
+      tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + wrap.scrollLeft + 'px'; tip.style.top = Math.max(0, Math.min(e.clientY - b.top + 10, b.height - tip.offsetHeight - 4)) + 'px';
     };
     svg.onmouseleave = () => { tip.hidden = true; };
   }
