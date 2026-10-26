@@ -1433,15 +1433,18 @@
     const nd = ids.filter(i => TRR.t[i][3]).length;
     $('trr-sub').textContent = !ids.length ? `${regionName()}에는 등록된 관광지·관광단지가 없습니다.`
       : `${regionName()} 관광지 ${fmt(ids.length - nd)}곳 · 관광단지 ${fmt(nd)}곳 · 선택 업종의 영업 숙소를 반경별로 셉니다.`;
-    // 목록: 수용인원 1천 명당 반경 3km 객실이 적은 순(수용인원이 없는 곳은 뒤로)
-    const rows = ids.map(i => [i, trrRatio(TRR.t[i])]).sort((a, b) => (a[1] ?? Infinity) - (b[1] ?? Infinity));
+    // 목록: 수용인원 1천 명당 반경 3km 객실이 적은 순(수용인원이 없는 곳은 뒤로). '인구감소·관심지역만'을 켜면 그 지역 관광지만
+    const dOf = t => declOf({ si: t[4], gi: t[5] }), DN = ['', '인구감소지역', '관심지역'], declOnly = $('trr-decl').checked;
+    const rows = ids.filter(i => !declOnly || dOf(TRR.t[i])).map(i => [i, trrRatio(TRR.t[i])]).sort((a, b) => (a[1] ?? Infinity) - (b[1] ?? Infinity));
     const place = t => t[4] >= 0 ? `${short(S[t[4]].name)} ${t[5] >= 0 ? S[t[4]].sgg[t[5]] : ''}` : '';
-    $('trr-list-title').textContent = `${regionName()} 관광지·관광단지: 수용인원 대비 주변 객실이 적은 순`;
+    $('trr-list-title').textContent = `${regionName()} 관광지·관광단지${declOnly ? '(인구감소·관심지역)' : ''}: 수용인원 대비 주변 객실이 적은 순`;
+    const none = rows.filter(([i]) => !TRR.t[i][10][1]).length, thin = rows.filter(([, rt]) => rt != null && rt < 10).length;
+    $('trr-gap').textContent = rows.length ? `${fmt(rows.length)}곳 중 반경 3km 안 객실이 없는 곳 ${fmt(none)}곳 · 수용인원 1천 명당 객실 10실 미만 ${fmt(thin)}곳` : '';
     $('trr-list').innerHTML = '<thead><tr><th>관광지</th><th>구분</th><th>지역</th><th>수용인원</th><th>3km 숙소</th><th>3km 객실</th><th>수용 1천 명당 객실</th></tr></thead><tbody>'
-      + rows.map(([i, rt]) => { const t = TRR.t[i];
-        return `<tr data-i="${i}" style="cursor:pointer"${i === trrSel ? ' class="sum"' : ''}><td>${esc(t[2])}</td><td>${t[3] ? '관광단지' : '관광지'}</td><td>${esc(place(t))}</td><td>${t[6] ? fmt(t[6]) : '·'}</td><td>${fmt(trrCount(t, 1))}</td><td>${fmt(t[10][1])}</td><td>${rt == null ? '·' : rt < 10 ? rt.toFixed(1) : fmt(Math.round(rt))}</td></tr>`; }).join('') + '</tbody>';
-    csvSet('trr-list', ['관광지', '구분', '지역', '수용인원', '반경 3km 영업 숙소(선택 업종)', '반경 3km 객실(전체)', '수용인원 1천 명당 3km 객실', '지정일'],
-      rows.map(([i, rt]) => { const t = TRR.t[i]; return [t[2], t[3] ? '관광단지' : '관광지', place(t), t[6] ?? '', trrCount(t, 1), t[10][1], rt == null ? '' : +rt.toFixed(2), t[7]]; }));
+      + rows.map(([i, rt]) => { const t = TRR.t[i], d = dOf(t);
+        return `<tr data-i="${i}" style="cursor:pointer"${i === trrSel ? ' class="sum"' : ''}><td>${esc(t[2])}</td><td>${t[3] ? '관광단지' : '관광지'}</td><td>${esc(place(t))}${d ? ` <span class="decl${d === 2 ? ' w' : ''}">${DN[d]}</span>` : ''}</td><td>${t[6] ? fmt(t[6]) : '·'}</td><td>${fmt(trrCount(t, 1))}</td><td>${fmt(t[10][1])}</td><td>${rt == null ? '·' : rt < 10 ? rt.toFixed(1) : fmt(Math.round(rt))}</td></tr>`; }).join('') + '</tbody>';
+    csvSet('trr-list', ['관광지', '구분', '지역', '인구감소지역', '수용인원', '반경 3km 영업 숙소(선택 업종)', '반경 3km 객실(전체)', '수용인원 1천 명당 3km 객실', '지정일'],
+      rows.map(([i, rt]) => { const t = TRR.t[i]; return [t[2], t[3] ? '관광단지' : '관광지', place(t), DN[dOf(t)], t[6] ?? '', trrCount(t, 1), t[10][1], rt == null ? '' : +rt.toFixed(2), t[7]]; }));
     renderTrrOne();
   }
   function renderTrrOne(fly) {
@@ -1462,6 +1465,7 @@
     if (fly) drawRings(t, true, 'tourist', R);
   }
   $('trr-sel').onchange = e => { trrSel = +e.target.value; renderTrrOne(true); };
+  $('trr-decl').onchange = () => renderTrr();
   $('trr-list').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (!tr) return; trrSel = +tr.dataset.i; $('trr-sel').value = String(trrSel); renderTrrOne(true); });
   getJSON('data/trrsrt.json', null).then(d => { TRR = d; renderTrr(); setTrrMap(); });
 
@@ -1855,7 +1859,7 @@
   }
   function renderOverview() {
     if (tab !== 'summary') return;  // 시군구 전체를 계산하므로 탭을 열었을 때만
-    const r = U ? null : curReg();  // 읍·면·동을 골랐으면 그 시군구
+    const r = unionOn() ? null : curReg();  // 읍·면·동을 골랐으면 그 시군구, 드롭다운 묶음(광주시 등)은 묶음 그대로
     const natA = T.map(() => 0), nat = { s0: T.map(() => 0), s1: T.map(() => 0) };
     for (const x of Object.values(areaTable())) x.a.forEach((v, i) => { natA[i] += v; nat.s0[i] += x.s0[i]; nat.s1[i] += x.s1[i]; });
     if (!r) { $('sum-title').textContent = '종합'; $('sum-sub').textContent = '합쳐 보기 중에는 종합을 낼 수 없습니다. 상단에서 지역 하나를 고르세요.'; ['sum-text', 'sum-grid', 'sum-table'].forEach(id => { $(id).innerHTML = ''; }); return; }
@@ -1868,7 +1872,9 @@
     const sumOr = xs => xs.every(x => x) ? xs.reduce((a, b) => a + b, 0) : null;
     const popOf = q => q.si < 0 ? sumOr(S.map(sd => sd.pop)) : q.gi < 0 && q.grp == null ? S[q.si].pop || null : sumOr(gisOf(q).map(gi => (S[q.si].popg || [])[gi]));
     // 광역·전국의 방문객은 광역 단위 집계를 씀(시군구 값을 더하면 여러 시군구를 다닌 사람이 중복됨)
-    const sidoVis = q => q.si < 0 ? S.reduce((a, sd) => a && sd.vis ? [a[0] + sd.vis[0], a[1] + sd.vis[1]] : null, [0, 0]) : q.gi < 0 && q.grp == null ? S[q.si].vis : undefined;
+    // 인천 '옛 중구·동구·서구'처럼 방문객을 묶음 단위로만 가진 묶음(own)도 그 값을 씀
+    const sidoVis = q => q.si < 0 ? S.reduce((a, sd) => a && sd.vis ? [a[0] + sd.vis[0], a[1] + sd.vis[1]] : null, [0, 0]) : q.gi < 0 && q.grp == null ? S[q.si].vis
+      : q.grp != null && S[q.si].groups[q.grp].own ? S[q.si].groups[q.grp].vis || null : undefined;
     const fixVis = (p, q) => { const v = sidoVis(q); if (v === undefined) return p; p.v0 = v ? v[0] : null; p.v1 = v ? v[1] : null;
       p.dens = v && v[0] ? p.n / (v[0] / 1e6) : null; p.fdens = v && v[1] ? p.n / (v[1] / 1e6) : null; p.fshare = v && v[0] + v[1] ? v[1] / (v[0] + v[1]) : null; return p; };
     const addPop = (p, q) => { fixVis(p, q); const pop = popOf(q); p.tfi = pop ? p.n / (pop / 1e3) : null; p.tpi = pop && p.v0 != null ? p.v0 / 365 / (pop / 1e3) : null; return p; };

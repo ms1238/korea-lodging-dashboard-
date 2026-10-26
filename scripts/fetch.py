@@ -76,6 +76,8 @@ KORAIL_MAIN = "https://apis.data.go.kr/B551457/issueStatistics/mainLineStationPe
 METRO_STD = "https://www.data.go.kr/data/15013205/standard.do"  # 전국도시철도역사정보표준데이터 (국가철도공단, yearly file)
 OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
             "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
+OVERPASS_BUDGET_MIN = 25  # all Overpass queries of a run together; past it the rest keep their last copy (job limit 90 min)
+_overpass_start = []
 # a bounding box of South Korea instead of an area lookup: some mirrors have no area index and answer 500
 SUBWAY_QUERY = """[out:json][timeout:240];
 relation["route"~"^(subway|light_rail)$"](33.0,124.5,38.7,131.0);
@@ -184,11 +186,16 @@ def fetch_permits(key, ep):
 
 def overpass(query):
     """Run an Overpass query on the first mirror that answers; returns the elements."""
+    if not _overpass_start:
+        _overpass_start.append(time.time())
+    deadline = _overpass_start[0] + OVERPASS_BUDGET_MIN * 60
     rels = None
     for url in OVERPASS:
         for attempt in range(2):
+            if time.time() > deadline:
+                raise RuntimeError(f"Overpass budget ({OVERPASS_BUDGET_MIN} min) spent")
             try:
-                r = requests.post(url, data={"data": query}, timeout=300,
+                r = requests.post(url, data={"data": query}, timeout=(15, 300),  # an unreachable mirror fails in 15 s, not minutes
                                   headers={"User-Agent": "korea-lodging-dashboard (github.com/ms1238/korea-lodging-dashboard-)"})
                 if r.status_code != 200:
                     raise RuntimeError(f"HTTP {r.status_code}: {r.text[:200]!r}")
