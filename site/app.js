@@ -274,12 +274,26 @@
         map.getSource('subway').setData(g);
         if (map.getLayer('rail-line')) map.setFilter('rail-line', ['all', ['==', ['get', 'class'], 'rail'], ['!', ['has', 'service']]]);
       });
-      // 용도지역(VWorld WMS, 도시지역 주거·상업·공업·녹지): 키는 배포할 때 GitHub Secret에서 채움(키가 없으면 체크 칸을 숨김)
+      // 용도지역(VWorld WMS, 도시지역 주거·상업·공업·녹지): 키는 배포할 때 GitHub Secret에서 채움(키가 없으면 체크 칸을 숨김).
+      // VWorld는 CORS 헤더를 주지 않아 지도 엔진(WebGL) 타일로는 그릴 수 없으므로, 지도 위에 화면 크기 그림 한 장을 겹치고
+      // 이동이 끝날 때마다 다시 받음(회전·기울임 중에는 어긋나므로 숨김)
       if (VWORLD_KEY) {
         const wms = 'https://api.vworld.kr/req/wms?service=WMS&request=GetMap&version=1.3.0&layers=lt_c_uq111&styles=lt_c_uq111&crs=EPSG:3857'
-          + `&bbox={bbox-epsg-3857}&width=256&height=256&format=image/png&transparent=true&key=${VWORLD_KEY}&domain=${encodeURIComponent(location.origin + location.pathname)}`;
-        map.addSource('zone', { type: 'raster', tiles: [wms], tileSize: 256, attribution: '용도지역 © 국토교통부 VWorld' });
-        map.addLayer({ id: 'zone', type: 'raster', source: 'zone', minzoom: 12, layout: { visibility: 'none' }, paint: { 'raster-opacity': .55 } }, firstSymbol);
+          + `&format=image/png&transparent=true&key=${VWORLD_KEY}&domain=${encodeURIComponent(location.origin + location.pathname)}`;
+        const img = Object.assign(document.createElement('img'), { className: 'zone-img', alt: '', hidden: true, referrerPolicy: 'no-referrer' });
+        map.getContainer().appendChild(img);
+        const merc = (lng, lat) => [lng * 6378137 * Math.PI / 180, Math.log(Math.tan((90 + lat) * Math.PI / 360)) * 6378137];
+        const zoneDraw = () => {
+          img.hidden = true;
+          if (!$('ck-zone').checked || map.getZoom() < 12 || Math.abs(map.getBearing()) > .5 || map.getPitch() > .5) return;
+          const c = map.getCanvas(), k = Math.min(1, 1024 / Math.max(c.clientWidth, c.clientHeight)), b = map.getBounds();
+          const [x0, y0] = merc(b.getWest(), b.getSouth()), [x1, y1] = merc(b.getEast(), b.getNorth());
+          img.onload = () => { img.hidden = !$('ck-zone').checked; };
+          img.src = `${wms}&bbox=${x0},${y0},${x1},${y1}&width=${Math.round(c.clientWidth * k)}&height=${Math.round(c.clientHeight * k)}`;
+        };
+        map.on('movestart', () => { img.hidden = true; });
+        map.on('moveend', zoneDraw);
+        $('ck-zone').onchange = zoneDraw;
         $('zone-wrap').hidden = $('zone-note').hidden = false;
       }
       // 인구감소지역(주황)·관심지역(노랑): 켜면 행정경계 파일(admin/<si>.json)을 불러와 칠함
@@ -459,7 +473,7 @@
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
       map.on('click', 'rail-st', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']], ['ck-zone', ['zone']]]) {
+      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
