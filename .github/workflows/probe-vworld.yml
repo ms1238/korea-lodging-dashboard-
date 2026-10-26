@@ -1,0 +1,38 @@
+# Temporary: what the VWorld 2D data API and geocoder return (VWORLD_KEY secret only, never in the repository).
+name: Probe VWorld API
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-vworld.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pip install requests
+      - env:
+          KEY: ${{ secrets.VWORLD_KEY }}
+        shell: python
+        run: |
+          import os, requests
+          K = os.environ["KEY"]
+          print("key set:", bool(K), flush=True)
+          DOMAIN = "https://ms1238.github.io/korea-lodging-dashboard-/"
+          pt = "POINT(126.97797 37.56654)"  # 서울시청 앞
+          def get(url, **p):
+              for dom in (None, DOMAIN):
+                  q = {"key": K, "format": "json", **p, **({"domain": dom} if dom else {})}
+                  try:
+                      r = requests.get(url, params=q, timeout=30)
+                      print(f"== {p.get('data') or p.get('request')} domain={bool(dom)} {r.status_code} {r.text[:2500]!r}", flush=True)
+                  except Exception as e:
+                      print(f"== {p.get('data') or p.get('request')} domain={bool(dom)} ERR {str(e)[:200]}", flush=True)
+          for layer in ("LP_PA_CBND_BUBUN", "LT_C_UQ111"):  # 연속지적도(공시지가 칸 여부), 용도지역(도시지역)
+              get("https://api.vworld.kr/req/data", service="data", request="GetFeature", data=layer,
+                  geomFilter=pt, crs="EPSG:4326", size=1, geometry="false")
+          get("https://api.vworld.kr/req/address", service="address", request="getcoord", version="2.0",
+              crs="epsg:4326", type="road", address="서울특별시 중구 세종대로 110")
+          get("https://api.vworld.kr/req/address", service="address", request="getcoord", version="2.0",
+              crs="epsg:4326", type="parcel", address="전라북도 전주시 완산구 풍남동3가 64-1")

@@ -1,0 +1,76 @@
+# Temporary: why 904 of 1,511 백년가게 have no position (no API key in the repository; DATA_GO_KR_KEY secret only).
+name: Probe 백년가게 matching
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/probe-food.yml"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/cache/restore@v4
+        with:
+          path: raw
+          key: probe-${{ github.run_id }}
+          restore-keys: raw-
+      - run: pip install requests
+      - env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        shell: python
+        run: |
+          import json, os, re, requests
+          from collections import Counter
+          K = os.environ["KEY"]
+          cache = json.load(open("raw/food_coords.json", encoding="utf-8"))
+          cen = json.load(open("raw/century_shops.json", encoding="utf-8"))
+          print("columns:", list(cen[0].keys()), flush=True)
+          for col in cen[0]:
+              vals = Counter(str(r.get(col)) for r in cen)
+              if len(vals) < 40:
+                  print(f"  {col}: {vals.most_common(25)}", flush=True)
+          street = lambda a: re.search(r"(\S+(?:로|길)\S*\s+\d+(?:-\d+)?)", a or "")
+          kinds, nulls = Counter(), []
+          for r in cen:
+              k = f"cen:{r.get('업체명')}|{r.get('업체주소')}"
+              v = cache.get(k, "absent")
+              kind = "placed" if v and v != "absent" else "no_street" if not street(r.get("업체주소")) else "null" if v is None else "not_queued"
+              kinds[kind] += 1
+              if kind == "null":
+                  nulls.append(r)
+          print("century status:", dict(kinds), flush=True)
+          print("no_street examples:", [r.get("업체주소") for r in cen if not street(r.get("업체주소"))][:15], flush=True)
+          ex = [json.loads(l) for l in open("raw/excellent_restaurant_info.jsonl", encoding="utf-8")]
+          act = [r for r in ex if not r.get("DSGN_RTRCN_YMD") and r.get("SALS_STTS_NM") == "영업"]
+          print("모범 active", len(act), "null", sum(cache.get(f"ex:{r['MNG_NO']}", 1) is None for r in act), flush=True)
+
+          def q(ep, **cond):
+              p = {"serviceKey": K, "pageNo": 1, "numOfRows": 100, "returnType": "json", **cond}
+              try:
+                  d = requests.get(f"https://apis.data.go.kr/1741000/{ep}/info", params=p, timeout=60).json()
+              except Exception as e:
+                  return None, f"ERR {e}"[:200]
+              if "response" not in d:
+                  return None, json.dumps(d, ensure_ascii=False)[:200]
+              b = d["response"]["body"]
+              it = b.get("items") or {}
+              it = it.get("item", []) if isinstance(it, dict) else it
+              it = [it] if isinstance(it, dict) else it or []
+              return b.get("totalCount"), it
+
+          # which endpoint names exist for 휴게음식점 / 제과점
+          for ep in ("rest_restaurants", "resting_restaurants", "snack_bars", "light_restaurants", "cafes", "bakeries", "bakery", "confectioneries", "confectionery_shops", "general_restaurants"):
+              n, it = q(ep, numOfRows=1)
+              print(f"endpoint {ep}: total={n} {it if isinstance(it, str) else (list(it[0].keys())[:12] if it else [])}", flush=True)
+
+          for r in nulls[:20]:
+              name, addr = r.get("업체명"), r.get("업체주소")
+              st = street(addr).group(1)
+              n1, it1 = q("general_restaurants", **{"cond[BPLC_NM::LIKE]": name})
+              n2, it2 = q("general_restaurants", **{"cond[ROAD_NM_ADDR::LIKE]": st})
+              show = lambda it: it if isinstance(it, str) else [(x.get("BPLC_NM"), x.get("ROAD_NM_ADDR"), x.get("SALS_STTS_NM")) for x in it[:3]]
+              print(f"--- {name} | {addr} | {({k: v for k, v in r.items() if k not in ('업체명', '업체주소', '연락처')})}", flush=True)
+              print(f"    by name: {n1} {show(it1)}", flush=True)
+              print(f"    by street '{st}': {n2} {show(it2)}", flush=True)
