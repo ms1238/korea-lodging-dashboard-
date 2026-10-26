@@ -10,6 +10,8 @@
 (async function () {
   const initHash = new URLSearchParams(location.hash.slice(1)); // 공유 링크로 연 경우의 화면 상태
   const $ = id => document.getElementById(id);
+  // VWorld 키: 저장소에는 넣지 않고 배포 워크플로가 GitHub Secret(VWORLD_KEY)으로 바꿔 넣음. 바뀌지 않았으면 용도지역 층을 쓰지 않음
+  const VWORLD_KEY = (k => k.startsWith('__') ? '' : k)('__VWORLD_KEY__');
   const fmt = n => n.toLocaleString('ko-KR');
   const pct = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '-';
   const esc = s => String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
@@ -272,6 +274,14 @@
         map.getSource('subway').setData(g);
         if (map.getLayer('rail-line')) map.setFilter('rail-line', ['all', ['==', ['get', 'class'], 'rail'], ['!', ['has', 'service']]]);
       });
+      // 용도지역(VWorld WMS, 도시지역 주거·상업·공업·녹지): 키는 배포할 때 GitHub Secret에서 채움(키가 없으면 체크 칸을 숨김)
+      if (VWORLD_KEY) {
+        const wms = 'https://api.vworld.kr/req/wms?service=WMS&request=GetMap&version=1.3.0&layers=lt_c_uq111&styles=lt_c_uq111&crs=EPSG:3857'
+          + `&bbox={bbox-epsg-3857}&width=256&height=256&format=image/png&transparent=true&key=${VWORLD_KEY}&domain=${encodeURIComponent(location.origin + location.pathname)}`;
+        map.addSource('zone', { type: 'raster', tiles: [wms], tileSize: 256, attribution: '용도지역 © 국토교통부 VWorld' });
+        map.addLayer({ id: 'zone', type: 'raster', source: 'zone', minzoom: 12, layout: { visibility: 'none' }, paint: { 'raster-opacity': .55 } }, firstSymbol);
+        $('zone-wrap').hidden = $('zone-note').hidden = false;
+      }
       // 인구감소지역(주황)·관심지역(노랑): 켜면 행정경계 파일(admin/<si>.json)을 불러와 칠함
       map.addSource('decl', { type: 'geojson', data: empty });
       map.addLayer({ id: 'decl-fill', type: 'fill', source: 'decl', filter: ['==', ['geometry-type'], 'Polygon'], layout: { visibility: 'none' },
@@ -449,7 +459,7 @@
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
       map.on('click', 'rail-st', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']]]) {
+      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']], ['ck-zone', ['zone']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }

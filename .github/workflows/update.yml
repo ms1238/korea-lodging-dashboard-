@@ -69,6 +69,12 @@ jobs:
             gh release create "$tag" "$f" site/codebook.html --title "숙박시설 스냅샷 $(TZ=Asia/Seoul date +%Y-%m)" \
               --notes "$(TZ=Asia/Seoul date +%Y-%m-%d) 기준 전국 숙박시설 인허가 데이터(중복 제거·지역 매칭 후). 열 설명은 codebook.html."
           fi
+      # The 용도지역 map layer asks VWorld from the browser, so its key ends up in the published page (VWorld refuses
+      # GitHub Actions, so there is no server side to hide it behind); the repository itself keeps only the placeholder.
+      - name: Put the VWorld key into the page
+        env:
+          VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
+        run: if [ -n "$VWORLD_KEY" ]; then sed -i "s|__VWORLD_KEY__|$VWORLD_KEY|" site/app.js; fi
       - name: Version the page assets so browsers do not mix a new page with cached old scripts
         run: sed -i -E "s/(app\.js|style\.css)\"/\1?v=${GITHUB_SHA::7}\"/g" site/index.html
       - uses: actions/configure-pages@v5
