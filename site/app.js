@@ -293,7 +293,9 @@
           const [x0, y0] = merc(b.getWest(), b.getSouth()), [x1, y1] = merc(b.getEast(), b.getNorth());
           zoneSt('용도지역을 불러오는 중…');
           img.onload = () => { img.hidden = !$('ck-zone').checked; zoneSt(''); };
-          img.onerror = () => zoneSt('VWorld에서 용도지역 그림을 받지 못했습니다(인증키 권한·등록 도메인 또는 해외 접속 차단).');
+          img.onerror = () => { zoneSt('VWorld에서 용도지역 그림을 받지 못했습니다(인증키 권한·등록 도메인 또는 해외 접속 차단). ');
+            // 같은 요청을 새 탭에서 열면 VWorld의 오류 문구가 보임(키는 이미 페이지 안에 있음)
+            $('zone-st').insertAdjacentHTML('beforeend', `<a href="${esc(img.src)}" target="_blank" rel="noreferrer">VWorld 응답 직접 보기</a>`); };
           img.src = `${wms}&bbox=${x0},${y0},${x1},${y1}&width=${Math.round(c.clientWidth * k)}&height=${Math.round(c.clientHeight * k)}`;
         };
         map.on('movestart', () => { img.hidden = true; });
