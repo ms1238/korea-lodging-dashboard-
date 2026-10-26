@@ -283,12 +283,17 @@
         const img = Object.assign(document.createElement('img'), { className: 'zone-img', alt: '', hidden: true, referrerPolicy: 'no-referrer' });
         map.getContainer().appendChild(img);
         const merc = (lng, lat) => [lng * 6378137 * Math.PI / 180, Math.log(Math.tan((90 + lat) * Math.PI / 360)) * 6378137];
+        const zoneSt = t => { $('zone-st').textContent = t; $('zone-st').hidden = !t; };  // 상태 문구(보이지 않을 때 이유를 알 수 있게)
         const zoneDraw = () => {
           img.hidden = true;
-          if (!$('ck-zone').checked || map.getZoom() < 12 || Math.abs(map.getBearing()) > .5 || map.getPitch() > .5) return;
+          if (!$('ck-zone').checked) return zoneSt('');
+          if (map.getZoom() < 12) return zoneSt(`지도를 더 확대하면 나옵니다(지금 확대 수준 ${map.getZoom().toFixed(1)}, 12 이상에서 표시).`);
+          if (Math.abs(map.getBearing()) > .5 || map.getPitch() > .5) return zoneSt('지도를 회전하거나 기울이면 숨깁니다. 북쪽이 위로 오게 되돌려 주세요.');
           const c = map.getCanvas(), k = Math.min(1, 1024 / Math.max(c.clientWidth, c.clientHeight)), b = map.getBounds();
           const [x0, y0] = merc(b.getWest(), b.getSouth()), [x1, y1] = merc(b.getEast(), b.getNorth());
-          img.onload = () => { img.hidden = !$('ck-zone').checked; };
+          zoneSt('용도지역을 불러오는 중…');
+          img.onload = () => { img.hidden = !$('ck-zone').checked; zoneSt(''); };
+          img.onerror = () => zoneSt('VWorld에서 용도지역 그림을 받지 못했습니다(인증키 권한·등록 도메인 또는 해외 접속 차단).');
           img.src = `${wms}&bbox=${x0},${y0},${x1},${y1}&width=${Math.round(c.clientWidth * k)}&height=${Math.round(c.clientHeight * k)}`;
         };
         map.on('movestart', () => { img.hidden = true; });
