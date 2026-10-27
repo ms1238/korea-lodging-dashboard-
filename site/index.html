@@ -139,17 +139,17 @@
   </section>
 
   <section data-tab="trend" id="sd-sec" hidden>
-    <div class="sechead"><h2>숙소는 방문객보다 빨리 늘었나</h2><p class="sub" id="sd-sub"></p>
-      <div class="seg" id="sd-kind" role="group" aria-label="방문객 기준" style="margin-top:8px"><button data-v="t" aria-pressed="true">외지인+외국인</button><button data-v="1" aria-pressed="false">외국인만</button></div>
+    <div class="sechead"><h2>숙소는 방문보다 빨리 늘었나</h2><p class="sub" id="sd-sub"></p>
+      <div class="seg" id="sd-kind" role="group" aria-label="방문 기준" style="margin-top:8px"><button data-v="t" aria-pressed="true">외지인+외국인</button><button data-v="1" aria-pressed="false">외국인만</button></div>
       <div class="seg" id="sd-unit" role="group" aria-label="숙소 기준" style="margin-top:8px;margin-left:8px"><button data-v="n" aria-pressed="true">시설 수</button><button data-v="r" aria-pressed="false">객실 수</button></div>
       <p class="sub" id="sd-unit-note" style="margin-top:4px"></p></div>
     <div class="kpis" id="sd-kpis"></div>
-    <div class="card"><h3 style="margin-bottom:6px">시군구별 숙소 증가율 vs 방문객 증가율</h3>
-      <div class="chartwrap"><svg id="sd-chart" viewBox="0 0 900 460" role="img" aria-label="시군구별 숙소 증가율과 방문객 증가율 산점도"></svg><div class="tip" id="sd-tip" hidden></div></div>
-      <p class="note">점 하나가 시군구 하나입니다(시작 연도 숙소 30곳 미만은 제외). 4분면을 평균으로 나누지 않고, 0%선과 '두 증가율이 같은' 점선을 기준으로 봅니다. ◆는 전국 전체 값입니다. 점선은 두 증가율이 같은 선이고, 그 아래(붉은 영역)는 숙소가 방문객보다 빨리 늘어난 곳, 위는 방문객이 숙소보다 빨리 늘어난 곳입니다. 가로·세로 눈금 간격이 달라 점선이 45도가 아닙니다. 값이 아주 큰 몇 곳은 가장자리에 빈 원으로 표시합니다. 점을 누르면 그 지역으로 갑니다.</p></div>
+    <div class="card"><h3 style="margin-bottom:6px">시군구별 숙소 증가율 vs 방문 건수 증가율</h3>
+      <div class="chartwrap"><svg id="sd-chart" viewBox="0 0 900 460" role="img" aria-label="시군구별 숙소 증가율과 방문 건수 증가율 산점도"></svg><div class="tip" id="sd-tip" hidden></div></div>
+      <p class="note">점 하나가 시군구 하나입니다(시작 연도 숙소 30곳 미만은 제외). 4분면을 평균으로 나누지 않고, 0%선과 '두 증가율이 같은' 점선을 기준으로 봅니다. ◆는 전국 전체 값입니다. 점선은 두 증가율이 같은 선이고, 그 아래(붉은 영역)는 숙소가 방문보다 빨리 늘어난 곳, 위는 방문이 숙소보다 빨리 늘어난 곳입니다. 가로·세로 눈금 간격이 달라 점선이 45도가 아닙니다. 값이 아주 큰 몇 곳은 가장자리에 빈 원으로 표시합니다. 점을 누르면 그 지역으로 갑니다.</p></div>
     <div class="card"><button class="btn csv" data-csv="sd-table" data-name="숙소_방문_증가율">CSV</button><h3 style="margin-bottom:10px" id="sd-title"></h3>
       <div class="tablewrap" style="max-height:480px;overflow:auto"><table id="sd-table"></table></div>
-      <p class="note">공급 과잉을 단정하는 지표가 아니라 신호입니다. 숙소는 그해 12월 31일에 영업·휴업 중인 시설 수 또는 그 객실 수 합계(인허가 기록의 한실·양실·객실 수, 빈 칸은 업종 중앙값)로, 지금 인허가 기록의 인허가일·폐업일로 거꾸로 계산해 폐업일이 빠진 오래된 기록은 들어가지 않습니다. 방문객은 한국관광데이터랩의 이동통신 기반 추정치(연간 합계, 같은 사람이 여러 날 오면 여러 번 셈)입니다. 차이가 +10%p 넘으면 붉게, −10%p 아래면 초록으로 표시합니다. 2026년에 새로 생긴 인천 구(제물포·영종·서해·검단)는 방문객 자료가 옛 구 기준이라 구별로는 비우고, 네 구를 합친 '옛 중구·동구·서구' 묶음을 점 하나로 보여 줍니다.</p></div>
+      <p class="note">공급 과잉을 단정하는 지표가 아니라 신호입니다. 숙소는 그해 12월 31일에 영업·휴업 중인 시설 수 또는 그 객실 수 합계(인허가 기록의 한실·양실·객실 수, 빈 칸은 업종 중앙값)로, 지금 인허가 기록의 인허가일·폐업일로 거꾸로 계산해 폐업일이 빠진 오래된 기록은 들어가지 않습니다. 방문 건수는 한국관광데이터랩의 이동통신 기반 추정치(연간 합계, 같은 사람이 여러 날·여러 지역을 다니면 여러 번 세는 연인원)입니다. 차이가 +10%p 넘으면 붉게, −10%p 아래면 초록으로 표시합니다. 2026년에 새로 생긴 인천 구(제물포·영종·서해·검단)는 방문 자료가 옛 구 기준이라 구별로는 비우고, 네 구를 합친 '옛 중구·동구·서구' 묶음을 점 하나로 보여 줍니다.</p></div>
   </section>
 
   <section data-tab="trend" id="recent-sec">
@@ -249,9 +249,9 @@
     </div>
     <div class="card"><button class="btn csv" data-csv="fest-table" data-name="축제주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="fest-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="fest-table"></table></div>
       <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 한국관광공사가 등록한 축제 위치에서 잰 직선거리입니다. 행사장이 넓거나 여러 곳이면 실제 생활권과 다를 수 있습니다.</p></div>
-    <div class="card"><button class="btn csv" data-csv="fest-vis" data-name="축제지역_월별_외지인">CSV</button><h3 style="margin-bottom:6px" id="fest-vis-title">축제 달과 월별 외지인 방문객</h3>
-      <div class="legend"><span><i style="background:var(--c0)"></i>외지인 방문객</span><span><i style="background:#e67e22"></i>축제가 열린 달</span><span><i style="background:#e67e22;opacity:.4"></i>열렸을 것으로 추정한 달(예년 일정 기준)</span></div>
-      <div class="chartwrap"><svg id="fest-vis" viewBox="0 0 900 260" role="img" aria-label="축제 달과 월별 외지인 방문객"></svg><div class="tip" id="fest-vis-tip" hidden></div></div>
+    <div class="card"><button class="btn csv" data-csv="fest-vis" data-name="축제지역_월별_외지인">CSV</button><h3 style="margin-bottom:6px" id="fest-vis-title">축제 달과 월별 외지인 방문</h3>
+      <div class="legend"><span><i style="background:var(--c0)"></i>외지인 방문</span><span><i style="background:#e67e22"></i>축제가 열린 달</span><span><i style="background:#e67e22;opacity:.4"></i>열렸을 것으로 추정한 달(예년 일정 기준)</span></div>
+      <div class="chartwrap"><svg id="fest-vis" viewBox="0 0 900 260" role="img" aria-label="축제 달과 월별 외지인 방문"></svg><div class="tip" id="fest-vis-tip" hidden></div></div>
       <p class="note" id="fest-vis-note"></p></div>
     <div class="card"><button class="btn csv" data-csv="fest-list" data-name="지역_축제목록">CSV</button><h3 style="margin-bottom:10px" id="fest-list-title">지역 축제 목록</h3><div class="tablewrap" style="max-height:440px;overflow:auto"><table id="fest-list"></table></div>
       <p class="note">줄을 누르면 그 축제를 고릅니다. 출처: 한국관광공사 TourAPI(행사·축제). 관광공사 자료는 축제마다 가장 최근 회차 일정만 담고 있어, 이 사이트가 매일 모으며 지난 회차를 쌓아 갑니다. 지도에는 축제 탭에서만 축제 위치가 별로 나옵니다(빨강 = 진행 중, 주황 = 예정, 회색 = 끝남).</p></div>
@@ -279,7 +279,7 @@
     <div class="card">
       <div class="tlrow" style="margin-bottom:10px">
         <div class="seg" id="vt-per" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div>
-        <div class="seg" id="vt-kind" role="group" aria-label="방문객 구분"><button data-v="0" aria-pressed="true">외지인</button><button data-v="1" aria-pressed="false">외국인</button><button data-v="t" aria-pressed="false">합계</button></div>
+        <div class="seg" id="vt-kind" role="group" aria-label="방문 구분"><button data-v="0" aria-pressed="true">외지인</button><button data-v="1" aria-pressed="false">외국인</button><button data-v="t" aria-pressed="false">합계</button></div>
       </div>
       <div class="legend" id="vt-legend"></div>
       <div class="chartwrap"><svg id="vt" viewBox="0 0 900 280" role="img" aria-label="관광객 추이"></svg><div class="tip" id="vt-tip" hidden></div></div>
@@ -295,12 +295,12 @@
   </section>
 
   <section data-tab="demand" id="dv-sec">
-    <div class="sechead"><h2>외지인·외국인 방문객 추이</h2><p class="sub" id="dv-sub"></p></div>
-    <div class="card"><button class="btn csv" data-csv="dv" data-name="외지인_외국인_방문객">CSV</button>
+    <div class="sechead"><h2>외지인·외국인 방문 추이</h2><p class="sub" id="dv-sub"></p></div>
+    <div class="card"><button class="btn csv" data-csv="dv" data-name="외지인_외국인_방문건수">CSV</button>
       <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="dv-per" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div>
         <div class="seg" id="dv-mode" role="group" aria-label="그래프 모양"><button data-v="bar" aria-pressed="true">막대</button><button data-v="line" aria-pressed="false">선</button></div>
         <div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>외지인(내국인)</span><span><i style="background:var(--c1)"></i>외국인</span><span id="dv-hint">막대 위 숫자 = 외국인 비중</span></div></div>
-      <div class="chartwrap"><svg id="dv" viewBox="0 0 900 300" role="img" aria-label="외지인·외국인 방문객 추이"></svg><div class="tip" id="dv-tip" hidden></div></div>
+      <div class="chartwrap"><svg id="dv" viewBox="0 0 900 300" role="img" aria-label="외지인·외국인 방문 추이"></svg><div class="tip" id="dv-tip" hidden></div></div>
       <p class="note" id="dv-note"></p></div>
   </section>
 
@@ -355,7 +355,7 @@
         <div class="seg" id="arr-per" role="group" aria-label="기간"><button data-v="m" aria-pressed="true">월별</button><button data-v="q" aria-pressed="false">분기별</button><button data-v="y" aria-pressed="false">연도별</button></div></div>
       <div class="chartwrap"><svg id="arr" viewBox="0 0 900 260" role="img" aria-label="방한 외래관광객 추이"></svg><div class="tip" id="arr-tip" hidden></div></div></div>
     <div class="card"><button class="btn csv" data-csv="arr-top" data-name="방한객_국적별">CSV</button><h3 style="margin-bottom:10px" id="arr-top-title"></h3><div class="sharelist" id="arr-top"></div>
-      <p class="note">출처: 한국문화관광연구원 출입국관광통계(공공데이터포털). 국적별 입국자 수로 전국 단위만 있습니다. 지역별 외국인 방문객은 위 "외지인·외국인 방문객 추이"에서 보세요(데이터랩, 국적 구분 없음).</p></div>
+      <p class="note">출처: 한국문화관광연구원 출입국관광통계(공공데이터포털). 국적별 입국자 수로 전국 단위만 있습니다. 지역별 외국인 방문은 위 "외지인·외국인 방문 추이"에서 보세요(데이터랩, 국적 구분 없음).</p></div>
   </section>
 
   <section data-tab="demand" id="icn-sec" hidden>
