@@ -102,6 +102,8 @@
         <div class="chk"><input type="checkbox" id="ck-rail"><label for="ck-rail"><span class="sw" style="background:linear-gradient(90deg,#0052a4 33%,#00a84d 33% 66%,#ef7c1c 66%)"></span>철도·지하철·역</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-ktx"><label for="ck-ktx"><span class="sw dash"></span>KTX 노선</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-bus"><label for="ck-bus"><span class="sw dia" style="background:#00695c"></span>버스터미널·정류장</label><span class="n" id="n-bus"></span></div>
+        <div class="chk" id="pmgrid-wrap"><input type="checkbox" id="ck-pmgrid"><label for="ck-pmgrid"><span class="sw" style="background:linear-gradient(90deg,#eb6834 50%,#f6b38f 50%)"></span>대중교통 접근 (PM 연계 격자)</label><span></span></div>
+        <p class="note" style="margin-top:4px" id="pmgrid-note">켜면 역·정류장에서 걸어서는 멀지만 PM으로 5분(진한 주황)·10분(옅은 주황) 안인 곳, PM으로도 먼 곳(회색)이 보입니다. 걸어서 닿는 곳은 투명. 자료: <a href="https://ms1238.github.io/korea-transit-gap/" target="_blank">전국 대중교통 소외지역 대시보드</a></p>
         <p class="note" style="margin-top:4px" id="bus-note">진한 마름모는 이름에 '터미널'이 들어간 곳, 옅은 마름모는 시외버스 정류장·매표소이고 정류장은 지도를 확대하면 나옵니다. 위치: OpenStreetMap(등록 상태는 지역마다 차이가 있음).</p>
         <div class="choro"><label for="choro-mode">시군구 색칠</label><select id="choro-mode"><option value="">없음</option><option value="net">최근 1년 순증률</option><option value="old">노후 숙박 비중 (여관·여인숙 20년+)</option><option value="old30">노후 숙박 비중 (여관·여인숙 30년+)</option></select>
           <div class="legend" id="choro-legend" hidden></div></div>

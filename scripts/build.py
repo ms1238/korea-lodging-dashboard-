@@ -51,6 +51,8 @@ Steps
     licensed 30+ years ago (VWorld, scripts/static/vworld_land.csv from scripts/vworld_land.py); also 3 download columns.
 33. meta.json sido[]["urban"] / ["urban_sido"] / groups[]["urban"] / "urban_year": 법정 도시지역 area and population
     (국토교통부 도시계획현황, scripts/static/upis.csv).
+34. stations.json "near" [4..6] / meta.json "transit": lodgings within 0.5 km of a bus stop, of a stop with a known route
+    count and of a stop with 3+ routes (stops and 정차 노선수 from the korea-transit-gap dashboard), and its PM grid bounds.
 """
 import calendar
 import csv
@@ -871,8 +873,14 @@ def write_stations(rows, sidos, sgg_of, tidx):
         sgrid[(int(o[0] * 100), int(o[1] * 100))].append((o[0], o[1]))
     # [lodgings, within 0.5 km, within 1 km, Hansen accessibility sum]: Hansen (1959) A = Σ exp(−β·d) over stations within
     # 3 km, β = 2 per km (assumed walking decay: a station 0.5 km away counts 0.37, 1 km away 0.14)
-    near = defaultdict(lambda: [0, 0, 0, 0.0])
+    near = defaultdict(lambda: [0, 0, 0, 0.0, 0, 0, 0])
     gi_of = {s: {g: i for i, g in enumerate(sgg_of[s])} for s in sidos}
+    # bus stops from the transit-gap dashboard: lodgings within 0.5 km of any stop, of a stop with a known route count,
+    # and of a stop with 3+ routes (indices 4–6)
+    bgrid = defaultdict(list)
+    tpath = os.path.join(RAW, "transit_stops.json")
+    for lon, lat, rte, _osm in (json.load(open(tpath, encoding="utf-8"))["stops"] if os.path.exists(tpath) else []):
+        bgrid[(int(lat * 100), int(lon * 100))].append((lat, lon, rte))
     for r in rows:
         if r["status"] != 0 or not r["ll"] or r.get("approx"):
             continue
@@ -885,7 +893,14 @@ def write_stations(rows, sidos, sgg_of, tidx):
         c[1] += d2 <= 0.25
         c[2] += d2 <= 1
         c[3] += sum(math.exp(-2 * math.sqrt(x)) for x in ds if x <= 9)
-    near = {k: [a, b, c, round(h, 2)] for k, (a, b, c, h) in near.items()}
+        bus = [(dist2(lat, lon, p[0], p[1]), p[2]) for i in (-1, 0, 1) for j in (-1, 0, 1) for p in bgrid.get((int(lat * 100) + i, int(lon * 100) + j), ())]
+        bus = [rte for d, rte in bus if d <= 0.25]
+        c[4] += bool(bus)
+        c[5] += any(rte >= 0 for rte in bus)
+        c[6] += any(rte >= 3 for rte in bus)
+    near = {k: [a, b, c, round(h, 2), nb, nk, ng] for k, (a, b, c, h, nb, nk, ng) in near.items()}
+    print(f"bus stops near lodgings: {sum(len(v) for v in bgrid.values())} stops; "
+          f"{sum(v[4] for v in near.values())} of {sum(v[0] for v in near.values())} lodgings within 0.5 km", flush=True)
     kym = add_korail(out, lines, sidos)
     mym = add_main(out, srcs)
     with open(os.path.join(OUT, "stations.json"), "w", encoding="utf-8") as f:
@@ -1866,6 +1881,8 @@ def main():
         "room_cov": room_cov,
         "land_year": land_year,
         "urban_year": urban_year,
+        "transit": (lambda t: {"grid_bounds": t.get("grid_bounds"), "route_days": t.get("route_days", [])})(json.load(open(os.path.join(RAW, "transit_stops.json"), encoding="utf-8")))
+        if os.path.exists(os.path.join(RAW, "transit_stops.json")) else None,
         "vworld_year": Counter(v[1] for v in vland.values() if v[1]).most_common(1)[0][0] if vland else None,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:

@@ -112,8 +112,9 @@ out center tags;"""
 RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
-OPTIONAL = {"subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+TRANSIT = "https://ms1238.github.io/korea-transit-gap/data/"  # the sister transit-gap dashboard (bus stops with route counts)
+OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"transit_stops", "trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -297,7 +298,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
@@ -307,7 +308,7 @@ def main():
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong, "transit_stops": fetch_transit_stops}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -450,6 +451,17 @@ def fetch_trrsrt(key):
     if not rows:
         raise RuntimeError(str(d)[:200])
     save_json("trrsrt.json", rows)
+
+
+def fetch_transit_stops(_key):
+    """Bus stops from the transit-gap dashboard (국토교통부 위치 + OSM 보완, 정차 노선수 matched by name):
+    {stops: [[lon, lat, routes (-1 unknown), osm]], grid_bounds, route_days}."""
+    stops = requests.get(TRANSIT + "stops.json", timeout=120).json()
+    meta = requests.get(TRANSIT + "stats.json", timeout=120).json()["meta"]
+    print(f"transit_stops: {len(stops)} stops, route counts for {sum(1 for s in stops if s[2] >= 0)} ({', '.join(meta.get('route_days', []))})", flush=True)
+    if len(stops) < 100000:
+        raise RuntimeError(f"only {len(stops)} stops")
+    save_json("transit_stops.json", {"stops": stops, "grid_bounds": meta.get("grid_bounds"), "route_days": meta.get("route_days", [])})
 
 
 def fetch_bus_official(key):

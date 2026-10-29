@@ -480,7 +480,12 @@
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
       map.on('click', 'rail-st', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']]]) {
+      if (meta.transit && meta.transit.grid_bounds) {  // 교통소외 대시보드의 PM 연계 격자 (도보권은 투명)
+        const [tl, br] = meta.transit.grid_bounds;
+        map.addSource('pmgrid', { type: 'image', url: 'https://ms1238.github.io/korea-transit-gap/data/pmgrid.png', coordinates: [tl, [br[0], tl[1]], br, [tl[0], br[1]]] });
+        map.addLayer({ id: 'pmgrid', type: 'raster', source: 'pmgrid', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.75, 'raster-resampling': 'nearest' } }, map.getLayer('pts') ? 'pts' : undefined);
+      } else $('pmgrid-wrap').hidden = true;
+      for (const [ck, ls] of [['ck-pmgrid', ['pmgrid']], ['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }
@@ -1837,7 +1842,7 @@
   const gini = xs => { const n = xs.length, m = xs.reduce((a, b) => a + b, 0) / n; let d = 0; for (const a of xs) for (const b of xs) d += Math.abs(a - b); return m ? d / (2 * n * n * m) : null; };
   function ovStats(keys, natA, sidoMon, nat) {  // keys: ['si:gi', …] → 지표 묶음. sidoMon: 광역 단위 월별 방문객. nat: 전국 업종별 s0/s1
     const t = areaTable(), a = T.map(() => 0), s0 = T.map(() => 0), s1 = T.map(() => 0);
-    let co = 0, c3 = 0, nw = 0, cl = 0, base = 0, v0 = 0, v1 = 0, nv = 0, ne = 0, n1 = 0, nn = 0, hs = 0;
+    let co = 0, c3 = 0, nw = 0, cl = 0, base = 0, v0 = 0, v1 = 0, nv = 0, ne = 0, n1 = 0, nn = 0, hs = 0, nb = 0, nk = 0, ng = 0;
     const mon = visits && visits.m ? visits.m.map(() => 0) : null; let monOK = !!mon;
     for (const k of keys) {
       const x = t[k]; const [si, gi] = k.split(':').map(Number);
@@ -1845,7 +1850,7 @@
       const v = (S[si].visg || [])[gi]; if (v) { v0 += v[0]; v1 += v[1]; nv++; }
       const ms = visits && visits.msgg ? visits.msgg[si][gi] : null;
       if (mon && ms) ms.forEach((m, i) => { if (m == null) monOK = false; else mon[i] += m; }); else if (mon) monOK = false;
-      const nr = STN && STN.near ? STN.near[k] : null; if (nr) { ne += nr[0]; n1 += nr[2]; hs += nr[3] || 0; nn++; }
+      const nr = STN && STN.near ? STN.near[k] : null; if (nr) { ne += nr[0]; n1 += nr[2]; hs += nr[3] || 0; nb += nr[4] || 0; nk += nr[5] || 0; ng += nr[6] || 0; nn++; }
     }
     const n = a.reduce((p, q) => p + q, 0), N = natA.reduce((p, q) => p + q, 0);
     const lq = a.map((v, i) => v >= 10 && natA[i] ? (v / n) / (natA[i] / N) : null);
@@ -1869,7 +1874,8 @@
       hansen: ne >= 20 ? hs / ne : null,
       dens: nv && v0 ? n / (v0 / 1e6) : null, fdens: nv && v1 ? n / (v1 / 1e6) : null, fshare: nv && v0 + v1 ? v1 / (v0 + v1) : null,
       growth: base ? (nw - cl) / base : null, surv: co >= 20 ? 1 - c3 / co : null, even: n && K > 1 ? H / Math.log(K) : null,
-      gini: g, station: ne >= 20 ? n1 / ne : null };
+      gini: g, station: ne >= 20 ? n1 / ne : null,
+      bus: ne >= 20 && meta.transit ? nb / ne : null, busgood: nk >= 20 ? ng / nk : null };
   }
   const OV = [  // [키, 이름, 표시, 산식, 근거] (쉬운 설명은 OV_EASY)
     ['dens', '외지인 누적 방문자 100만 명당 숙소', v => v.toFixed(1) + '곳', '영업 숙소 ÷ (연간 외지인 누적 방문자 ÷ 100만)', 'Defert(1967) 관광기능지수의 변형: 원식은 병상÷주민 수이나, 인구·병상 자료 대신 누적 방문자와 시설 수를 씀'],
@@ -1878,6 +1884,8 @@
     ['even', '업종 다양도', v => v.toFixed(2), '−Σpᵢ ln pᵢ ÷ ln K (pᵢ 업종 비중, K 전국에 있는 업종 수)', 'Shannon 다양도 지수를 전국 업종 수로 정규화(Pielou 1966 균등도는 분모에 지역 업종 수를 쓰지만, 그러면 두 업종만 반반인 지역도 1이 되어 전국 업종 수를 씀)'],
     ['gini', '계절 편중', v => v.toFixed(3), '최근 12개월 외지인 누적 방문자의 지니계수', 'Lundtorp(2001) 관광 계절성 지니계수'],
     ['station', '역세권 숙소 비율', v => (v * 100).toFixed(1) + '%', '역(지하철·광역·간선)에서 직선거리 1km 안 영업 숙소 ÷ 위치가 정확한 영업 숙소', '역 반경 1km(직선거리) 입지 지표. 실제 걷는 거리·시간은 아님'],
+    ['bus', '버스 정류장 500m 안 숙소 비율', v => (v * 100).toFixed(1) + '%', '버스 정류장에서 직선거리 500m 안 영업 숙소 ÷ 위치가 정확한 영업 숙소', '정류장 위치: 국토교통부 전국 버스정류장 위치정보 + OpenStreetMap 보완(교통소외 대시보드)'],
+    ['busgood', '노선 3개 이상 정류장 500m 안 숙소 비율', v => (v * 100).toFixed(1) + '%', '노선 3개 이상 정류장 500m 안 영업 숙소 ÷ 노선 수가 확인된 정류장 500m 안 영업 숙소(노선 수 자료가 있는 곳 기준)', '국토교통부 정류장별 정차 노선수(교통카드 자료, 교통소외 대시보드에서 정류장 이름으로 연결)'],
     ['rsr', '지역 고유 성장 효과', v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%', `변이할당분석: Σ 기준재고ᵢ×(지역 업종 성장률ᵢ − 전국 업종 성장률ᵢ) ÷ 기준재고 (${SS_Y0}→${SS_Y1}년 말 재고)`, 'Dunn(1960) 변이할당분석(Shift-share)'],
     ['hansen', '역 접근성 점수', v => v.toFixed(2), '숙소마다 Σ exp(−2·d) (d: 3km 안 역까지 km)의 평균', 'Hansen(1959) 중력형 접근성. 거리 감쇠 β=2/km는 가정값(0.5km 역=0.37, 1km=0.14)'],
     ['tfi', '주민 1천 명당 숙소', v => v.toFixed(2) + '곳', `영업 숙소 ÷ (주민등록인구 ÷ 1천), 인구는 ${meta.pop_ym ? meta.pop_ym.slice(0, 4) + '.' + meta.pop_ym.slice(4) : '-'} 말 기준`, 'Defert(1967) 관광기능지수(원식은 병상 수 기준; 객실 자료가 부정확해 시설 수로 대체). 인구: 행정안전부 행정동별 주민등록 인구'],
@@ -1897,6 +1905,8 @@
     even: '전국에 있는 숙소 종류(호텔·여관·민박 등) 가운데 이 지역에 얼마나 여러 종류가 고르게 있는지를 0~1로 나타낸 값입니다. 1에 가까우면 다양하고, 0에 가까우면 한두 종류에 몰려 있습니다.',
     gini: '한 해 동안 방문자가 특정 달에 얼마나 몰리는지를 0~1로 나타낸 값입니다. 높을수록 성수기와 비수기 차이가 큽니다.',
     station: '역(지하철·광역철도·기차역)에서 직선거리 1km 안에 있는 숙소의 비율입니다. 높을수록 역 가까이에 숙소가 많습니다. 하천·도로·출입구 위치는 반영하지 않아 실제로 걷는 거리는 더 길 수 있습니다.',
+    bus: '버스 정류장에서 직선거리 500m 안에 있는 숙소의 비율입니다. 역이 없는 지역에서 숙소에 대중교통으로 닿을 수 있는지를 봅니다.',
+    busgood: '근처 정류장의 노선 수를 아는 숙소 가운데, 노선이 3개 이상 서는 정류장이 500m 안에 있는 숙소의 비율입니다. 정류장이 있어도 노선 하나뿐이면 실제로 쓰기 어렵기 때문에 따로 봅니다. 대구와 여러 군 지역은 노선 수 자료가 없어 그 지역 숙소는 계산에서 빠집니다.',
     rsr: '숙소 증감 가운데 전국적인 흐름이나 숙소 종류 구성으로는 설명되지 않는 나머지 몫입니다. 플러스면 그 두 가지로 예상되는 것보다 더 늘었다는 뜻이며, 왜 늘었는지(관광 수요·개발·정책·자료 차이 등)는 이 값만으로 알 수 없습니다.',
     hansen: '숙소 주변에 역이 얼마나 많고 가까운지를 점수로 나타낸 값입니다(직선거리 기준). 가까운 역일수록 크게 쳐서 더하므로, 높을수록 가까이에 역이 많습니다.',
     tfi: '주민 1천 명당 숙소가 몇 곳인지입니다. 높을수록 주민 수에 비해 숙박업이 큰, 관광 중심 지역입니다.',
