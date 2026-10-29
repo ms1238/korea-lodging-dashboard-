@@ -823,6 +823,12 @@
     return r.si < 0 ? sum(S.map(sd => sd.pop)) : r.gi < 0 && r.grp == null ? S[r.si].pop || null : sum(gisOf(r).map(gi => (S[r.si].popg || [])[gi])); };
   const curPop = () => U ? (s => s.every(x => x) ? s.reduce((a, b) => a + b, 0) : null)(U.regs.map(popOfReg)) : popOfReg(curReg());
   // 인구감소지역(1)·관심지역(2), 행정안전부 2026.10.7 지정 (build.py → meta.sido[].decl)
+  // 법정 도시지역 [용도지역 합계 ㎡, 도시지역 ㎡, 인구, 도시지역 인구] (국토교통부 도시계획현황)
+  const urbanOf = r => {
+    if (r.si < 0) { const xs = S.map(s => s.urban_sido).filter(Boolean); return xs.length ? [0, 1, 2, 3].map(k => xs.reduce((p, x) => p + x[k], 0)) : null; }
+    if (r.grp != null) return S[r.si].groups[r.grp].urban || null;
+    return r.gi < 0 ? S[r.si].urban_sido || null : (S[r.si].urban || [])[r.gi] || null;
+  };
   const declOf = r => r && r.si >= 0 && r.gi >= 0 ? (S[r.si].decl || [])[r.gi] || 0 : 0;
   const declBadge = r => { const d = declOf(r), plus = d && (S[r.si].declp || []).includes(r.gi);
     if (d) return `<span class="decl${d === 2 ? ' w' : ''}" title="행정안전부 2026.10.7 지정">${d === 1 ? '인구감소지역' : '인구감소관심지역'}${plus ? ' · 활력 플러스' : ''}</span>`;
@@ -979,17 +985,18 @@
     // 체류 지수(한국관광데이터랩): 계절 차이를 줄이려고 최근 12개월 평균. 묶음·전국은 자료 없음
     const KX = [['21', '체류 강도'], ['2102', '숙박 비중']], kv = R.map(r => KX.map(([c]) => kixAvg(r, c)));
     const kf = v => v == null ? '-' : v.toFixed(1);
-    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 누적 방문자 100만 명당 숙소</th><th>외국인 누적 방문자 100만 명당 숙소</th>${KX.map(k => `<th>${k[1]} 지수</th>`).join('')}<th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th></tr></thead><tbody>`
+    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 누적 방문자 100만 명당 숙소</th><th>외국인 누적 방문자 100만 명당 숙소</th>${KX.map(k => `<th>${k[1]} 지수</th>`).join('')}<th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th><th>법정 도시지역 면적</th><th>도시지역 거주 인구</th></tr></thead><tbody>`
       + R.map((r, i) => { const x = stats[i];
-        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}${kv[i].map(v => `<td>${kf(v)}${v != null && kixApprox(r) ? '*' : ''}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td></tr>`; }).join('') + '</tbody>';
+        return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}${kv[i].map(v => `<td>${kf(v)}${v != null && kixApprox(r) ? '*' : ''}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td>${(u => u ? `<td>${pct(u[1], u[0])}</td><td>${pct(u[3], u[2])}</td>` : '<td>-</td><td>-</td>')(urbanOf(r))}</tr>`; }).join('') + '</tbody>';
     $('cmp-kix-note').hidden = !kix;
     if (kix && !$('cmp-kix-note').dataset.base) $('cmp-kix-note').dataset.base = $('cmp-kix-note').textContent;
     if (kix) $('cmp-kix-note').textContent = $('cmp-kix-note').dataset.base + (R.some(kixApprox) ? ' *는 관광수요지수가 일반구별로만 제공되는 시라서 일반구 값의 단순 평균(근사)입니다.' : '');
-    csvSet('cmp-table', ['지역', '영업 숙소', '연간 외지인', '연간 외국인', '외지인 누적 방문자 100만 명당 숙소', '외국인 누적 방문자 100만 명당 숙소', ...KX.map(k => `${k[1]} 지수(12개월 평균)`), `${Y3 + 1}~${yNow} 증가율(%)`, '누적 폐업률(%)', '영업 도시민박'],
-      R.map((r, i) => { const x = stats[i];
+    csvSet('cmp-table', ['지역', '영업 숙소', '연간 외지인', '연간 외국인', '외지인 누적 방문자 100만 명당 숙소', '외국인 누적 방문자 100만 명당 숙소', ...KX.map(k => `${k[1]} 지수(12개월 평균)`), `${Y3 + 1}~${yNow} 증가율(%)`, '누적 폐업률(%)', '영업 도시민박', '법정 도시지역 면적 비율(%)', '도시지역 거주 인구 비율(%)'],
+      R.map((r, i) => { const x = stats[i], u = urbanOf(r);
         return [regLabel(r), x.st[0], x.v ? x.v[0] : '', x.v ? x.v[1] : '', ...[0, 1].map(j => x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(2) : ''),
           ...kv[i].map(v => v == null ? '' : v.toFixed(2)),
-          x.tr.base ? ((x.tr.nw - x.tr.cl) / x.tr.base * 100).toFixed(2) : '', x.st[0] + x.st[2] ? (x.st[2] / (x.st[0] + x.st[2]) * 100).toFixed(2) : '', x.mb]; }));
+          x.tr.base ? ((x.tr.nw - x.tr.cl) / x.tr.base * 100).toFixed(2) : '', x.st[0] + x.st[2] ? (x.st[2] / (x.st[0] + x.st[2]) * 100).toFixed(2) : '', x.mb,
+          u && u[0] ? (u[1] / u[0] * 100).toFixed(2) : '', u && u[2] ? (u[3] / u[2] * 100).toFixed(2) : '']; }));
     // 연도별 신규 인허가
     const P = periods(), years = P.keys;
     $('cp-legend').innerHTML = legend;

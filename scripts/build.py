@@ -49,6 +49,8 @@ Steps
 31. trrsrt.json: 관광지·관광단지 (전국관광지정보표준데이터) with the operating lodgings and 객실 수 within 1 / 3 / 5 km.
 32. meta.json sido[]["oldland"] / ["oldland_sido"] / "vworld_year": median 개별공시지가 and 상업지역 count of 여관·여인숙
     licensed 30+ years ago (VWorld, scripts/static/vworld_land.csv from scripts/vworld_land.py); also 3 download columns.
+33. meta.json sido[]["urban"] / ["urban_sido"] / groups[]["urban"] / "urban_year": 법정 도시지역 area and population
+    (국토교통부 도시계획현황, scripts/static/upis.csv).
 """
 import calendar
 import csv
@@ -1579,6 +1581,32 @@ def add_decline(sidos, sgg_of, sido_meta, merged):
     return d["designated"]
 
 
+def add_urban(sidos, sgg_of, sido_meta, merged):
+    """법정 도시지역 per 시군구 from scripts/static/upis.csv (국토교통부 도시계획현황, made by korea-transit-gap's
+    upis_csv.py): [용도지역 합계 ㎡, 도시지역 ㎡, 전체 인구, 도시지역 인구] in sido_meta[i]["urban"] (per 시군구, None if
+    not listed), ["urban_sido"] and in each group's "urban". 인천's new 구 are not in the 2025 statistics; its group of
+    the old 중구·동구·서구 adds those old rows. Returns the base year."""
+    path = os.path.join(ROOT, "scripts", "static", "upis.csv")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    by = {}
+    for r in rows:
+        sido = MERGED_GWANGJU_JEONNAM if merged and r["시도"] in ("광주광역시", "전라남도") else SIDO_ALIASES.get(r["시도"], r["시도"])
+        by[(sido, r["시군구"])] = [float(r["용도지역합계_m2"]), float(r["도시지역_m2"]), float(r["전체인구"] or 0), float(r["도시지역인구"] or 0)]
+    add = lambda xs: [sum(x[k] for x in xs) for k in range(4)] if xs else None
+    for sido, sm in zip(sidos, sido_meta):
+        sm["urban"] = [by.get((sido, g)) for g in sgg_of[sido]]
+        sm["urban_sido"] = add([v for (s, _), v in by.items() if s == sido])
+        for g in sm.get("groups", []):
+            names = [sgg_of[sido][gi] for gi in g["gis"]] + (list(INCHEON_OLD) if g.get("own") else [])
+            g["urban"] = add([by[(sido, n)] for n in names if (sido, n) in by])
+    print(f"urban: {sum(v is not None for sm in sido_meta for v in sm['urban'])} 시군구 with 도시지역 ({rows[0]['기준연도'] if rows else '-'}); "
+          f"without: {' '.join(f'{s}/{g}' for s, sm in zip(sidos, sido_meta) for g, v in zip(sgg_of[s], sm['urban']) if v is None) or '-'}", flush=True)
+    return rows[0]["기준연도"] if rows else None
+
+
 def data_dates(admin_ver, pop_ym, decl_date=None, dpop_year=None):
     """[[자료, 기준 시점, 갱신]] for the page's '데이터 기준일' panel, read from the files just written."""
     def out(name):
@@ -1791,6 +1819,7 @@ def main():
     vland = load_vworld_land()
     stock_years, room_cov = add_change_old(rows, sidos, sido_meta, tidx, vland)
     land_year = add_land_price(sidos, sgg_of, sido_meta)
+    urban_year = add_urban(sidos, sgg_of, sido_meta, merged)
     write_download(rows, sidos, sido_meta, vland)
     write_arrivals()
     write_icn()
@@ -1836,6 +1865,7 @@ def main():
         "stock_years": stock_years,
         "room_cov": room_cov,
         "land_year": land_year,
+        "urban_year": urban_year,
         "vworld_year": Counter(v[1] for v in vland.values() if v[1]).most_common(1)[0][0] if vland else None,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
