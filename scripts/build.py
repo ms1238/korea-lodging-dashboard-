@@ -35,7 +35,8 @@ Steps
 24. pts/<si>.json "dpop": population per 법정 읍·면·동 (국립환경과학원 생활계 인구현황, latest year).
 25. survival.json: Kaplan-Meier survival by 업종 대분류 for the nation, 시도 and 시군구 (permits since 2010).
 26. download/lodging.csv.gz: every facility, for download (columns in site/codebook.html); the workflow keeps a
-    monthly copy as a GitHub Release.
+    monthly copy as a GitHub Release. Its last two columns: distance to the nearest bus stop (within 1.5 km) and
+    that stop's 정차 노선수, for facilities with exact positions.
 27. meta.json "brief": national new permits / closings this year vs the same dates last year, and the share of operating
     facilities licensed 20+ years ago, per 업종.
 28. meta.json sido[]["r12"] / ["old"]: per 시군구 new permits and closings over the last 365 days (per 업종), and
@@ -723,6 +724,15 @@ def write_park_lodging(rows, parks, sidos, sgg_of, tidx):
 RADII = (0.5, 1, 3, 5)  # km, station catchment rings
 
 
+def bus_stop_grid():
+    """Bus stops of raw/transit_stops.json as {(int(lat * 100), int(lon * 100)): [(lat, lon, routes or -1), …]}, {} without the file."""
+    grid = defaultdict(list)
+    tpath = os.path.join(RAW, "transit_stops.json")
+    for lon, lat, rte, _osm in (json.load(open(tpath, encoding="utf-8"))["stops"] if os.path.exists(tpath) else []):
+        grid[(int(lat * 100), int(lon * 100))].append((lat, lon, rte))
+    return grid
+
+
 def write_stations(rows, sidos, sgg_of, tidx):
     """Stations of the same name within 500 m (one node per line in OSM) become one station. Lines come from the
     route relations of subway.json passing within 150 m. 시도/시군구: the most common among lodgings within 1 km,
@@ -877,10 +887,7 @@ def write_stations(rows, sidos, sgg_of, tidx):
     gi_of = {s: {g: i for i, g in enumerate(sgg_of[s])} for s in sidos}
     # bus stops from the transit-gap dashboard: lodgings within 0.5 km of any stop, of a stop with a known route count,
     # and of a stop with 3+ routes (indices 4–6)
-    bgrid = defaultdict(list)
-    tpath = os.path.join(RAW, "transit_stops.json")
-    for lon, lat, rte, _osm in (json.load(open(tpath, encoding="utf-8"))["stops"] if os.path.exists(tpath) else []):
-        bgrid[(int(lat * 100), int(lon * 100))].append((lat, lon, rte))
+    bgrid = bus_stop_grid()
     for r in rows:
         if r["status"] != 0 or not r["ll"] or r.get("approx"):
             continue
@@ -1329,7 +1336,8 @@ def write_arrivals():
 
 DOWNLOAD_COLS = ["관리번호", "업소명", "업종대분류", "업종", "시도", "시군구", "읍면동", "리", "영업상태", "인허가일", "폐업일",
                  "도로명주소", "지번주소", "위도", "경도", "위치근사", "용도지역", "건물용도", "인구감소지역", "객실수",
-                 "공시지가", "공시지가기준연도", "용도지역(VWorld)"]
+                 "공시지가", "공시지가기준연도", "용도지역(VWorld)", "버스정류장거리(m)", "버스정류장노선수"]
+BUS_NEAR_KM = 1.5  # nearest-stop search for the download; ±2 grid cells (0.01°, ≥0.87 km wide up to 38.6°N) always cover it
 
 
 def write_download(rows, sidos, sido_meta, land):
@@ -1338,6 +1346,20 @@ def write_download(rows, sidos, sido_meta, land):
     os.makedirs(os.path.join(OUT, "download"), exist_ok=True)
     gi_of = {s: {g: i for i, g in enumerate(sm["sgg"])} for s, sm in zip(sidos, sido_meta)}
     decl = lambda r: ["", "인구감소지역", "인구감소관심지역"][sido_meta[sidos.index(r["sido"])].get("decl", [0] * 999)[gi_of[r["sido"]][r["sgg"]]]]
+    bgrid = bus_stop_grid()
+
+    def nearest_stop(r):
+        """(distance in m, routes or "") of the bus stop nearest an exact position, ("", "") beyond BUS_NEAR_KM or without stops."""
+        if not r["ll"] or r.get("approx"):
+            return "", ""
+        lat, lon = r["ll"]
+        kx = 111.32 * math.cos(math.radians(lat))
+        for span, cover in ((1, 0.85), (2, BUS_NEAR_KM)):  # ±1 cell is enough in towns; widen only when nothing is that close
+            d2, rte = min(((((la - lat) * 110.95) ** 2 + ((lo - lon) * kx) ** 2, rt) for i in range(-span, span + 1) for j in range(-span, span + 1)
+                           for la, lo, rt in bgrid.get((int(lat * 100) + i, int(lon * 100) + j), ())), default=(99, -1))
+            if d2 <= cover ** 2:
+                break
+        return (round(math.sqrt(d2) * 1000), rte if rte >= 0 else "") if d2 <= BUS_NEAR_KM ** 2 else ("", "")
     path = os.path.join(OUT, "download", "lodging.csv.gz")
     with gzip.open(path, "wt", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
@@ -1348,7 +1370,7 @@ def write_download(rows, sidos, sido_meta, land):
             w.writerow([r["id"], r["name"], r["cat"], r["type"], r["sido"], r["sgg"], r["emd"] or "", r["ri"] or "", STATUS[r["status"]],
                         r["date"], r["closed"], r["road"], r["lot"], lat, lon, r.get("approx", 0) if r["ll"] else "",
                         ZONES[r["zone"]] if r["zone"] >= 0 else "", BLDGS[r["bldg"]] if r["bldg"] >= 0 else "", decl(r), r["rooms"] or "",
-                        jiga or "", gosi if jiga else "", zone])
+                        jiga or "", gosi if jiga else "", zone, *nearest_stop(r)])
     print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
 
 
