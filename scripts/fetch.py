@@ -53,6 +53,7 @@ PARK_VISIT_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15107577/v1"  #
 REB_API = "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do"  # 한국부동산원 부동산통계(R-ONE); key in REB_KEY
 LAND_PRICE_TABLE = "A_2024_00902"  # (연) 지역별 지가변동률, 시도 > 시군구 > 읍면동
 TRRSRT_API = "https://api.data.go.kr/openapi/tn_pubr_public_trrsrt_api"  # 전국관광지정보표준데이터 (관광진흥법 관광지·관광단지)
+MCST_LODGING_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=3075666/v1"  # 문화체육관광부 전국 관광숙박시설 현황 (odcloud, 시도별 업체·객실, one table per publication)
 BUS_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15066765/v1"  # 한국교통안전공단 전국 버스터미널 현황 (odcloud, counts per 시도, one table per year)
 KAC_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1"  # 한국공항공사 공항별 여객실적 (odcloud)
 # 관광수요지수 구성 지표 (한국관광데이터랩): (operation, indicator parameter, indicator codes). Values are indices, not counts.
@@ -113,8 +114,8 @@ RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
 TRANSIT = "https://ms1238.github.io/korea-transit-gap/data/"  # the sister transit-gap dashboard (bus stops with route counts)
-OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"transit_stops", "trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "mcst_lodging"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"mcst_lodging", "transit_stops", "trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -298,7 +299,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
@@ -308,7 +309,7 @@ def main():
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong, "transit_stops": fetch_transit_stops}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong, "transit_stops": fetch_transit_stops, "mcst_lodging": fetch_mcst_lodging}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -474,6 +475,21 @@ def fetch_bus_official(key):
     title = spec["paths"][path]["get"].get("summary", "")
     print(f"bus_official: {title}: {len(d['data'])} rows", flush=True)
     save_json("bus_official.json", {"table": title, "rows": d["data"]})
+
+
+def fetch_mcst_lodging(key):
+    """문화체육관광부 전국 관광숙박시설 현황: the latest table (시도별 관광숙박업 업체 수·객실 수), the official count the
+    permit records are checked against on the 데이터·방법 tab."""
+    spec = requests.get(MCST_LODGING_SPEC, timeout=60).json()
+    path = max(spec["paths"], key=lambda p: spec["paths"][p]["get"].get("summary", "")[-8:])
+    d = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": 1, "perPage": 500, "returnType": "JSON"}, timeout=90).json()
+    if not d.get("data"):
+        raise RuntimeError(str(d)[:200])
+    title = spec["paths"][path]["get"].get("summary", "")
+    print(f"mcst_lodging: {title}: {len(d['data'])} rows; tables {sorted(p['get'].get('summary', '') for p in spec['paths'].values())}", flush=True)
+    for row in d["data"][:30]:
+        print("  ", json.dumps(row, ensure_ascii=False), flush=True)
+    save_json("mcst_lodging.json", {"table": title, "rows": d["data"]})
 
 
 def fetch_land_price(_key):
