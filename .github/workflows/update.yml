@@ -56,6 +56,12 @@ jobs:
           key: raw-${{ github.run_id }}
       - name: Build dashboard data
         run: python scripts/build.py
+      - name: Temporary - built data on a throwaway branch for local testing
+        if: github.event_name == 'push'
+        run: |
+          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
+          git checkout -q --orphan tmp-site-data && git rm -rq --cached . && git add -f site/data
+          git commit -qm "temporary built data" && git push -qf origin tmp-site-data
       # The permit APIs only give the current state, so keep the first scheduled/manual build of each month.
       - name: Monthly snapshot (GitHub Release)
         if: github.event_name != 'push'
