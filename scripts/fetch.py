@@ -482,10 +482,13 @@ def fetch_mcst_lodging(key):
     permit records are checked against on the 데이터·방법 tab."""
     spec = requests.get(MCST_LODGING_SPEC, timeout=60).json()
     path = max(spec["paths"], key=lambda p: spec["paths"][p]["get"].get("summary", "")[-8:])
+    title = spec["paths"][path]["get"].get("summary", "")
+    for name, m in (spec.get("definitions") or spec.get("components", {}).get("schemas", {})).items():  # column names, even if the key is refused
+        if title[-8:] in name or len(spec["paths"]) == 1:
+            print(f"mcst_lodging schema {name}: {list((m.get('properties') or {}).keys())}", flush=True)
     d = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": 1, "perPage": 500, "returnType": "JSON"}, timeout=90).json()
     if not d.get("data"):
         raise RuntimeError(str(d)[:200])
-    title = spec["paths"][path]["get"].get("summary", "")
     print(f"mcst_lodging: {title}: {len(d['data'])} rows; tables {sorted(p['get'].get('summary', '') for p in spec['paths'].values())}", flush=True)
     for row in d["data"][:30]:
         print("  ", json.dumps(row, ensure_ascii=False), flush=True)
