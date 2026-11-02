@@ -36,7 +36,8 @@ Steps
 25. survival.json: Kaplan-Meier survival by 업종 대분류 for the nation, 시도 and 시군구 (permits since 2010).
 26. download/lodging.csv.gz: every facility, for download (columns in site/codebook.html); the workflow keeps a
     monthly copy as a GitHub Release. Its last two columns: distance to the nearest bus stop (within 1.5 km) and
-    that stop's 정차 노선수, for facilities with exact positions.
+    that stop's 정차 노선수, for facilities with exact positions. download/panel_sgg.csv: 시군구 × year panel (stock by 대분류,
+    객실, 신규·폐업, 신생률·소멸률, visitors).
 27. meta.json "brief": national new permits / closings this year vs the same dates last year, and the share of operating
     facilities licensed 20+ years ago, per 업종.
 28. meta.json sido[]["r12"] / ["old"]: per 시군구 new permits and closings over the last 365 days (per 업종), and
@@ -53,7 +54,8 @@ Steps
 33. meta.json sido[]["urban"] / ["urban_sido"] / groups[]["urban"] / "urban_year": 법정 도시지역 area and population
     (국토교통부 도시계획현황, scripts/static/upis.csv).
 34. stations.json "near" [4..6] / meta.json "transit": lodgings within 0.5 km of a bus stop, of a stop with a known route
-    count and of a stop with 3+ routes (stops and 정차 노선수 from the korea-transit-gap dashboard), and its PM grid bounds.
+    count and of a stop with 3+ routes (stops and 정차 노선수 from the korea-transit-gap dashboard), and its PM grid bounds;
+    "near" [7]: within 1 km of a station or 0.5 km of a bus stop (UN SDG 11.2.1 distances).
 """
 import calendar
 import csv
@@ -883,10 +885,11 @@ def write_stations(rows, sidos, sgg_of, tidx):
         sgrid[(int(o[0] * 100), int(o[1] * 100))].append((o[0], o[1]))
     # [lodgings, within 0.5 km, within 1 km, Hansen accessibility sum]: Hansen (1959) A = Σ exp(−β·d) over stations within
     # 3 km, β = 2 per km (assumed walking decay: a station 0.5 km away counts 0.37, 1 km away 0.14)
-    near = defaultdict(lambda: [0, 0, 0, 0.0, 0, 0, 0])
+    near = defaultdict(lambda: [0, 0, 0, 0.0, 0, 0, 0, 0])
     gi_of = {s: {g: i for i, g in enumerate(sgg_of[s])} for s in sidos}
     # bus stops from the transit-gap dashboard: lodgings within 0.5 km of any stop, of a stop with a known route count,
-    # and of a stop with 3+ routes (indices 4–6)
+    # and of a stop with 3+ routes (indices 4–6); index 7 = within 1 km of a station or 0.5 km of any stop (UN SDG 11.2.1's
+    # distances for high-capacity rail and other stops, here straight-line)
     bgrid = bus_stop_grid()
     for r in rows:
         if r["status"] != 0 or not r["ll"] or r.get("approx"):
@@ -905,7 +908,8 @@ def write_stations(rows, sidos, sgg_of, tidx):
         c[4] += bool(bus)
         c[5] += any(rte >= 0 for rte in bus)
         c[6] += any(rte >= 3 for rte in bus)
-    near = {k: [a, b, c, round(h, 2), nb, nk, ng] for k, (a, b, c, h, nb, nk, ng) in near.items()}
+        c[7] += d2 <= 1 or bool(bus)
+    near = {k: [a, b, c, round(h, 2), nb, nk, ng, sdg] for k, (a, b, c, h, nb, nk, ng, sdg) in near.items()}
     print(f"bus stops near lodgings: {sum(len(v) for v in bgrid.values())} stops; "
           f"{sum(v[4] for v in near.values())} of {sum(v[0] for v in near.values())} lodgings within 0.5 km", flush=True)
     kym = add_korail(out, lines, sidos)
@@ -1372,6 +1376,59 @@ def write_download(rows, sidos, sido_meta, land):
                         ZONES[r["zone"]] if r["zone"] >= 0 else "", BLDGS[r["bldg"]] if r["bldg"] >= 0 else "", decl(r), r["rooms"] or "",
                         jiga or "", gosi if jiga else "", zone, *nearest_stop(r)])
     print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
+
+
+PANEL_FROM = 2010
+
+
+def write_panel(rows, sidos, sido_meta, tidx, visits):
+    """data/download/panel_sgg.csv: one row per 시군구 and year (PANEL_FROM to last year) for research use; columns in
+    site/codebook.html. Stock = operating or paused at the year end (permit year ≤ y, not closed by then); closed records
+    without a date are left out throughout, as in "stk". 활동 = the stock plus those closed during the year, so
+    신생률 / 소멸률 follow 통계청 기업생멸행정통계 (신생·소멸 ÷ 활동). 객실 uses room_rule. Visitors are summed over
+    the year's four quarters when DataLab covers the whole year (blank otherwise, e.g. 인천's 2026 구 before they existed)."""
+    last = datetime.now(KST).year - 1
+    years = list(range(PANEL_FROM, last + 1))
+    med, cap, _ = room_rule(rows, tidx)
+    zero = lambda: {"stock": [0] * len(CATEGORIES), "rooms": 0, "new": 0, "closed": 0}
+    acc = defaultdict(zero)
+    for r in rows:
+        if not r["date"][:4].isdigit() or (r["status"] == 2 and not r["closed"][:4].isdigit()):
+            continue
+        py, cy = int(r["date"][:4]), int(r["closed"][:4]) if r["status"] == 2 else None
+        t, ci = tidx[(r["cat"], r["type"])], CATEGORIES.index(r["cat"])
+        rooms = min(r["rooms"], cap.get(t, r["rooms"])) if r["rooms"] else med.get(t, 0)
+        for y in range(max(py, PANEL_FROM), last + 1):
+            a = acc[(r["sido"], r["sgg"], y)]
+            a["new"] += py == y
+            if cy == y:
+                a["closed"] += 1
+            if cy is None or cy > y:
+                a["stock"][ci] += 1
+                a["rooms"] += rooms
+    q = visits["q"] if visits else []
+
+    def year_vis(series, y):
+        idx = [q.index(f"{y}Q{k}") if f"{y}Q{k}" in q else None for k in (1, 2, 3, 4)]
+        if not series or None in idx or sum(visits["qdays"][i] for i in idx) < calendar.isleap(y) + 365:
+            return ["", ""]
+        return [sum(series[j][i] for i in idx) if all(series[j][i] is not None for i in idx) else "" for j in (0, 1)]
+    path = os.path.join(OUT, "download", "panel_sgg.csv")
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["시도", "시군구", "연도", "인구감소지역", "연말운영시설", *(f"연말운영_{c}" for c in CATEGORIES), "연말객실(보정)",
+                    "신규인허가", "폐업", "활동시설", "신생률(%)", "소멸률(%)", "외지인누적방문자", "외국인누적방문자"])
+        for si, (s, sm) in enumerate(zip(sidos, sido_meta)):
+            for gi, g in enumerate(sm["sgg"]):
+                decl = ["", "인구감소지역", "인구감소관심지역"][(sm.get("decl") or [0] * len(sm["sgg"]))[gi]]
+                ser = visits["sgg"][si][gi] if visits else None
+                for y in years:
+                    a = acc.get((s, g, y)) or zero()
+                    n, act = sum(a["stock"]), sum(a["stock"]) + a["closed"]
+                    w.writerow([s, g, y, decl, n, *a["stock"], round(a["rooms"]), a["new"], a["closed"], act,
+                                round(a["new"] / act * 100, 2) if act else "", round(a["closed"] / act * 100, 2) if act else "",
+                                *year_vis(ser, y)])
+    print(f"panel: {sum(len(sm['sgg']) for sm in sido_meta)} 시군구 × {len(years)} years ({years[0]}–{years[-1]})", flush=True)
 
 
 OLD_TYPES = {("숙박업", "여관업"), ("숙박업", "여인숙업")}  # 노후 숙박: the old roadside-inn stock
@@ -1858,6 +1915,7 @@ def main():
     land_year = add_land_price(sidos, sgg_of, sido_meta)
     urban_year = add_urban(sidos, sgg_of, sido_meta, merged)
     write_download(rows, sidos, sido_meta, vland)
+    write_panel(rows, sidos, sido_meta, tidx, visits)
     write_arrivals()
     write_icn()
     write_kto_index(sidos, sgg_of)
