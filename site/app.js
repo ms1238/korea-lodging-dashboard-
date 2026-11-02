@@ -738,7 +738,7 @@
     renderCompare();
     renderDemandVis();
     renderKix(); renderLodem(); renderFoodDem(); renderFood();
-    renderOverview();
+    renderOverview(); renderPolicy();
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
@@ -1901,12 +1901,10 @@
     const pts = vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
     return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,${H} ${pts} ${W},${H}"/><polyline points="${pts}"/></svg>`;
   }
-  function renderOverview() {
-    if (tab !== 'summary') return;  // 시군구 전체를 계산하므로 탭을 열었을 때만
-    const r = unionOn() ? null : curReg();  // 읍·면·동을 골랐으면 그 시군구, 드롭다운 묶음(광주시 등)은 묶음 그대로
+  // 종합 지표 계산: 지역 r의 값(me), 비교 대상 안 백분위(P)·중위, 전국 전체(natP). 종합·정책 맥락 탭이 함께 씀
+  function ovFor(r, declOnly) {
     const natA = T.map(() => 0), nat = { s0: T.map(() => 0), s1: T.map(() => 0) };
     for (const x of Object.values(areaTable())) x.a.forEach((v, i) => { natA[i] += v; nat.s0[i] += x.s0[i]; nat.s1[i] += x.s1[i]; });
-    if (!r) { $('sum-title').textContent = '종합'; $('sum-sub').textContent = '합쳐 보기 중에는 종합을 낼 수 없습니다. 상단에서 지역 하나를 고르세요.'; ['sum-text', 'sum-grid', 'sum-table'].forEach(id => { $(id).innerHTML = ''; }); return; }
     const keysOf = q => q.si < 0 ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => `${si}:${gi}`)) : (gisOf(q) || S[q.si].sgg.map((_, gi) => gi)).map(gi => `${q.si}:${gi}`);
     const msido = si => visits && visits.msido ? visits.msido[si] : null;
     const natMon = visits && visits.msido ? visits.m.map((_, i) => S.reduce((a, _s, si) => a == null || msido(si)?.[i] == null ? null : a + msido(si)[i], 0)) : null;
@@ -1926,9 +1924,7 @@
     addPop(me, r);
     // 비교 대상: 기초(또는 묶음)는 전국 시군구, 광역은 광역끼리, 전국은 없음
     const peerLevel = r.si < 0 ? null : r.gi >= 0 || r.grp != null ? 'sgg' : 'sido';
-    const declPeers = peerLevel === 'sgg' && peerDecl;
-    $('peer-seg').hidden = peerLevel !== 'sgg';
-    document.querySelectorAll('#peer-seg button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === peerDecl)));
+    const declPeers = peerLevel === 'sgg' && declOnly;
     const peers = !peerLevel ? [] : peerLevel === 'sgg'
       ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => [si, gi])).filter(([si, gi]) => !declPeers || declOf({ si, gi }) === 1)
         .map(([si, gi]) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); p.k1107 = kixAvg({ si, gi }, '1107'); return addPop(p, { si, gi }); })
@@ -1939,10 +1935,19 @@
     const median = key => { const xs = peers.map(p => p[key]).filter(x => x != null).sort((a, b) => a - b), m = xs.length >> 1;
       return xs.length < 5 ? null : xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2; };
     const natP = r.si < 0 ? null : addPop(ovStats(keysOf({ si: -1, gi: -1 }), natA, natMon, nat), { si: -1, gi: -1 });
-    const refLine = (key, f) => { const md = median(key), nv = natP && key !== 'n' ? natP[key] : null;
-      return md == null && nv == null ? '' : `<small class="ref">${md != null ? `${peerName} 중위 <b>${f(md)}</b>` : ''}${md != null && nv != null ? ' · ' : ''}${nv != null ? `전국 전체 <b>${f(nv)}</b>` : ''}</small>`; };
     const peerName = peerLevel === 'sgg' ? (declPeers ? '인구감소지역' : '전국 시군구') : '광역';
     const P = {}; for (const [k] of OV) P[k] = pctile(k, me[k]);
+    return { me, P, median, natP, peerLevel, peerName, declPeers };
+  }
+  function renderOverview() {
+    if (tab !== 'summary') return;  // 시군구 전체를 계산하므로 탭을 열었을 때만
+    const r = unionOn() ? null : curReg();  // 읍·면·동을 골랐으면 그 시군구, 드롭다운 묶음(광주시 등)은 묶음 그대로
+    if (!r) { $('sum-title').textContent = '종합'; $('sum-sub').textContent = '합쳐 보기 중에는 종합을 낼 수 없습니다. 상단에서 지역 하나를 고르세요.'; ['sum-text', 'sum-grid', 'sum-table'].forEach(id => { $(id).innerHTML = ''; }); return; }
+    const { me, P, median, natP, peerLevel, peerName, declPeers } = ovFor(r, peerDecl);
+    $('peer-seg').hidden = peerLevel !== 'sgg';
+    document.querySelectorAll('#peer-seg button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === peerDecl)));
+    const refLine = (key, f) => { const md = median(key), nv = natP && key !== 'n' ? natP[key] : null;
+      return md == null && nv == null ? '' : `<small class="ref">${md != null ? `${peerName} 중위 <b>${f(md)}</b>` : ''}${md != null && nv != null ? ' · ' : ''}${nv != null ? `전국 전체 <b>${f(nv)}</b>` : ''}</small>`; };
     $('sum-title').innerHTML = `종합 · ${esc(regLabel(r))}${declBadge(r)}`;
     $('sum-sub').textContent = `${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 기준. 막대의 표시는 ${peerLevel ? peerName + ' 중 위치(오른쪽일수록 값이 큼)' : '전국이라 비교 대상 없음'}입니다. 매일 새벽 갱신된 자료로 즉시 계산합니다.`;
     // 영업 숙소 카드의 추세선: 타임라인과 같은 '그 해 말 운영 중(휴업 포함)' 최근 11개 연말(읍·면·동을 고르면 시군구와 맞지 않아 생략)
@@ -2570,10 +2575,132 @@
     update(false);
   });
 
+  /* ---------- 정책 맥락: 규제·지정 현황, 노후 숙박, 지표 조합으로 본 정책 검토 신호 ---------- */
+  let polDecl = false;
+  const polGis = r => r.si < 0 ? null : gisOf(r) || S[r.si].sgg.map((_, gi) => gi);
+  const polEach = (r, f) => { if (r.si < 0) S.forEach((sd, si) => sd.sgg.forEach((_, gi) => f(si, gi))); else polGis(r).forEach(gi => f(r.si, gi)); };
+  function polFacts(r) {  // 지역 r의 규제·지정·노후 숙박 값(업종 선택과 무관)
+    let d1 = 0, d2 = 0, on = 0, o30 = 0, mb = 0, mbz = 0, mbr = 0;
+    const MBC = CATS.indexOf('외국인관광 도시민박업');
+    polEach(r, (si, gi) => { const d = (S[si].decl || [])[gi]; d1 += d === 1; d2 += d === 2; const [n, , x] = oldOf(si, gi); on += n; o30 += x; });
+    for (const c of cube) if (c[3] === 0 && catOf[c[2]] === MBC && inReg(r, c[0], c[1])) mb += c[5];
+    const RES = ZN.indexOf('주거지역'), UNK = ZN.indexOf('미상');
+    for (const m of minbak) if (m[2] === 0 && inReg(r, m[0], m[1]) && m[3] !== UNK) { mbz += m[5]; if (m[3] === RES) mbr += m[5]; }
+    const u = urbanOf(r), single = r.si >= 0 && r.grp == null;
+    const land = !meta.land_year || !single ? null : r.gi < 0 ? S[r.si].land_sido : (S[r.si].land || [])[r.gi];
+    const ol = !meta.vworld_year || !single ? null : r.gi < 0 ? S[r.si].oldland_sido : (S[r.si].oldland || [])[r.gi];  // [공시지가 중위, 그 수, 용도지역 확인, 상업지역]
+    return { decl: declOf(r), d1, d2, sgg: r.gi >= 0 || r.grp != null, on, o30, old30: on >= 10 ? o30 / on : null, mb, mbRes: mbz >= 10 ? mbr / mbz : null, mbz,
+      urbanArea: u && u[0] ? u[1] / u[0] : null, urbanPop: u && u[2] ? u[3] / u[2] : null, land, jiga: ol ? ol[0] : null, comm: ol && ol[2] >= 5 ? ol[3] / ol[2] : null, commN: ol ? ol[2] : 0 };
+  }
+  const PCT = v => v == null ? '·' : (v * 100).toFixed(1) + '%';
+  const topP = (P, k) => `상위 ${Math.max(1, Math.round((1 - P[k]) * 100))}%`, lowP = (P, k) => `하위 ${Math.max(1, Math.round(P[k] * 100))}%`;
+  // [이름, 조건 설명, 조건(me, P, f), 문장]: P는 비교 대상 안 백분위(0~1)
+  const POL_RULES = [
+    ['노후 숙박 재생', '영업 여관·여인숙 10곳 이상, 그중 인허가 30년 이상 50% 이상, 용도지역이 확인된 30년 이상 시설(5곳 이상)의 50% 이상이 상업지역',
+      (me, P, f) => f.old30 != null && f.old30 >= .5 && f.comm != null && f.comm >= .5,
+      (me, P, f) => `영업 여관·여인숙 ${fmt(f.on)}곳 중 ${PCT(f.old30)}가 인허가 30년 이상이고, 용도지역이 확인된 30년 이상 시설의 ${PCT(f.comm)}가 상업지역입니다(공시지가 중위 ${f.jiga ? fmt(f.jiga) + '원/㎡' : '-'}): 노후 숙박 리모델링·용도 전환(도시재생 연계) 검토 신호.`],
+    ['외국인 대응 숙박', '외국인 방문자 비중 백분위 70 이상이면서 외국인 누적 방문자 100만 명당 숙소 백분위 30 이하',
+      (me, P) => P.fshare >= .7 && P.fdens != null && P.fdens <= .3,
+      (me, P) => `외국인 방문자 비중은 높은데(${PCT(me.fshare)}, ${topP(P, 'fshare')}) 외국인 방문 대비 숙소는 적습니다(${lowP(P, 'fdens')}): 외국인 대응 숙박(관광호텔·호스텔·외국인관광 도시민박) 확충이나 입지 규제 검토 신호.`],
+    ['관광 교통 연계', '대중교통 편리 접근 숙소 비율(SDG 11.2.1 방식) 백분위 20 이하',
+      (me, P) => P.sdg != null && P.sdg <= .2,
+      (me, P, f) => `역 1km·정류장 500m 안 숙소가 ${PCT(me.sdg)}로 낮습니다(${lowP(P, 'sdg')}): 차 없는 관광객을 위한 관광 교통(수요응답형 교통·셔틀) 연계 검토 신호${f.decl === 1 ? '. 인구감소지역이라 관련 지원사업과 함께 검토할 수 있습니다' : ''}.`],
+    ['성수기 수용력', '성수기 집중도 백분위 80 이상',
+      (me, P) => P.peak >= .8,
+      (me, P) => `가장 붐비는 달의 방문자가 월평균의 ${me.peak.toFixed(2)}배입니다(${topP(P, 'peak')}): 성수기 숙박·교통 수용력 관리(임시 숙박, 수요 분산) 검토 신호.`],
+    ['공급 과열', '최근 3년 순증률 백분위 80 이상이면서 외지인 누적 방문자 100만 명당 숙소 백분위 80 이상',
+      (me, P) => P.growth >= .8 && P.dens >= .8,
+      (me, P) => `숙소가 빠르게 늘었고(순증 ${(me.growth * 100).toFixed(1)}%, ${topP(P, 'growth')}) 방문자 대비 숙소도 많습니다(${topP(P, 'dens')}): 공급 과잉·가격 경쟁 모니터링 신호.`],
+    ['잦은 진입·이탈', '신생률·소멸률 백분위 모두 80 이상',
+      (me, P) => P.birth >= .8 && P.death >= .8,
+      (me, P) => `지난해 신생률 ${PCT(me.birth)}, 소멸률 ${PCT(me.death)}로 둘 다 높습니다: 진입·이탈이 잦은 시장이라 창업 지원보다 경영 안정·품질 관리 검토 신호.`],
+    ['주민 수용성', '주민 1천 명당 하루 외지인 방문자 백분위 90 이상',
+      (me, P) => P.tpi >= .9,
+      (me, P) => `주민 1천 명당 하루 외지인 방문자가 ${me.tpi.toFixed(1)}명입니다(${topP(P, 'tpi')}): 혼잡·생활 불편 등 주민 수용성 관리(오버투어리즘 대응) 검토 신호.`],
+    ['체류 전환', '숙박 비중 지수 백분위 20 이하이면서 주민 1천 명당 하루 외지인 방문자 백분위 50 이상',
+      (me, P) => P.k2102 != null && P.k2102 <= .2 && P.tpi >= .5,
+      (me, P) => `방문자는 적지 않은데 숙박 비중 지수가 낮습니다(${lowP(P, 'k2102')}): 당일 방문을 체류로 바꾸는 숙박 연계 상품 검토 신호.`],
+    ['숙박 부족', '외지인 누적 방문자 100만 명당 숙소 백분위 10 이하',
+      (me, P) => P.dens != null && P.dens <= .1,
+      (me, P) => `외지인 방문 대비 숙소가 매우 적습니다(100만 명당 ${me.dens.toFixed(1)}곳, ${lowP(P, 'dens')}): 숙박 공급 부족이거나 인근 지역 숙소에 기대는 구조일 수 있어 인접 지역과 함께 볼 신호.`],
+  ];
+  function renderPolicy() {
+    if (tab !== 'policy') return;  // 비교 대상 전체를 계산하므로 탭을 열었을 때만
+    const r = unionOn() ? null : curReg();
+    $('pol-rules').innerHTML = '<thead><tr><th style="text-align:left">신호</th><th style="text-align:left">조건</th></tr></thead><tbody>'
+      + POL_RULES.map(([nm, cond]) => `<tr><td style="text-align:left">${esc(nm)}</td><td style="text-align:left;white-space:normal">${esc(cond)}</td></tr>`).join('') + '</tbody>';
+    if (!r) { $('pol-title').textContent = '정책 맥락'; $('pol-sub').textContent = '합쳐 보기 중에는 낼 수 없습니다. 상단에서 지역 하나를 고르세요.'; ['pol-signals', 'pol-table'].forEach(id => { $(id).innerHTML = ''; }); return; }
+    const f = polFacts(r), nf = polFacts({ si: -1, gi: -1 });
+    $('pol-title').innerHTML = `정책 맥락 · ${esc(regLabel(r))}${declBadge(r)}`;
+    $('pol-sub').textContent = `${state.types.size < T.length ? '검토 신호는 선택한 업종 기준 · ' : ''}규제·지정 현황과 노후 숙박, 그리고 종합 지표의 조합으로 본 정책 검토 신호입니다.`;
+    $('pol-peer').hidden = !(r.gi >= 0 || r.grp != null);
+    document.querySelectorAll('#pol-peer button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === polDecl)));
+    if (r.si < 0) $('pol-signals').innerHTML = '<li>전국은 비교 대상이 없어 검토 신호를 내지 않습니다. 광역이나 시군구를 고르세요.</li>';
+    else {
+      const { me, P, peerName } = ovFor(r, polDecl);
+      const hits = POL_RULES.filter(x => { try { return x[2](me, P, f); } catch { return false; } });
+      $('pol-signals').innerHTML = hits.length ? hits.map(([nm, , , txt]) => `<li><b>${esc(nm)}</b>: ${esc(txt(me, P, f))}</li>`).join('') + `<li class="note" style="list-style:none;margin-left:-20px">백분위 비교 대상: ${esc(peerName)}</li>`
+        : `<li>조건에 맞는 신호가 없습니다(비교 대상: ${esc(peerName)}). 신호가 없다는 것이 문제가 없다는 뜻은 아닙니다.</li>`;
+    }
+    const declTxt = x => x.sgg ? ['해당 없음', '인구감소지역', '인구감소관심지역'][x.decl] : `인구감소지역 ${x.d1}곳 · 관심지역 ${x.d2}곳`;
+    const rows = [
+      ['인구감소지역 지정', declTxt(f), declTxt(nf), '행정안전부 2026.10.7 지정'],
+      ['법정 도시지역 면적 비율', PCT(f.urbanArea), PCT(nf.urbanArea), `국토교통부 도시계획현황 ${meta.urban_year || ''}`],
+      ['도시지역 거주 인구 비율', PCT(f.urbanPop), PCT(nf.urbanPop), `국토교통부 도시계획현황 ${meta.urban_year || ''}`],
+      [`지가변동률 (${meta.land_year || '-'})`, f.land == null ? '·' : `${f.land >= 0 ? '+' : '−'}${Math.abs(f.land).toFixed(2)}%`, '·', '한국부동산원 R-ONE (광역·시군구 하나일 때만)'],
+      ['영업 여관·여인숙', fmt(f.on) + '곳', fmt(nf.on) + '곳', '인허가 데이터'],
+      ['그중 인허가 30년 이상', PCT(f.old30), PCT(nf.old30), '인허가일 기준'],
+      ['30년 이상 여관·여인숙 공시지가 중위', f.jiga ? fmt(f.jiga) + '원/㎡' : '·', '·', `VWorld 개별공시지가 ${meta.vworld_year || ''}`],
+      ['그중 상업지역 입지 비율', f.comm == null ? '·' : `${PCT(f.comm)} (${fmt(f.commN)}곳 중)`, '·', 'VWorld 용도지역(확인된 시설만)'],
+      ['영업 외국인관광 도시민박', fmt(f.mb) + '곳', fmt(nf.mb) + '곳', '인허가 데이터'],
+      ['그중 주거지역 입지 비율', f.mbRes == null ? '·' : `${PCT(f.mbRes)} (${fmt(f.mbz)}곳 중)`, PCT(nf.mbRes), '인허가 원자료 용도지역(미상 제외)'],
+    ];
+    $('pol-table').innerHTML = '<thead><tr><th style="text-align:left">항목</th><th>이 지역</th><th>전국</th><th style="text-align:left">출처·기준</th></tr></thead><tbody>'
+      + rows.map(x => `<tr><td style="text-align:left">${esc(x[0])}</td><td>${esc(x[1])}</td><td>${esc(x[2])}</td><td style="text-align:left;color:var(--muted)">${esc(x[3])}</td></tr>`).join('') + '</tbody>';
+    $('pol-note').textContent = '노후 숙박 행은 업종 선택과 무관하게 숙박업의 여관업·여인숙업만 셉니다. 외국인관광 도시민박의 용도지역은 인허가 원자료의 값이고, 공시지가 표의 용도지역(VWorld)과 출처가 다릅니다. 지가·공시지가는 광역 또는 시군구 하나를 골랐을 때만 나옵니다.';
+    csvSet('pol-table', ['지역', '항목', '이 지역', '전국', '출처·기준'], rows.map(x => [regLabel(r), ...x]));
+  }
+  $('pol-peer').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { polDecl = b.dataset.v === 'decl'; renderPolicy(); } });
+
+  /* ---------- 데이터·방법: 공식 통계 대조, 데이터 품질, 인용 ---------- */
+  function roomCovText() {  // 업종별 기재율(meta.room_cov)을 영업 시설 수로 가중해 업종대분류별로
+    const cov = meta.room_cov || [], n = T.map(() => 0);
+    if (!cov.length) return '-';
+    for (const c of cube) if (c[3] === 0) n[c[2]] += c[5];
+    return CATS.map((nm, ci) => { const ts = T.map((_, i) => i).filter(i => catOf[i] === ci), w = ts.reduce((a, i) => a + n[i], 0);
+      return w ? `${nm} ${Math.round(ts.reduce((a, i) => a + (cov[i] || 0) * n[i], 0) / w * 100)}%` : null; }).filter(Boolean).join(' · ');
+  }
+  (function renderMethod() {
+    const v = meta.valid;
+    $('valid-body').innerHTML = v && v.rows && v.rows.length
+      ? `<p class="sub" style="margin-bottom:8px">${esc(v.table)}(${esc(v.date)} 기준)의 시도별 관광숙박업 업체·객실 수와, 같은 날 영업·휴업 중이던 인허가 기록의 관광숙박업을 비교합니다. 객실은 인허가 기록에 적힌 값의 합(빈 값은 0)입니다.</p>`
+        + '<div class="tablewrap"><table><thead><tr><th style="text-align:left">시도</th><th>공식 업체</th><th>인허가 기록</th><th>비율</th><th>공식 객실</th><th>인허가 객실</th><th>비율</th></tr></thead><tbody>'
+        + v.rows.map(([nm, a, b, c, d]) => `<tr${nm === '합계' ? ' class="sum"' : ''}><td style="text-align:left">${esc(nm)}</td><td>${fmt(a)}</td><td>${fmt(b)}</td><td>${a ? (b / a * 100).toFixed(0) + '%' : '·'}</td><td>${c == null ? '·' : fmt(c)}</td><td>${fmt(d)}</td><td>${c ? (d / c * 100).toFixed(0) + '%' : '·'}</td></tr>`).join('')
+        + '</tbody></table></div><p class="note">비율 = 인허가 기록 ÷ 공식 통계. 100%에서 멀수록 인허가 데이터의 갱신 누락·업종 분류 차이가 크다는 뜻입니다. 공식 통계는 지자체 제출 자료라 같은 날짜라도 집계 시점이 조금 다를 수 있습니다.</p>'
+      : '<p>공식 통계(문화체육관광부 「전국 관광숙박시설 현황」 시도별 업체·객실 수)와의 대조표가 여기에 나옵니다. 아직 그 자료를 받지 못했습니다.</p>'
+        + '<p class="note">다른 업종(숙박업·농어촌민박업 등)은 인허가 데이터와 독립된 시도별 공식 집계를 공개 API로 찾지 못해 대조하지 않습니다. 통계청 전국사업체조사(숙박업)는 사업체 단위라 인허가 건수와 개념이 다릅니다.</p>';
+    const raw = meta.counts ? Object.values(meta.counts.raw).reduce((a, b) => a + b, 0) : 0, kept = meta.counts ? meta.counts.kept : 0;
+    const q = [
+      ['인허가 원자료(8종 API)', fmt(raw) + '건', '행정안전부 인허가 데이터, 오늘 받은 전체'],
+      ['중복으로 뺀 기록', fmt(meta.dedupe ? meta.dedupe.removed : 0) + '건', '같은 주소·비슷한 이름의 숙박업 기록과 관광숙박업 기록 중 숙박업 쪽'],
+      ['좌표가 없어 뺀 야영장', fmt(meta.coords ? meta.coords.dropped_campgrounds : 0) + '건', ''],
+      ['시군구를 읽지 못해 뺀 기록', fmt(meta.unknown_region || 0) + '건', '주소에서 행정구역을 알 수 없음'],
+      ['대시보드에 남은 시설', fmt(kept) + '건', '영업·휴업·폐업 모두'],
+      ['위치근사(동 중앙값 좌표)', `${fmt(meta.coords ? meta.coords.filled_from_dong : 0)}건 (${kept ? ((meta.coords.filled_from_dong / kept) * 100).toFixed(1) : 0}%)`, '원자료 좌표가 없어 같은 동 시설들의 중앙값 위치를 넣음'],
+      ['좌표 없음', fmt(meta.coords ? meta.coords.no_coords : 0) + '건', '같은 동 시설도 없어 지도·반경 분석에서 빠짐'],
+      ['객실 수 기재율(영업 시설)', roomCovText(), '업종대분류별, 객실 칸에 값이 있는 영업 시설의 비율. 관광펜션업·야영장업은 원자료에 객실 칸이 없음'],
+    ];
+    $('quality-table').innerHTML = '<thead><tr><th style="text-align:left">항목</th><th>값</th><th style="text-align:left">설명</th></tr></thead><tbody>'
+      + q.map(x => `<tr><td style="text-align:left">${esc(x[0])}</td><td>${esc(x[1])}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(x[2])}</td></tr>`).join('') + '</tbody>';
+    $('cite-text').textContent = `ms1238 (${meta.updated.slice(0, 4)}). 전국 숙박시설 현황 대시보드 [데이터셋]. https://ms1238.github.io/korea-lodging-dashboard-/ (자료 기준 ${meta.updated.slice(0, 10)}, 접속일 YYYY-MM-DD). 원자료: 행정안전부 숙박 인허가 데이터 외.`;
+  })();
+
   /* ---------- 탭 ---------- */
-  // 탭은 5개 묶음, 묶음 안에 세부 탭(하나뿐이면 세부 줄을 숨김). tab은 세부 탭 이름이라 공유 링크(#tab=…)도 그대로 씀
-  const GROUPS = [['diag', [['summary', '종합']]], ['supply', [['now', '현황'], ['trend', '동향'], ['minbak', '도시민박']]],
-    ['dem', [['demand', '방문자·수요'], ['food', '미식'], ['festival', '축제']]], ['place', [['transit', '대중교통'], ['tourist', '관광지·단지'], ['park', '국립공원']]], ['cmp', [['compare', '지역 비교']]]];
+  // 탭은 관광 수용태세 영역별 8개 묶음, 묶음 안에 세부 탭(하나뿐이면 세부 줄을 숨김). tab은 세부 탭 이름이라 공유 링크(#tab=…)도 그대로 씀
+  const GROUPS = [['diag', [['summary', '종합'], ['compare', '지역 비교']]], ['dem', [['demand', '방문자·수요']]], ['supply', [['now', '현황'], ['trend', '동향']]],
+    ['bal', [['balance', '수요 대비 숙소']]], ['access', [['transit', '대중교통']]],
+    ['res', [['tourist', '관광지·단지'], ['park', '국립공원'], ['festival', '축제'], ['food', '미식']]],
+    ['policy', [['policy', '규제·지정과 검토 신호'], ['minbak', '도시민박']]], ['method', [['method', '데이터·방법']]]];
   const TABS = GROUPS.flatMap(g => g[1].map(x => x[0])), groupOf = t => GROUPS.find(g => g[1].some(x => x[0] === t));
   const lastSub = {};
   let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'summary';
@@ -2583,15 +2710,19 @@
     lastSub[g[0]] = t;
     document.querySelectorAll('[data-tab]').forEach(el => el.classList.toggle('tab-off', el.dataset.tab !== t));
     document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.g === g[0])));
+    const sel = $('tabs').querySelector(`[data-g="${g[0]}"]`), bar = $('tabs');  // 좁은 화면에서 고른 묶음이 가려져 있으면 보이게
+    if (sel.offsetLeft < bar.scrollLeft || sel.offsetLeft + sel.offsetWidth > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = sel.offsetLeft - 24;
     $('subtabs').hidden = g[1].length < 2;
     $('subtabs').innerHTML = g[1].map(([id, nm]) => `<button type="button" data-t="${id}" aria-selected="${id === t}">${nm}</button>`).join('');
-    $('summary-card').hidden = t === 'summary';  // 종합 탭에는 자체 '한눈에 보기'가 있음
-    if (t === 'now' && mapReady) map.resize();
+    $('summary-card').hidden = t === 'summary' || t === 'method';  // 종합 탭에는 자체 '한눈에 보기'가 있음, 데이터·방법은 지역과 무관
+    $('map-sec').hidden = t === 'method';
+    if (t !== 'method' && mapReady) map.resize();
     drawRings(t === 'transit' && STN ? STN.st[stnSel] : t === 'festival' && FEST ? FEST.f[fSel] : t === 'tourist' && TRR ? TRR.t[trrSel] : null, true, t, t === 'tourist' && TRR ? TRR.r : undefined);
     if (mapReady) { map.setLayoutProperty('fest', 'visibility', t === 'festival' ? 'visible' : 'none'); map.setLayoutProperty('trr', 'visibility', t === 'tourist' ? 'visible' : 'none'); }
     if (t === 'park') loadPark();
     if (PARK) showPark(t === 'park');
     if (t === 'summary') renderOverview();
+    if (t === 'policy') renderPolicy();
     writeHash();
   }
   $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b) { const g = GROUPS.find(x => x[0] === b.dataset.g); setTab(lastSub[g[0]] || g[1][0][0]); scrollTo({ top: 0, behavior: 'smooth' }); } });

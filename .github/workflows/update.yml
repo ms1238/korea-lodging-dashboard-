@@ -56,24 +56,29 @@ jobs:
           key: raw-${{ github.run_id }}
       - name: Build dashboard data
         run: python scripts/build.py
-      - name: Temporary - built data on a throwaway branch for local testing
-        if: github.event_name == 'push'
-        run: |
-          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
-          git checkout -q --orphan tmp-site-data && git rm -rq --cached . && git add -f site/data
-          git commit -qm "temporary built data" && git push -qf origin tmp-site-data
       # The permit APIs only give the current state, so keep the first scheduled/manual build of each month.
       - name: Monthly snapshot (GitHub Release)
         if: github.event_name != 'push'
         env:
           GH_TOKEN: ${{ github.token }}
+          # optional DOI: Zenodo token secret + the record id variable (scripts/zenodo.py); without the token this is skipped
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          ZENODO_DEPOSITION: ${{ vars.ZENODO_DEPOSITION }}
+          ZENODO_LICENSE: ${{ vars.ZENODO_LICENSE }}
+          ZENODO_CREATOR: ${{ vars.ZENODO_CREATOR }}
+          ZENODO_API: ${{ vars.ZENODO_API }}
         run: |
           tag="snapshot-$(TZ=Asia/Seoul date +%Y-%m)"
           if ! gh release view "$tag" >/dev/null 2>&1; then
             f="lodging_$(TZ=Asia/Seoul date +%Y-%m-%d).csv.gz"
             cp site/data/download/lodging.csv.gz "$f"
-            gh release create "$tag" "$f" site/codebook.html --title "숙박시설 스냅샷 $(TZ=Asia/Seoul date +%Y-%m)" \
-              --notes "$(TZ=Asia/Seoul date +%Y-%m-%d) 기준 전국 숙박시설 인허가 데이터(중복 제거·지역 매칭 후). 열 설명은 codebook.html."
+            p="panel_sgg_$(TZ=Asia/Seoul date +%Y-%m-%d).csv"
+            cp site/data/download/panel_sgg.csv "$p"
+            gh release create "$tag" "$f" "$p" site/codebook.html site/indicators.json --title "숙박시설 스냅샷 $(TZ=Asia/Seoul date +%Y-%m)" \
+              --notes "$(TZ=Asia/Seoul date +%Y-%m-%d) 기준 전국 숙박시설 인허가 데이터(중복 제거·지역 매칭 후)와 시군구 연도별 패널. 열 설명은 codebook.html."
+            if [ -n "$ZENODO_TOKEN" ]; then
+              python scripts/zenodo.py "$tag" "$f" "$p" site/codebook.html site/indicators.json || echo "::warning::Zenodo upload failed; the GitHub Release was still made"
+            fi
           fi
       # The 용도지역 map layer asks VWorld from the browser, so its key ends up in the published page (VWorld refuses
       # GitHub Actions, so there is no server side to hide it behind); the repository itself keeps only the placeholder.

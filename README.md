@@ -30,6 +30,15 @@
 - `site/` — 정적 웹페이지(MapLibre 지도, 광역·기초·읍면동·리·영업상태 드롭다운, 업종 소분류 필터, 비중·연도별 추이·지역 순위, 휴업·폐업 현황).
 - `.github/workflows/update.yml` — 매일 03:17(KST) 수집 → 빌드 → GitHub Pages 배포.
 
+## 화면 구성과 연구용 자료
+
+탭은 관광 수용태세 영역별로 묶었습니다: 지역 진단(종합·지역 비교) · 관광 수요 · 숙박 공급 · 수급 균형 · 접근성 · 연계 자원(관광지·국립공원·축제·미식) · 정책 맥락(규제·지정과 검토 신호·도시민박) · 데이터·방법.
+
+- `site/indicators.json` — 종합 지표의 정의(영역·신뢰 수준 A/B/C·산식·근거·쉬운 설명). 종합 탭과 `codebook.html`이 같은 파일을 읽으니 지표를 바꿀 때는 이 파일과 `app.js`의 `ovStats`(계산)를 함께 고칩니다.
+- `site/data/download/panel_sgg.csv` — 시군구 × 연도 패널(2010년~지난해). 종합 탭의 '전체 시군구 CSV'는 현재 지표를 시군구별로 내려받습니다.
+- 데이터·방법 탭의 공식 통계 대조는 문화체육관광부 「전국 관광숙박시설 현황」(공공데이터포털 3075666)을 씁니다. 공공데이터포털에서 이 데이터의 **활용신청**을 해야 `DATA_GO_KR_KEY`로 받아집니다(신청 전에는 건너뜀).
+- `CITATION.cff` — GitHub의 'Cite this repository'. 월별 스냅샷에 DOI를 붙이려면(선택) zenodo.org 개인 토큰(deposit:write, deposit:actions)을 secret `ZENODO_TOKEN`으로 넣습니다. 첫 달에 새 레코드가 만들어지고 로그에 나온 레코드 번호를 variable `ZENODO_DEPOSITION`에 넣으면 다음 달부터 같은 DOI의 새 버전이 됩니다. 라이선스는 variable `ZENODO_LICENSE`(예: `cc-by-4.0`), 저자명은 `ZENODO_CREATOR`. `ZENODO_API=https://sandbox.zenodo.org/api`로 먼저 시험할 수 있습니다(`scripts/zenodo.py`).
+
 ## 처음 설정
 
 1. Settings → Secrets and variables → Actions → New repository secret: 이름 `DATA_GO_KR_KEY`, 값은 공공데이터포털 일반 인증키.

@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "이 대시보드나 내려받은 데이터를 쓰면 아래처럼 인용해 주세요. 월별 스냅샷을 썼다면 Release 태그(예: snapshot-2026-11)나 DOI를 함께 적어 주세요."
+type: dataset
+title: "전국 숙박시설 현황 대시보드 (Korea Lodging Dashboard)"
+abstract: "행정안전부 숙박 인허가 8종을 매일 모아 중복 제거·지역 매칭한 전국 숙박시설 데이터와, 시군구별 관광 수용태세 지표(수요·공급·수급 균형·접근성), 시군구 연도별 패널."
+authors:
+  - name: "ms1238"
+url: "https://ms1238.github.io/korea-lodging-dashboard-/"
+repository-code: "https://github.com/ms1238/korea-lodging-dashboard-"
+keywords:
+  - 숙박시설
+  - 관광 수용태세
+  - 인허가 데이터
+  - tourism accommodation
+  - South Korea

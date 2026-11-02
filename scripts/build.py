@@ -56,6 +56,7 @@ Steps
 34. stations.json "near" [4..6] / meta.json "transit": lodgings within 0.5 km of a bus stop, of a stop with a known route
     count and of a stop with 3+ routes (stops and 정차 노선수 from the korea-transit-gap dashboard), and its PM grid bounds;
     "near" [7]: within 1 km of a station or 0.5 km of a bus stop (UN SDG 11.2.1 distances).
+35. meta.json "valid": 문화체육관광부 전국 관광숙박시설 현황 per 시도 next to the permit records' 관광숙박업 on the same date.
 """
 import calendar
 import csv
@@ -1378,6 +1379,70 @@ def write_download(rows, sidos, sido_meta, land):
     print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
 
 
+def add_validation(rows, sidos, merged):
+    """meta "valid": 문화체육관광부 전국 관광숙박시설 현황 (raw/mcst_lodging.json, 시도별 관광숙박업 업체·객실) next to the
+    permit records' 관광숙박업 operating or paused on the table's date (closed records without a date left out; 객실 =
+    reported values, empty as 0): {"table", "date", "rows": [[시도, 공식 업체, 인허가, 공식 객실 or None, 인허가 객실], …, 합계]}.
+    The column layout is not fixed in advance, so the table is used only when it reads as exactly one total row per 시도
+    (a 계/합계 column or row is taken when there are several); otherwise its columns are printed and None is returned."""
+    path = os.path.join(RAW, "mcst_lodging.json")
+    if not os.path.exists(path):
+        return None
+    d = json.load(open(path, encoding="utf-8"))
+    recs, title = d["rows"], d["table"]
+    keys = list(recs[0].keys()) if recs else []
+    print(f"mcst_lodging: {title}: columns {keys}; first rows {json.dumps(recs[:3], ensure_ascii=False)}", flush=True)
+
+    def norm(v):
+        v = str(v or "").strip().replace(" ", "")
+        if merged and v in ("광주", "광주광역시", "전남", "전라남도"):
+            return MERGED_GWANGJU_JEONNAM
+        v = SIDO_ALIASES.get(v, v)
+        return v if v in sidos else None
+
+    def num(v):
+        try:
+            return float(str(v).replace(",", ""))
+        except ValueError:
+            return None
+    total = lambda k: any(t in ("계", "합계", "총계", "소계", "전체") for t in re.split(r"[\s_()\[\]·-]+", k)) or "합계" in k or "총계" in k
+    reg = max(keys, key=lambda k: sum(1 for r in recs if norm(r.get(k))), default=None)
+    mine = [r for r in recs if reg and norm(r.get(reg))]
+    if len({norm(r[reg]) for r in mine}) < 10:
+        print("mcst_lodging: no 시도 column found; validation skipped", flush=True)
+        return None
+    # long layout: another text column (e.g. 업종) with a total row per 시도
+    for k in keys:
+        if k != reg and any(num(r.get(k)) is None and str(r.get(k) or "").strip() for r in mine):
+            tot = [r for r in mine if total(str(r.get(k) or ""))]
+            if tot:
+                mine = tot
+    numeric = [k for k in keys if k != reg and all(num(r.get(k)) is not None for r in mine)]
+
+    def pick(cands):
+        return cands[0] if len(cands) == 1 else (lambda t: t[0] if len(t) == 1 else None)([k for k in cands if total(k)])
+    room_k = pick([k for k in numeric if "객실" in k])
+    cnt_k = pick([k for k in numeric if "객실" not in k and any(w in k for w in ("업체", "업소", "개소", "사업체", "수"))])
+    by = defaultdict(list)
+    for r in mine:
+        by[norm(r[reg])].append(r)
+    bad = [s for s, xs in by.items() if len(xs) > (2 if s == MERGED_GWANGJU_JEONNAM else 1)]
+    if not cnt_k or bad:
+        print(f"mcst_lodging: ambiguous layout (count column {cnt_k}, rooms column {room_k}, repeated 시도 {bad}); validation skipped", flush=True)
+        return None
+    ref = f"{title[-8:-4]}-{title[-4:-2]}-{title[-2:]}" if title[-8:].isdigit() else datetime.now(KST).strftime("%Y-%m-%d")
+    ours = defaultdict(lambda: [0, 0])
+    for r in rows:
+        if r["cat"] == "관광숙박업" and r["date"] and r["date"] <= ref and (r["status"] < 2 or (r["closed"] and r["closed"] > ref)):
+            ours[r["sido"]][0] += 1
+            ours[r["sido"]][1] += r["rooms"] or 0
+    out = sorted(([s, round(sum(num(x[cnt_k]) for x in xs)), ours[s][0], round(sum(num(x[room_k]) for x in xs)) if room_k else None, ours[s][1]]
+                  for s, xs in by.items()), key=lambda x: -x[1])
+    out.append(["합계", sum(x[1] for x in out), sum(x[2] for x in out), sum(x[3] for x in out) if room_k else None, sum(x[4] for x in out)])
+    print(f"mcst_lodging: validation {ref}, official {out[-1][1]} / permit records {out[-1][2]} 관광숙박업 (count column {cnt_k}, rooms {room_k})", flush=True)
+    return {"table": re.sub(r"_?\d{8}$", "", title), "date": ref, "rows": out}
+
+
 PANEL_FROM = 2010
 
 
@@ -1916,6 +1981,7 @@ def main():
     urban_year = add_urban(sidos, sgg_of, sido_meta, merged)
     write_download(rows, sidos, sido_meta, vland)
     write_panel(rows, sidos, sido_meta, tidx, visits)
+    valid = add_validation(rows, sidos, merged)
     write_arrivals()
     write_icn()
     write_kto_index(sidos, sgg_of)
@@ -1961,6 +2027,7 @@ def main():
         "room_cov": room_cov,
         "land_year": land_year,
         "urban_year": urban_year,
+        "valid": valid,
         "transit": (lambda t: {"grid_bounds": t.get("grid_bounds"), "route_days": t.get("route_days", [])})(json.load(open(os.path.join(RAW, "transit_stops.json"), encoding="utf-8")))
         if os.path.exists(os.path.join(RAW, "transit_stops.json")) else None,
         "vworld_year": Counter(v[1] for v in vland.values() if v[1]).most_common(1)[0][0] if vland else None,

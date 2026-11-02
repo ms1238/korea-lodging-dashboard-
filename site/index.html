@@ -42,10 +42,13 @@
     <div class="tabbar">
       <nav class="tabs" id="tabs" role="tablist" aria-label="보기">
         <button role="tab" data-g="diag" aria-selected="true">지역 진단</button>
-        <button role="tab" data-g="supply" aria-selected="false">숙박 공급</button>
         <button role="tab" data-g="dem" aria-selected="false">관광 수요</button>
-        <button role="tab" data-g="place" aria-selected="false">입지 분석</button>
-        <button role="tab" data-g="cmp" aria-selected="false">지역 비교</button>
+        <button role="tab" data-g="supply" aria-selected="false">숙박 공급</button>
+        <button role="tab" data-g="bal" aria-selected="false">수급 균형</button>
+        <button role="tab" data-g="access" aria-selected="false">접근성</button>
+        <button role="tab" data-g="res" aria-selected="false">연계 자원</button>
+        <button role="tab" data-g="policy" aria-selected="false">정책 맥락</button>
+        <button role="tab" data-g="method" aria-selected="false">데이터·방법</button>
       </nav>
       <button class="btn" id="share-link" title="지금 보고 있는 탭·지역·비교 목록을 담은 주소를 복사합니다" aria-label="링크 복사">🔗<span class="lbl"> 링크 복사</span></button>
     </div>
@@ -70,7 +73,7 @@
       <p class="note" id="sum-note"></p></details>
   </section>
 
-  <section>
+  <section id="map-sec">
     <div class="sechead"><h2>지도</h2><p class="sub" id="map-sub">전국 보기에서는 시군구별 원 크기가 시설 수입니다. 광역을 고르면 시설 하나하나가 점으로 나옵니다.</p></div>
     <div class="card tl">
       <div class="tlrow">
@@ -140,7 +143,7 @@
       <p class="note">순증률 = (최근 365일 신규 인허가 − 폐업) ÷ 1년 전 추정 재고(지금 영업·휴업 − 순증). 재고 20곳 미만은 비워 둡니다. 노후 숙박은 영업 중인 여관·여인숙 가운데 인허가가 20년·30년 넘은 곳의 비중(10곳 미만은 비움)으로, 20년 기준은 대부분 지역이 80~90%라 구도심 밀집지를 가르려면 30년 기준이 낫습니다. 인허가일 기준이라 건물 연식과는 다를 수 있습니다. 리모델링·용도 전환 정책의 대상을 가늠하는 데 씁니다. '30년+ 공시지가'는 인허가 30년 이상 여관·여인숙이 있는 필지의 개별공시지가(원/㎡, 매년 1월 1일 기준) 중위값, '30년+ 상업지역'은 그중 용도지역이 확인된 곳 가운데 상업지역 비율입니다(각각 5곳 미만은 비움. 서울·대구는 용도지역 이름이 빈 필지가 많음). 필지 값이라 숙소 건물만의 가치가 아니며, 한 필지에 여러 건물이 있을 수 있습니다. 출처: 국토교통부 공간정보 오픈플랫폼(VWorld) 연속지적도·용도지역, 연 1회 갱신. 지도 오른쪽 '시군구 색칠'로 같은 값을 지도에서 볼 수 있습니다. 지가변동률은 한국부동산원 부동산통계(R-ONE) '지역별 지가변동률'의 가장 최근 연간 값으로, 땅값이 1년 동안 오른 비율입니다(땅값 수준이 아님). 일반구가 있는 시는 시 전체 값이고, 2026년에 생긴 인천 구처럼 통계에 아직 없는 곳은 비워 둡니다.</p></div>
   </section>
 
-  <section data-tab="trend" id="sd-sec" hidden>
+  <section data-tab="balance" id="sd-sec" hidden>
     <div class="sechead"><h2>숙소는 방문자보다 빨리 늘었나</h2><p class="sub" id="sd-sub"></p>
       <div class="seg" id="sd-kind" role="group" aria-label="방문자 기준" style="margin-top:8px"><button data-v="t" aria-pressed="true">외지인+외국인</button><button data-v="1" aria-pressed="false">외국인만</button></div>
       <div class="seg" id="sd-unit" role="group" aria-label="숙소 기준" style="margin-top:8px;margin-left:8px"><button data-v="n" aria-pressed="true">시설 수</button><button data-v="r" aria-pressed="false">객실 수</button></div>
@@ -337,7 +340,7 @@
       <p class="note">출처: 한국관광공사 한국관광데이터랩 관광수요지수의 세부 지표(신용카드·이동통신·내비게이션 빅데이터). 값은 실제 인원·일수가 아니라 지수(상대값)라서 지역·시기를 비교하는 데 쓰세요. 1·2·3박 방문자도 명수가 아닌 지수입니다. 칸 색은 열마다 상대적인 높낮이입니다.</p></div>
   </section>
 
-  <section data-tab="demand">
+  <section data-tab="balance">
     <div class="sechead"><h2>관광 수요 대비 숙소</h2><p class="sub" id="sup-sub"></p></div>
     <div class="kpis" id="sup-kpis"></div>
     <div class="card" id="sup-ratio-card"><button class="btn csv" data-csv="sup-ratio" data-name="수요대비_숙소">CSV</button>
@@ -396,6 +399,41 @@
       <div class="card"><h3 style="margin-bottom:10px">건물 용도</h3><div class="sharelist" id="mb-bldg"></div></div>
     </div>
     <div class="card"><button class="btn csv" data-csv="mb-area" data-name="도시민박_지역별">CSV</button><h3 id="mb-area-title" style="margin-bottom:10px"></h3><div class="legend" id="mb-legend"></div><div class="sharelist" id="mb-area"></div></div>
+  </section>
+
+  <section data-tab="policy" id="pol-sec">
+    <div class="sechead"><h2 id="pol-title">정책 맥락</h2><p class="sub" id="pol-sub"></p>
+      <div class="seg" id="pol-peer" role="group" aria-label="비교 대상" hidden style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구와 비교</button><button data-v="decl" aria-pressed="false">인구감소지역끼리 비교</button></div></div>
+    <div class="card"><h3 style="margin-bottom:8px">정책 검토 신호</h3><ul class="sumlist" id="pol-signals"></ul>
+      <p class="note">지표 조합이 아래 조건에 맞을 때 띄우는 '검토할 만한 신호'이며 정책 결론이 아닙니다. 조건의 기준(백분위 등)은 이 대시보드가 정한 값이라 지역 사정과 현장 확인으로 판단하세요. 조건 목록은 맨 아래 표에 있습니다.</p></div>
+    <div class="card"><button class="btn csv" data-csv="pol-table" data-name="정책_맥락">CSV</button><h3 style="margin-bottom:10px">규제·지정 현황과 노후 숙박</h3>
+      <div class="tablewrap"><table id="pol-table"></table></div>
+      <p class="note" id="pol-note"></p></div>
+    <details class="card"><summary><h3>정책 검토 신호의 조건</h3></summary><div class="tablewrap" style="margin-top:10px"><table id="pol-rules"></table></div></details>
+  </section>
+
+  <section data-tab="method" id="method-sec">
+    <div class="sechead"><h2>데이터·방법</h2><p class="sub">이 대시보드의 자료가 어디서 왔고, 어떻게 가공했고, 얼마나 믿을 수 있는지입니다. 연구·정책 문서에 인용할 때 함께 보세요.</p></div>
+    <div class="card"><h3 style="margin-bottom:10px">공식 통계와 맞춰 보기</h3><div id="valid-body"></div></div>
+    <div class="card"><h3 style="margin-bottom:10px">데이터 품질</h3><div class="tablewrap"><table id="quality-table"></table></div>
+      <p class="note">모두 오늘 빌드 기준입니다. 위치근사 시설은 반경 분석(역·정류장·축제·관광지·국립공원)에서 빠집니다.</p></div>
+    <div class="card"><h3 style="margin-bottom:10px">내려받기</h3><ul class="sumlist">
+      <li><a href="data/download/lodging.csv.gz" download>전체 시설 CSV</a> (gzip): 시설 하나가 한 행, 영업·휴업·폐업 모두. 가까운 버스 정류장 거리·노선 수 포함</li>
+      <li><a href="data/download/panel_sgg.csv" download>시군구 연도별 패널 CSV</a>: 2010년~지난해, 연말 재고·객실, 신규·폐업, 신생률·소멸률, 누적 방문자</li>
+      <li>종합 지표 전체 시군구 CSV: 지역 진단 → 종합 → '지표 정의와 근거' 안의 '전체 시군구 CSV'(고른 업종 기준)</li>
+      <li><a href="indicators.json">지표 정의 파일(indicators.json)</a>: 종합 지표의 영역·신뢰 수준·산식·근거</li>
+      <li><a href="codebook.html">코드북</a>: 열 정의, 가공 규칙, 행정구역 처리, 한계</li>
+      <li><a href="https://github.com/ms1238/korea-lodging-dashboard-/releases">월별 스냅샷</a>: 매달 첫 정기 갱신 때의 파일을 보관(재현·패널 분석용)</li></ul></div>
+    <div class="card"><h3 style="margin-bottom:10px">인용</h3>
+      <p class="cite" id="cite-text"></p>
+      <p class="note">스냅샷을 썼다면 Release 태그(예: snapshot-2026-11)를 함께 적어 주세요. 저장소의 <a href="https://github.com/ms1238/korea-lodging-dashboard-/blob/main/CITATION.cff">CITATION.cff</a>로 GitHub의 'Cite this repository'에서 APA·BibTeX 형식을 받을 수 있습니다.</p></div>
+    <div class="card"><h3 style="margin-bottom:10px">한계</h3><ul class="sumlist">
+      <li>인허가 신고 기준입니다. 미신고 숙소와 공유숙박 플랫폼에만 있는 숙소는 없어, 특히 외국인 수요가 큰 도심에서 숙박 수용력이 실제보다 낮게 잡힐 수 있습니다.</li>
+      <li>가동률·객실 단가·실제 숙박객 수는 없습니다. 수급은 시설·객실 수와 방문자 수로만 봅니다(숙박업 소비액 지수는 금액이 아닌 지수).</li>
+      <li>'누적 방문자'는 이동통신 기반 추정을 날마다 더한 연인원이라 실제 사람 수나 숙박객 수가 아닙니다.</li>
+      <li>거리는 모두 직선거리입니다. 보행 경로·지형·출입구를 반영하면 접근성은 더 낮아집니다.</li>
+      <li>행정구역은 현재 주소 기준입니다. 2026년 인천 신설 구와 전남광주통합특별시는 옛 통계와 맞지 않는 값을 비웁니다.</li>
+      <li>정책 검토 신호와 신뢰 수준은 이 대시보드의 분류이며 공식 판정이 아닙니다.</li></ul></div>
   </section>
 
   <footer class="note" id="foot"></footer>

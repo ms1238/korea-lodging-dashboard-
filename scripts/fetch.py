@@ -484,8 +484,7 @@ def fetch_mcst_lodging(key):
     path = max(spec["paths"], key=lambda p: spec["paths"][p]["get"].get("summary", "")[-8:])
     title = spec["paths"][path]["get"].get("summary", "")
     for name, m in (spec.get("definitions") or spec.get("components", {}).get("schemas", {})).items():  # column names, even if the key is refused
-        if title[-8:] in name or len(spec["paths"]) == 1:
-            print(f"mcst_lodging schema {name}: {list((m.get('properties') or {}).keys())}", flush=True)
+        print(f"mcst_lodging schema {name}: {list((m.get('properties') or {}).keys())}", flush=True)
     d = requests.get("https://api.odcloud.kr/api" + path, params={"serviceKey": key, "page": 1, "perPage": 500, "returnType": "JSON"}, timeout=90).json()
     if not d.get("data"):
         raise RuntimeError(str(d)[:200])
