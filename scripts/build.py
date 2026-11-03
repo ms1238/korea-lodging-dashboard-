@@ -57,6 +57,7 @@ Steps
     count and of a stop with 3+ routes (stops and 정차 노선수 from the korea-transit-gap dashboard), and the route-count dates;
     "near" [7]: within 1 km of a station or 0.5 km of a bus stop (UN SDG 11.2.1 distances).
 35. meta.json "valid": 문화체육관광부 전국 관광숙박시설 현황 per 시도 next to the permit records' 관광숙박업 on the same date.
+36. meta.json "typology" / sido[]["typ"] / ["typz"]: 시군구 유형 (k-means on structural indicators, add_typology).
 """
 import calendar
 import csv
@@ -1379,6 +1380,116 @@ def write_download(rows, sidos, sido_meta, land):
     print(f"download: {len(rows)} facilities, {os.path.getsize(path) / 1e6:.1f} MB", flush=True)
 
 
+TYPO_VARS = [  # [key, label, word when high, word when low]
+    ("tfi", "주민 1천 명당 숙소(로그)", "숙박 밀집", "숙박 희소"),
+    ("tpi", "주민 1천 명당 하루 외지인(로그)", "방문 집중", "방문 적음"),
+    ("fshare", "외국인 방문자 비중", "외국인", None),
+    ("gini", "계절 편중(지니)", "계절 편중", "연중 방문"),
+    ("urban", "도시지역 거주 인구 비율", "도시", "농산어촌"),
+    ("rural", "농어촌민박 비중", "농어촌민박", None),
+    ("intl", "관광숙박·도시민박 비중", "관광숙박", None),
+    ("leisure", "펜션·야영장·한옥 비중", "레저숙박", None),
+    ("old30", "30년 이상 여관·여인숙 비율", "노후 여관", "노후 여관 적음"),
+]
+TYPO_K = 7  # 6 leaves one large catch-all group; 8 splits 서울 도심 into two near-identical types
+
+
+def add_typology(sido_meta, cube_rows, types, visits):
+    """시군구 유형: k-means (k = TYPO_K, k-means++ from a fixed seed, best of 50 starts) on the z-scores of TYPO_VARS for
+    every 시군구, all 업종, operating facilities. Missing values count as the mean. Each type is named after its one or two
+    most distinctive variables (|z| ≥ 0.6 at the type's median, so one outlier such as 제주 does not name a group of islands);
+    a type without any is '혼합형', and types that would share a name get the trait that sets them apart. sido_meta[i]["typz"]
+    = each 시군구's own z-scores, so the page can show what stands out in a region whatever its type. sido_meta[i]["typ"] = type per 시군구; returns the meta block
+    {"k", "vars": labels, "types": [{"name", "traits", "n", "z", "mean"}]}."""
+    import random
+    cat = {t: c for t, (c, _) in enumerate(types)}
+    n = defaultdict(lambda: defaultdict(int))
+    for si, gi, t, st, _y, c in cube_rows:
+        if st == 0:
+            n[(si, gi)][cat[t]] += c
+    full = [i for i in range(len(visits["m"])) if visits["mfull"][i]][-12:] if visits else []
+
+    def gini(xs):
+        m = sum(xs) / len(xs)
+        return sum(abs(a - b) for a in xs for b in xs) / (2 * len(xs) ** 2 * m) if m else None
+    keys, X = [], []
+    for si, sm in enumerate(sido_meta):
+        for gi, _g in enumerate(sm["sgg"]):
+            c = n[(si, gi)]
+            tot = sum(c.values())
+            pop = (sm.get("popg") or [None] * 999)[gi]
+            vis = (sm.get("visg") or [None] * 999)[gi]
+            u = (sm.get("urban") or [None] * 999)[gi]
+            old = (sm.get("old") or [[0, 0, 0]] * 999)[gi]
+            ms = visits["msgg"][si][gi] if visits and visits.get("msgg") else None
+            mon = [ms[i] for i in full] if ms and len(full) == 12 and all(ms[i] is not None for i in full) else None
+            share = lambda cs: sum(c[x] for x in cs) / tot if tot else None
+            X.append([
+                math.log(tot / (pop / 1e3) + 0.01) if pop and tot else None,
+                math.log1p(vis[0] / 365 / (pop / 1e3)) if pop and vis else None,
+                vis[1] / (vis[0] + vis[1]) if vis and vis[0] + vis[1] else None,
+                gini(mon) if mon else None,
+                u[3] / u[2] if u and u[2] else None,
+                share(["농어촌민박업"]), share(["관광숙박업", "외국인관광 도시민박업"]), share(["관광펜션업", "야영장업", "한옥체험업"]),
+                old[2] / old[0] if old[0] >= 10 else None])
+            keys.append((si, gi))
+    V = len(TYPO_VARS)
+    mean = [statistics.mean(x[j] for x in X if x[j] is not None) for j in range(V)]
+    sd = [statistics.pstdev([x[j] for x in X if x[j] is not None]) or 1 for j in range(V)]
+    Z = [[(x[j] - mean[j]) / sd[j] if x[j] is not None else 0.0 for j in range(V)] for x in X]
+    d2 = lambda a, b: sum((p - q) ** 2 for p, q in zip(a, b))
+    rnd, best = random.Random(42), None
+    for _ in range(50):
+        cs = [Z[rnd.randrange(len(Z))]]
+        while len(cs) < TYPO_K:  # k-means++ seeding
+            w = [min(d2(z, c) for c in cs) for z in Z]
+            r, acc = rnd.random() * sum(w), 0
+            for z, wi in zip(Z, w):
+                acc += wi
+                if acc >= r:
+                    cs.append(z)
+                    break
+        for _it in range(100):
+            lab = [min(range(TYPO_K), key=lambda k: d2(z, cs[k])) for z in Z]
+            new = [[statistics.mean(z[j] for z, l in zip(Z, lab) if l == k) for j in range(V)] if k in lab else cs[k] for k in range(TYPO_K)]
+            if new == cs:
+                break
+            cs = new
+        inertia = sum(d2(z, cs[l]) for z, l in zip(Z, lab))
+        if best is None or inertia < best[0]:
+            best = (inertia, lab, cs)
+    _, lab, cs = best
+    # order types by size so the numbering is stable across days when the clusters are
+    order = sorted(range(TYPO_K), key=lambda k: -lab.count(k))
+    rank = {k: i for i, k in enumerate(order)}
+    out, names = [], Counter()
+    for k in order:
+        z = [statistics.median(Z[i][j] for i in range(len(Z)) if lab[i] == k) for j in range(V)]
+        traits = sorted(((abs(z[j]), j, TYPO_VARS[j][2] if z[j] > 0 else TYPO_VARS[j][3]) for j in range(V)), reverse=True)
+        traits = [(j, w) for a, j, w in traits if a >= 0.6 and w]
+        out.append({"traits": [w for _, w in traits], "n": lab.count(k), "z": [round(v, 2) for v in z],
+                    "mean": [round(statistics.mean(X[i][j] for i in range(len(X)) if lab[i] == k and X[i][j] is not None), 4)
+                             if any(lab[i] == k and X[i][j] is not None for i in range(len(X))) else None for j in range(V)]})
+    for t in out:  # name: two most distinctive traits
+        t["name"] = "·".join(t["traits"][:2]) + "형" if t["traits"] else "혼합형"
+        names[t["name"]] += 1
+    for nm in [nm for nm, c in names.items() if c > 1]:  # same name: add the trait where each differs most from the others
+        group = [t for t in out if t["name"] == nm]
+        for t in group:
+            others = [o for o in group if o is not t]
+            diff = sorted(((abs(t["z"][j] - statistics.mean(o["z"][j] for o in others)), j) for j in range(V)), reverse=True)
+            for _, j in diff:
+                w = TYPO_VARS[j][2] if t["z"][j] > 0 else TYPO_VARS[j][3]
+                if w and w not in t["name"]:
+                    t["name"] = nm[:-1] + "·" + w + "형"
+                    break
+    for si, sm in enumerate(sido_meta):
+        sm["typ"] = [rank[lab[keys.index((si, gi))]] for gi in range(len(sm["sgg"]))]
+        sm["typz"] = [[round(v, 2) for v in Z[keys.index((si, gi))]] for gi in range(len(sm["sgg"]))]
+    print("typology: " + "; ".join(f"{t['name']} {t['n']}" for t in out), flush=True)
+    return {"k": TYPO_K, "vars": [v[1] for v in TYPO_VARS], "words": [[v[2], v[3]] for v in TYPO_VARS], "types": out}
+
+
 def add_validation(rows, sidos, merged):
     """meta "valid": 문화체육관광부 전국 관광숙박시설 현황 (raw/mcst_lodging.json, 시도별 관광숙박업 업체·객실) next to the
     permit records' 관광숙박업 operating or paused on the table's date (closed records without a date left out; 객실 =
@@ -1979,6 +2090,7 @@ def main():
     stock_years, room_cov = add_change_old(rows, sidos, sido_meta, tidx, vland)
     land_year = add_land_price(sidos, sgg_of, sido_meta)
     urban_year = add_urban(sidos, sgg_of, sido_meta, merged)
+    typology = add_typology(sido_meta, [(*k, v) for k, v in cube.items()], types, visits)
     write_download(rows, sidos, sido_meta, vland)
     write_panel(rows, sidos, sido_meta, tidx, visits)
     valid = add_validation(rows, sidos, merged)
@@ -2028,6 +2140,7 @@ def main():
         "land_year": land_year,
         "urban_year": urban_year,
         "valid": valid,
+        "typology": typology,
         "transit": (lambda t: {"route_days": t.get("route_days", [])})(json.load(open(os.path.join(RAW, "transit_stops.json"), encoding="utf-8")))
         if os.path.exists(os.path.join(RAW, "transit_stops.json")) else None,
         "vworld_year": Counter(v[1] for v in vland.values() if v[1]).most_common(1)[0][0] if vland else None,

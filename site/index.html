@@ -76,7 +76,7 @@
   <section data-tab="summary" id="sum-sec">
     <div class="sechead"><h2 id="sum-title">종합</h2><p class="sub" id="sum-sub"></p>
       <button class="btn rep-btn" type="button" data-report>📄 지역 진단 리포트 (PDF)</button>
-      <div class="seg" id="peer-seg" role="group" aria-label="비교 대상" hidden style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구와 비교</button><button data-v="decl" aria-pressed="false">인구감소지역끼리 비교</button></div></div>
+      <div class="seg" id="peer-seg" role="group" aria-label="비교 대상" hidden style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구와 비교</button><button data-v="decl" aria-pressed="false">인구감소지역끼리 비교</button><button data-v="type" aria-pressed="false">같은 유형끼리 비교</button></div></div>
     <div class="card"><button class="btn csv" id="sum-print" type="button">인쇄 · PDF</button><h3 style="margin-bottom:8px">한눈에 보기</h3><ul class="sumlist" id="sum-text"></ul></div>
     <div class="sumgrid" id="sum-grid"></div>
     <button class="btn more" id="sum-more" type="button" hidden></button>
@@ -117,7 +117,7 @@
         <div class="chk"><input type="checkbox" id="ck-ktx"><label for="ck-ktx"><span class="sw dash"></span>KTX 노선</label><span></span></div>
         <div class="chk"><input type="checkbox" id="ck-bus"><label for="ck-bus"><span class="sw dia" style="background:#00695c"></span>버스터미널·정류장</label><span class="n" id="n-bus"></span></div>
         <p class="note" style="margin-top:4px" id="bus-note">진한 마름모는 이름에 '터미널'이 들어간 곳, 옅은 마름모는 시외버스 정류장·매표소이고 정류장은 지도를 확대하면 나옵니다. 위치: OpenStreetMap(등록 상태는 지역마다 차이가 있음).</p>
-        <div class="choro"><label for="choro-mode">시군구 색칠</label><select id="choro-mode"><option value="">없음</option><option value="net">최근 1년 순증률</option><option value="old">노후 숙박 비중 (여관·여인숙 20년+)</option><option value="old30">노후 숙박 비중 (여관·여인숙 30년+)</option></select>
+        <div class="choro"><label for="choro-mode">시군구 색칠</label><select id="choro-mode"><option value="">없음</option><option value="net">최근 1년 순증률</option><option value="old">노후 숙박 비중 (여관·여인숙 20년+)</option><option value="old30">노후 숙박 비중 (여관·여인숙 30년+)</option><option value="typ">시군구 유형</option></select>
           <div class="legend" id="choro-legend" hidden></div></div>
         <p class="note" style="margin-top:4px">인구감소지역은 주황, 인구감소관심지역은 노랑(행정안전부 2026.10.7 지정). 지하철·광역철도(서해선·경의중앙선·수인분당선·공항철도·GTX 등)는 노선 색, KTX는 짙은 점선(다른 노선과 같이 쓰는 구간은 그 노선 색), 그 밖의 철도는 회색, 역·공항은 네모로 표시합니다. 국립공원 경계·면적은 OpenStreetMap(금정산은 지정 도면 기반 근사), 공항·철도는 배경지도(OpenStreetMap) 자료입니다.</p>
         <div class="railhead" style="margin-top:16px"><h3>맛집</h3></div>
@@ -413,7 +413,7 @@
   <section data-tab="policy" id="pol-sec">
     <div class="sechead"><h2 id="pol-title">정책 맥락</h2><p class="sub" id="pol-sub"></p>
       <button class="btn rep-btn" type="button" data-report>📄 지역 진단 리포트 (PDF)</button>
-      <div class="seg" id="pol-peer" role="group" aria-label="비교 대상" hidden style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구와 비교</button><button data-v="decl" aria-pressed="false">인구감소지역끼리 비교</button></div></div>
+      <div class="seg" id="pol-peer" role="group" aria-label="비교 대상" hidden style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구와 비교</button><button data-v="decl" aria-pressed="false">인구감소지역끼리 비교</button><button data-v="type" aria-pressed="false">같은 유형끼리 비교</button></div></div>
     <div class="card"><h3 style="margin-bottom:8px">정책 검토 신호</h3><ul class="sumlist" id="pol-signals"></ul>
       <p class="note">지표 조합이 아래 조건에 맞을 때 띄우는 '검토할 만한 신호'이며 정책 결론이 아닙니다. 조건의 기준(백분위 등)은 이 대시보드가 정한 값이라 지역 사정과 현장 확인으로 판단하세요. 조건 목록은 맨 아래 표에 있습니다.</p></div>
     <div class="card"><button class="btn csv" data-csv="pol-table" data-name="정책_맥락">CSV</button><h3 style="margin-bottom:10px">규제·지정 현황과 노후 숙박</h3>

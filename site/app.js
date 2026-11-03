@@ -340,7 +340,8 @@
       map.on('click', 'choro-fill', e => { if (radiusOn) return;
         if (map.queryRenderedFeatures(e.point, { layers: ['pts', 'areas', 'tour', 'fest', 'food0', 'food1', 'bus0', 'bus1'].filter(l => map.getLayer(l)) }).length) return;
         const p = e.features[0].properties, x = r12Of(p.si, p.gi), [n, o, o3] = oldOf(p.si, p.gi), nr = netRate(x);
-        new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(regLabel({ si: p.si, gi: p.gi }))}</b><br>최근 1년 신규 ${fmt(x.nw)} · 폐업 ${fmt(x.cl)} · 순증률 ${nr == null ? '-' : pct1(nr)}<br>여관·여인숙 ${fmt(n)}곳 중 20년 이상 ${n ? Math.round(o / n * 100) + '%' : '-'} · 30년 이상 ${n ? Math.round(o3 / n * 100) + '%' : '-'}`).addTo(map);
+        const ty = (S[p.si].typ || [])[p.gi], tyLine = $('choro-mode').value === 'typ' && ty != null ? `유형: ${esc(meta.typology.types[ty].name)}<br>` : '';
+        new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(`<b>${esc(regLabel({ si: p.si, gi: p.gi }))}</b><br>${tyLine}최근 1년 신규 ${fmt(x.nw)} · 폐업 ${fmt(x.cl)} · 순증률 ${nr == null ? '-' : pct1(nr)}<br>여관·여인숙 ${fmt(n)}곳 중 20년 이상 ${n ? Math.round(o / n * 100) + '%' : '-'} · 30년 이상 ${n ? Math.round(o3 / n * 100) + '%' : '-'}`).addTo(map);
       });
       // 고른 지역의 행정구역 경계(흰 테두리 위 진한 선)
       map.addSource('admin', { type: 'geojson', data: empty, attribution: '행정경계: 통계청 SGIS · <a href="https://github.com/vuski/admdongkor" target="_blank">admdongkor</a> (CC BY 4.0)' });
@@ -1104,6 +1105,9 @@
     // 20년 기준은 대부분 80~90%라 지역 차이가 잘 안 보여 30년 기준도 둠
     old30: { val: (si, gi) => { const [n, , o3] = oldOf(si, gi); return n >= 10 ? o3 / n : null; }, bins: [.2, .4, .6, .8], cols: ['#fee5d9', '#fcae91', '#fb6a4a', '#de2d26', '#a50f15'],
       labs: ['20% 미만', '20~40%', '40~60%', '60~80%', '80% 이상'] },
+    // 시군구 유형(범주): 값이 유형 번호
+    typ: { cat: true, val: (si, gi) => (S[si].typ || [])[gi] ?? null, cols: ['#4e79a7', '#f28e2b', '#59a14f', '#e15759', '#b07aa1', '#edc948', '#76b7b2', '#9c755f'],
+      get labs() { return meta.typology ? meta.typology.types.map(t => t.name) : []; } },
   };
   let choroFeats = null;
   async function renderChoro() {
@@ -1122,7 +1126,7 @@
       }));
       choroFeats = feats;
     }
-    const col = v => v == null ? '#bdbdbd' : C.cols[C.bins.filter(b => v >= b).length];
+    const col = v => v == null ? '#bdbdbd' : C.cat ? C.cols[v % C.cols.length] : C.cols[C.bins.filter(b => v >= b).length];
     map.getSource('choro').setData({ type: 'FeatureCollection', features: choroFeats.map(f => ({ ...f, properties: { ...f.properties, c: col(C.val(f.properties.si, f.properties.gi)) } })) });
   }
   function renderChange() {
@@ -1897,7 +1901,9 @@
     return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,${H} ${pts} ${W},${H}"/><polyline points="${pts}"/></svg>`;
   }
   // 종합 지표 계산: 지역 r의 값(me), 비교 대상 안 백분위(P)·중위, 전국 전체(natP). 종합·정책 맥락 탭이 함께 씀
-  function ovFor(r, declOnly) {
+  // 시군구 유형(build.py add_typology): 기초 하나일 때만
+  const TYP = meta.typology, typOf = r => TYP && r && r.si >= 0 && r.gi >= 0 && r.grp == null ? (S[r.si].typ || [])[r.gi] ?? null : null;
+  function ovFor(r, mode) {  // mode: 'all' 전국 시군구 | 'decl' 인구감소지역끼리 | 'type' 같은 유형끼리(기초 하나일 때)
     const natA = T.map(() => 0), nat = { s0: T.map(() => 0), s1: T.map(() => 0) };
     for (const x of Object.values(areaTable())) x.a.forEach((v, i) => { natA[i] += v; nat.s0[i] += x.s0[i]; nat.s1[i] += x.s1[i]; });
     const keysOf = q => q.si < 0 ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => `${si}:${gi}`)) : (gisOf(q) || S[q.si].sgg.map((_, gi) => gi)).map(gi => `${q.si}:${gi}`);
@@ -1919,9 +1925,9 @@
     addPop(me, r);
     // 비교 대상: 기초(또는 묶음)는 전국 시군구, 광역은 광역끼리, 전국은 없음
     const peerLevel = r.si < 0 ? null : r.gi >= 0 || r.grp != null ? 'sgg' : 'sido';
-    const declPeers = peerLevel === 'sgg' && declOnly;
+    const declPeers = peerLevel === 'sgg' && mode === 'decl', myTyp = mode === 'type' ? typOf(r) : null;
     const peers = !peerLevel ? [] : peerLevel === 'sgg'
-      ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => [si, gi])).filter(([si, gi]) => !declPeers || declOf({ si, gi }) === 1)
+      ? S.flatMap((sd, si) => sd.sgg.map((_, gi) => [si, gi])).filter(([si, gi]) => myTyp != null ? (S[si].typ || [])[gi] === myTyp : !declPeers || declOf({ si, gi }) === 1)
         .map(([si, gi]) => { const p = ovStats([`${si}:${gi}`], natA, null, nat); p.k21 = kixAvg({ si, gi }, '21'); p.k2102 = kixAvg({ si, gi }, '2102'); p.k1107 = kixAvg({ si, gi }, '1107'); return addPop(p, { si, gi }); })
       : S.map((_, si) => { const p = ovStats(keysOf({ si, gi: -1 }), natA, msido(si), nat); p.k21 = kixAvg({ si, gi: -1 }, '21'); p.k2102 = kixAvg({ si, gi: -1 }, '2102'); p.k1107 = kixAvg({ si, gi: -1 }, '1107'); return addPop(p, { si, gi: -1 }); });
     // 백분위: 같은 값은 그 가운데 순위로(0%처럼 값이 같은 곳이 많을 때 위로 쏠리지 않게)
@@ -1930,7 +1936,7 @@
     const median = key => { const xs = peers.map(p => p[key]).filter(x => x != null).sort((a, b) => a - b), m = xs.length >> 1;
       return xs.length < 5 ? null : xs.length % 2 ? xs[m] : (xs[m - 1] + xs[m]) / 2; };
     const natP = r.si < 0 ? null : addPop(ovStats(keysOf({ si: -1, gi: -1 }), natA, natMon, nat), { si: -1, gi: -1 });
-    const peerName = peerLevel === 'sgg' ? (declPeers ? '인구감소지역' : '전국 시군구') : '광역';
+    const peerName = peerLevel === 'sgg' ? (myTyp != null ? `같은 유형(${TYP.types[myTyp].name})` : declPeers ? '인구감소지역' : '전국 시군구') : '광역';
     const P = {}; for (const [k] of OV) P[k] = pctile(k, me[k]);
     return { me, P, median, natP, peerLevel, peerName, declPeers };
   }
@@ -1938,9 +1944,9 @@
     if (tab !== 'summary') return;  // 시군구 전체를 계산하므로 탭을 열었을 때만
     const r = unionOn() ? null : curReg();  // 읍·면·동을 골랐으면 그 시군구, 드롭다운 묶음(광주시 등)은 묶음 그대로
     if (!r) { $('sum-title').textContent = '종합'; $('sum-sub').textContent = '합쳐 보기 중에는 종합을 낼 수 없습니다. 상단에서 지역 하나를 고르세요.'; ['sum-text', 'sum-grid', 'sum-table'].forEach(id => { $(id).innerHTML = ''; }); return; }
-    const { me, P, median, natP, peerLevel, peerName, declPeers } = ovFor(r, peerDecl);
+    const { me, P, median, natP, peerLevel, peerName, declPeers } = ovFor(r, peerMode);
     $('peer-seg').hidden = peerLevel !== 'sgg';
-    document.querySelectorAll('#peer-seg button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === peerDecl)));
+    document.querySelectorAll('#peer-seg button').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.v === peerMode)); if (b.dataset.v === 'type') b.hidden = typOf(r) == null; });
     const refLine = (key, f) => { const md = median(key), nv = natP && key !== 'n' ? natP[key] : null;
       return md == null && nv == null ? '' : `<small class="ref">${md != null ? `${peerName} 중위 <b>${f(md)}</b>` : ''}${md != null && nv != null ? ' · ' : ''}${nv != null ? `전국 전체 <b>${f(nv)}</b>` : ''}</small>`; };
     $('sum-title').innerHTML = `종합 · ${esc(regLabel(r))}${declBadge(r)}`;
@@ -1956,6 +1962,7 @@
     // 특화 업종(LQ ≥ 1.2, 10곳 이상)
     const spec = me.lq.map((q, i) => [q, i]).filter(([q]) => q != null && q >= 1.2).sort((x, y) => y[0] - x[0]).slice(0, 3);
     $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>특화 업종 (입지계수 LQ)${tip(OV_EASY.lq)}</h4>${spec.length ? spec.map(([q, i]) => `<div style="display:flex;justify-content:space-between;font-size:14px"><span>${esc(T[i].name)}</span><b style="font-size:16px;display:inline">${q.toFixed(2)}</b></div>`).join('') : '<b>-</b>'}<small>LQ = (지역 업종 비중) ÷ (전국 업종 비중). 1.2 이상·10곳 이상만. Isard(1960) 지역분석의 입지계수</small></div>`);
+    $('sum-grid').insertAdjacentHTML('beforeend', typeCard(r));
     if (me.ss) {
       const sg = v => (v >= 0 ? '+' : '−') + fmt(Math.abs(Math.round(v)));
       $('sum-grid').insertAdjacentHTML('beforeend', `<div class="sumcard"><h4>숙소 증감 분해 (변이할당분석, ${SS_Y0}→${SS_Y1}년 말)${tip(OV_EASY.ss)}</h4><b>${sg(me.ss.d)}곳</b>
@@ -2037,8 +2044,8 @@
     a.download = `종합_지표_전체_시군구${state.types.size < T.length ? '_선택업종' : ''}.csv`;
     document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
-  let peerDecl = false;  // 종합의 비교 대상: 전국 시군구 / 인구감소지역(92곳)끼리
-  $('peer-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { peerDecl = b.dataset.v === 'decl'; renderOverview(); } });
+  let peerMode = 'all';  // 종합·리포트의 비교 대상: 'all' 전국 시군구 / 'decl' 인구감소지역(92곳)끼리 / 'type' 같은 유형끼리
+  $('peer-seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { peerMode = b.dataset.v; renderOverview(); } });
   $('sum-more').onclick = () => { const all = $('sum-grid').classList.toggle('all'); $('sum-more').textContent = all ? '접기' : `지표 더 보기 (${$('sum-grid').children.length - 4}개)`; };
   // 인쇄할 때는 지표 카드와 정의 표를 모두 펼침
   let printState = null;
@@ -2571,7 +2578,7 @@
   });
 
   /* ---------- 정책 맥락: 규제·지정 현황, 노후 숙박, 지표 조합으로 본 정책 검토 신호 ---------- */
-  let polDecl = false;
+  let polMode = 'all';
   const polGis = r => r.si < 0 ? null : gisOf(r) || S[r.si].sgg.map((_, gi) => gi);
   const polEach = (r, f) => { if (r.si < 0) S.forEach((sd, si) => sd.sgg.forEach((_, gi) => f(si, gi))); else polGis(r).forEach(gi => f(r.si, gi)); };
   function polFacts(r) {  // 지역 r의 규제·지정·노후 숙박 값(업종 선택과 무관)
@@ -2646,10 +2653,10 @@
     $('pol-title').innerHTML = `정책 맥락 · ${esc(regLabel(r))}${declBadge(r)}`;
     $('pol-sub').textContent = `${state.types.size < T.length ? '검토 신호는 선택한 업종 기준 · ' : ''}규제·지정 현황과 노후 숙박, 그리고 종합 지표의 조합으로 본 정책 검토 신호입니다.`;
     $('pol-peer').hidden = !(r.gi >= 0 || r.grp != null);
-    document.querySelectorAll('#pol-peer button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === polDecl)));
+    document.querySelectorAll('#pol-peer button').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.v === polMode)); if (b.dataset.v === 'type') b.hidden = typOf(r) == null; });
     if (r.si < 0) $('pol-signals').innerHTML = '<li>전국은 비교 대상이 없어 검토 신호를 내지 않습니다. 광역이나 시군구를 고르세요.</li>';
     else {
-      const { me, P, peerName } = ovFor(r, polDecl);
+      const { me, P, peerName } = ovFor(r, polMode);
       const hits = polHits(me, P, f);
       $('pol-signals').innerHTML = hits.length ? hits.map(([nm, , , txt]) => `<li><b>${esc(nm)}</b>: ${esc(txt(me, P, f))}</li>`).join('') + `<li class="note" style="list-style:none;margin-left:-20px">백분위 비교 대상: ${esc(peerName)}</li>`
         : `<li>조건에 맞는 신호가 없습니다(비교 대상: ${esc(peerName)}). 신호가 없다는 것이 문제가 없다는 뜻은 아닙니다.</li>`;
@@ -2660,11 +2667,35 @@
     $('pol-note').textContent = '노후 숙박 행은 업종 선택과 무관하게 숙박업의 여관업·여인숙업만 셉니다. 외국인관광 도시민박의 용도지역은 인허가 원자료의 값이고, 공시지가 표의 용도지역(VWorld)과 출처가 다릅니다. 지가·공시지가는 광역 또는 시군구 하나를 골랐을 때만 나옵니다.';
     csvSet('pol-table', ['지역', '항목', '이 지역', '전국', '출처·기준'], rows.map(x => [regLabel(r), ...x]));
   }
-  $('pol-peer').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { polDecl = b.dataset.v === 'decl'; renderPolicy(); } });
+  $('pol-peer').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { polMode = b.dataset.v; renderPolicy(); } });
+
+  /* ---------- 시군구 유형: 카드·리포트 문구 ---------- */
+  function typeTraits(z) {  // 이 지역 자체의 두드러진 점(|z| ≥ 1): 유형 이름과 별개
+    if (!TYP || !z) return [];
+    return z.map((v, j) => [Math.abs(v), j, v]).filter(x => x[0] >= 1).sort((a, b) => b[0] - a[0]).slice(0, 3)
+      .map(([, j, v]) => (TYP.words || [])[j]?.[v > 0 ? 0 : 1] || `${TYP.vars[j].replace(/\(로그\)/, '')} ${v > 0 ? '높음' : '낮음'}`);
+  }
+  function typeLine(r) {  // {title, sub, own} 또는 null
+    if (!TYP) return null;
+    const t = typOf(r);
+    if (t != null) { const ty = TYP.types[t], own = typeTraits((S[r.si].typz || [])[r.gi]);
+      return { title: ty.name, sub: `전국 ${ty.n}개 시군구 · ${ty.traits.length ? ty.traits.slice(0, 4).join(', ') : '뚜렷하게 치우친 특징이 없는 유형'}`,
+        own: own.length ? `이 지역에서 두드러진 점: ${own.join(', ')}` : '' };
+    }
+    if (r.si < 0 || r.grp != null) return null;
+    const c = Counter2((S[r.si].typ || []).map(x => TYP.types[x].name));  // 광역: 소속 시군구의 유형 구성
+    return { title: '소속 시군구 유형', sub: c.map(([nm, n]) => `${nm} ${n}곳`).join(', '), own: '' };
+  }
+  const Counter2 = xs => [...xs.reduce((m, x) => m.set(x, (m.get(x) || 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
+  function typeCard(r) {
+    const l = typeLine(r);
+    if (!l) return '';
+    return `<div class="sumcard"><h4>지역 유형${tip('전국 시군구를 숙박·방문·외국인·계절성·도시화·업종 구성·노후 숙박 9개 지표로 묶은 유형입니다(k-평균 군집, 매일 다시 계산). 이름은 유형 전체의 중앙값 기준이라 개별 지역과 다를 수 있어, 이 지역 자체의 두드러진 점을 함께 보여 줍니다. 위의 \'같은 유형끼리 비교\'를 누르면 백분위가 같은 유형 안의 위치로 바뀝니다.')}</h4><b style="font-size:17px">${esc(l.title)}</b><small>${esc(l.sub)}</small>${l.own ? `<small>${esc(l.own)}</small>` : ''}</div>`;
+  }
 
   /* ---------- 지역 진단 리포트: 종합 지표·정책 맥락을 A4 두 쪽으로(인쇄 → PDF 저장) ---------- */
   function reportHTML(r) {
-    const { me, P, median, natP, peerName, peerLevel } = ovFor(r, peerDecl);
+    const { me, P, median, natP, peerName, peerLevel } = ovFor(r, peerMode);
     const F = Object.fromEntries(OV.map(o => [o[0], o[2]])), f = polFacts(r);
     const val = k => me[k] == null ? '-' : F[k](me[k]);
     const pos = k => P[k] == null ? '' : `${peerName} 중 상위 ${Math.max(1, Math.round((1 - P[k]) * 100))}%`;
@@ -2686,7 +2717,8 @@
     const url = 'https://ms1238.github.io/korea-lodging-dashboard-/' + (r.si < 0 ? '' : '#r=' + regKey(r));  // 읽기 쉽게 한글 그대로
     const types = state.types.size < T.length ? `선택 업종 ${state.types.size}개` : '전체 업종';
     return `<div class="rp-head"><p class="rp-eye">숙박관광 대시보드 · 지역 진단 리포트</p><h1>${esc(regLabel(r))}${declBadge(r)}</h1>
-      <p class="m">자료 기준 ${esc(meta.updated)} · ${types} · 영업 중인 숙소 기준 · 백분위 비교 대상: ${esc(peerLevel ? peerName : '없음(전국)')}</p></div>
+      <p class="m">자료 기준 ${esc(meta.updated)} · ${types} · 영업 중인 숙소 기준 · 백분위 비교 대상: ${esc(peerLevel ? peerName : '없음(전국)')}</p>
+      ${(l => l ? `<p><b>지역 유형</b> ${esc(l.title)} (${esc(l.sub)})${l.own ? ` · ${esc(l.own)}` : ''}</p>` : '')(typeLine(r))}</div>
       <div class="rp-tiles">${tiles}</div>
       <div class="rp-two"><div><h2>두드러지게 높은 지표</h2><ul>${pl(hi, true)}</ul></div><div><h2>두드러지게 낮은 지표</h2><ul>${pl(lo, false)}</ul></div></div>
       <p class="m">비교 대상 중 상위·하위 20% 안에 드는 지표입니다. 값이 크다고 좋거나 작다고 나쁜 것이 아니며, 정책 목적에 따라 해석하세요.</p>
