@@ -2603,7 +2603,7 @@
     ['성수기 수용력', '성수기 집중도 백분위 80 이상',
       (me, P) => P.peak >= .8,
       (me, P) => `가장 붐비는 달의 방문자가 월평균의 ${me.peak.toFixed(2)}배입니다(${topP(P, 'peak')}): 성수기 숙박·교통 수용력 관리(임시 숙박, 수요 분산) 검토 신호.`],
-    ['공급 과열', '최근 3년 순증률 백분위 80 이상이면서 외지인 누적 방문자 100만 명당 숙소 백분위 80 이상',
+    ['빠른 공급 증가', '최근 3년 순증률 백분위 80 이상이면서 외지인 누적 방문자 100만 명당 숙소 백분위 80 이상',
       (me, P) => P.growth >= .8 && P.dens >= .8,
       (me, P) => `숙소가 빠르게 늘었고(순증 ${(me.growth * 100).toFixed(1)}%, ${topP(P, 'growth')}) 방문자 대비 숙소도 많습니다(${topP(P, 'dens')}): 공급 과잉·가격 경쟁 모니터링 신호.`],
     ['잦은 진입·이탈', '신생률·소멸률 백분위 모두 80 이상',
@@ -2615,30 +2615,15 @@
     ['체류 전환', '숙박 비중 지수 백분위 20 이하이면서 주민 1천 명당 하루 외지인 방문자 백분위 50 이상',
       (me, P) => P.k2102 != null && P.k2102 <= .2 && P.tpi >= .5,
       (me, P) => `방문자는 적지 않은데 숙박 비중 지수가 낮습니다(${lowP(P, 'k2102')}): 당일 방문을 체류로 바꾸는 숙박 연계 상품 검토 신호.`],
-    ['숙박 부족', '외지인 누적 방문자 100만 명당 숙소 백분위 10 이하',
+    ['방문 대비 숙소 적음', '외지인 누적 방문자 100만 명당 숙소 백분위 10 이하',
       (me, P) => P.dens != null && P.dens <= .1,
       (me, P) => `외지인 방문 대비 숙소가 매우 적습니다(100만 명당 ${me.dens.toFixed(1)}곳, ${lowP(P, 'dens')}): 숙박 공급 부족이거나 인근 지역 숙소에 기대는 구조일 수 있어 인접 지역과 함께 볼 신호.`],
   ];
-  function renderPolicy() {
-    if (tab !== 'policy') return;  // 비교 대상 전체를 계산하므로 탭을 열었을 때만
-    const r = unionOn() ? null : curReg();
-    $('pol-rules').innerHTML = '<thead><tr><th style="text-align:left">신호</th><th style="text-align:left">조건</th></tr></thead><tbody>'
-      + POL_RULES.map(([nm, cond]) => `<tr><td style="text-align:left">${esc(nm)}</td><td style="text-align:left;white-space:normal">${esc(cond)}</td></tr>`).join('') + '</tbody>';
-    if (!r) { $('pol-title').textContent = '정책 맥락'; $('pol-sub').textContent = '합쳐 보기 중에는 낼 수 없습니다. 상단에서 지역 하나를 고르세요.'; ['pol-signals', 'pol-table'].forEach(id => { $(id).innerHTML = ''; }); return; }
-    const f = polFacts(r), nf = polFacts({ si: -1, gi: -1 });
-    $('pol-title').innerHTML = `정책 맥락 · ${esc(regLabel(r))}${declBadge(r)}`;
-    $('pol-sub').textContent = `${state.types.size < T.length ? '검토 신호는 선택한 업종 기준 · ' : ''}규제·지정 현황과 노후 숙박, 그리고 종합 지표의 조합으로 본 정책 검토 신호입니다.`;
-    $('pol-peer').hidden = !(r.gi >= 0 || r.grp != null);
-    document.querySelectorAll('#pol-peer button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === polDecl)));
-    if (r.si < 0) $('pol-signals').innerHTML = '<li>전국은 비교 대상이 없어 검토 신호를 내지 않습니다. 광역이나 시군구를 고르세요.</li>';
-    else {
-      const { me, P, peerName } = ovFor(r, polDecl);
-      const hits = POL_RULES.filter(x => { try { return x[2](me, P, f); } catch { return false; } });
-      $('pol-signals').innerHTML = hits.length ? hits.map(([nm, , , txt]) => `<li><b>${esc(nm)}</b>: ${esc(txt(me, P, f))}</li>`).join('') + `<li class="note" style="list-style:none;margin-left:-20px">백분위 비교 대상: ${esc(peerName)}</li>`
-        : `<li>조건에 맞는 신호가 없습니다(비교 대상: ${esc(peerName)}). 신호가 없다는 것이 문제가 없다는 뜻은 아닙니다.</li>`;
-    }
+  const polHits = (me, P, f) => POL_RULES.filter(x => { try { return x[2](me, P, f); } catch { return false; } });
+  // 규제·지정 현황표 [항목, 이 지역, 전국, 출처]: 정책 맥락 탭과 진단 리포트가 함께 씀
+  function polRows(f, nf) {
     const declTxt = x => x.sgg ? ['해당 없음', '인구감소지역', '인구감소관심지역'][x.decl] : `인구감소지역 ${x.d1}곳 · 관심지역 ${x.d2}곳`;
-    const rows = [
+    return [
       ['인구감소지역 지정', declTxt(f), declTxt(nf), '행정안전부 2026.10.7 지정'],
       ['법정 도시지역 면적 비율', PCT(f.urbanArea), PCT(nf.urbanArea), `국토교통부 도시계획현황 ${meta.urban_year || ''}`],
       ['도시지역 거주 인구 비율', PCT(f.urbanPop), PCT(nf.urbanPop), `국토교통부 도시계획현황 ${meta.urban_year || ''}`],
@@ -2650,12 +2635,82 @@
       ['영업 외국인관광 도시민박', fmt(f.mb) + '곳', fmt(nf.mb) + '곳', '인허가 데이터'],
       ['그중 주거지역 입지 비율', f.mbRes == null ? '·' : `${PCT(f.mbRes)} (${fmt(f.mbz)}곳 중)`, PCT(nf.mbRes), '인허가 원자료 용도지역(미상 제외)'],
     ];
+  }
+  function renderPolicy() {
+    if (tab !== 'policy') return;  // 비교 대상 전체를 계산하므로 탭을 열었을 때만
+    const r = unionOn() ? null : curReg();
+    $('pol-rules').innerHTML = '<thead><tr><th style="text-align:left">신호</th><th style="text-align:left">조건</th></tr></thead><tbody>'
+      + POL_RULES.map(([nm, cond]) => `<tr><td style="text-align:left">${esc(nm)}</td><td style="text-align:left;white-space:normal">${esc(cond)}</td></tr>`).join('') + '</tbody>';
+    if (!r) { $('pol-title').textContent = '정책 맥락'; $('pol-sub').textContent = '합쳐 보기 중에는 낼 수 없습니다. 상단에서 지역 하나를 고르세요.'; ['pol-signals', 'pol-table'].forEach(id => { $(id).innerHTML = ''; }); return; }
+    const f = polFacts(r);
+    $('pol-title').innerHTML = `정책 맥락 · ${esc(regLabel(r))}${declBadge(r)}`;
+    $('pol-sub').textContent = `${state.types.size < T.length ? '검토 신호는 선택한 업종 기준 · ' : ''}규제·지정 현황과 노후 숙박, 그리고 종합 지표의 조합으로 본 정책 검토 신호입니다.`;
+    $('pol-peer').hidden = !(r.gi >= 0 || r.grp != null);
+    document.querySelectorAll('#pol-peer button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'decl') === polDecl)));
+    if (r.si < 0) $('pol-signals').innerHTML = '<li>전국은 비교 대상이 없어 검토 신호를 내지 않습니다. 광역이나 시군구를 고르세요.</li>';
+    else {
+      const { me, P, peerName } = ovFor(r, polDecl);
+      const hits = polHits(me, P, f);
+      $('pol-signals').innerHTML = hits.length ? hits.map(([nm, , , txt]) => `<li><b>${esc(nm)}</b>: ${esc(txt(me, P, f))}</li>`).join('') + `<li class="note" style="list-style:none;margin-left:-20px">백분위 비교 대상: ${esc(peerName)}</li>`
+        : `<li>조건에 맞는 신호가 없습니다(비교 대상: ${esc(peerName)}). 신호가 없다는 것이 문제가 없다는 뜻은 아닙니다.</li>`;
+    }
+    const rows = polRows(f, polFacts({ si: -1, gi: -1 }));
     $('pol-table').innerHTML = '<thead><tr><th style="text-align:left">항목</th><th>이 지역</th><th>전국</th><th style="text-align:left">출처·기준</th></tr></thead><tbody>'
       + rows.map(x => `<tr><td style="text-align:left">${esc(x[0])}</td><td>${esc(x[1])}</td><td>${esc(x[2])}</td><td style="text-align:left;color:var(--muted)">${esc(x[3])}</td></tr>`).join('') + '</tbody>';
     $('pol-note').textContent = '노후 숙박 행은 업종 선택과 무관하게 숙박업의 여관업·여인숙업만 셉니다. 외국인관광 도시민박의 용도지역은 인허가 원자료의 값이고, 공시지가 표의 용도지역(VWorld)과 출처가 다릅니다. 지가·공시지가는 광역 또는 시군구 하나를 골랐을 때만 나옵니다.';
     csvSet('pol-table', ['지역', '항목', '이 지역', '전국', '출처·기준'], rows.map(x => [regLabel(r), ...x]));
   }
   $('pol-peer').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { polDecl = b.dataset.v === 'decl'; renderPolicy(); } });
+
+  /* ---------- 지역 진단 리포트: 종합 지표·정책 맥락을 A4 두 쪽으로(인쇄 → PDF 저장) ---------- */
+  function reportHTML(r) {
+    const { me, P, median, natP, peerName, peerLevel } = ovFor(r, peerDecl);
+    const F = Object.fromEntries(OV.map(o => [o[0], o[2]])), f = polFacts(r);
+    const val = k => me[k] == null ? '-' : F[k](me[k]);
+    const pos = k => P[k] == null ? '' : `${peerName} 중 상위 ${Math.max(1, Math.round((1 - P[k]) * 100))}%`;
+    const med = k => median(k) == null ? '' : `중위 ${F[k](median(k))}`;
+    // 핵심 지표 6개: 공급 규모, 수급, 수용력, 공급 동학, 접근성, 외국인 수요
+    const tl = state.dong < 0 ? tlSeries().openY.slice(-11) : null;
+    const tiles = [`<div class="rt"><small>영업 숙소</small><b>${fmt(me.n)}곳</b>${tl && tl[0] ? `${spark(tl)}<small>${yNow - 10}년 말 대비 ${(tl[10] >= tl[0] ? '+' : '−') + Math.abs((tl[10] / tl[0] - 1) * 100).toFixed(0)}%</small>` : ''}</div>`]
+      .concat(['dens', 'rtfi', 'growth', 'sdg', 'fshare'].map(k => `<div class="rt"><small>${esc(OV_META[k].name)}</small><b>${val(k)}</b><small>${esc([pos(k), med(k)].filter(Boolean).join(' · '))}</small></div>`)).join('');
+    // 비교 대상 안에서 두드러진 지표(값이 크다고 좋은 것은 아님)
+    const ranked = OV.map(([k]) => k).filter(k => P[k] != null);
+    const hi = ranked.filter(k => P[k] >= .8).sort((a, b) => P[b] - P[a]).slice(0, 4), lo = ranked.filter(k => P[k] <= .2).sort((a, b) => P[a] - P[b]).slice(0, 4);
+    const pl = (ks, top) => ks.length ? ks.map(k => `<li>${esc(OV_META[k].name)} <b>${val(k)}</b> <span class="m">(${top ? '상위' : '하위'} ${Math.max(1, Math.round((top ? 1 - P[k] : P[k]) * 100))}%)</span></li>`).join('') : '<li class="m">없음</li>';
+    const hits = r.si < 0 ? [] : polHits(me, P, f);
+    const sig = r.si < 0 ? '<p class="m">전국은 비교 대상이 없어 검토 신호를 내지 않습니다.</p>'
+      : hits.length ? `<ul>${hits.map(([nm, , , txt]) => `<li><b>${esc(nm)}</b>: ${esc(txt(me, P, f))}</li>`).join('')}</ul>` : '<p class="m">조건에 맞는 신호가 없습니다. 신호가 없다는 것이 문제가 없다는 뜻은 아닙니다.</p>';
+    const ind = (IND.areas || []).map(a => OV.filter(([k]) => OV_META[k].area === a).map(([k, nm, fm]) =>
+      `<tr><td>${esc(a)}</td><td>${esc(nm)}</td><td class="c">${esc(OV_META[k].tier)}</td><td class="n">${val(k)}</td><td class="n">${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td class="n">${median(k) == null ? '-' : fm(median(k))}</td><td class="n">${(natP || me)[k] == null ? '-' : fm((natP || me)[k])}</td></tr>`).join('')).join('');
+    const pol = polRows(f, polFacts({ si: -1, gi: -1 })).map(x => `<tr><td>${esc(x[0])}</td><td class="n">${esc(x[1])}</td><td class="n">${esc(x[2])}</td><td class="m">${esc(x[3])}</td></tr>`).join('');
+    const url = 'https://ms1238.github.io/korea-lodging-dashboard-/' + (r.si < 0 ? '' : '#r=' + regKey(r));  // 읽기 쉽게 한글 그대로
+    const types = state.types.size < T.length ? `선택 업종 ${state.types.size}개` : '전체 업종';
+    return `<div class="rp-head"><p class="rp-eye">숙박관광 대시보드 · 지역 진단 리포트</p><h1>${esc(regLabel(r))}${declBadge(r)}</h1>
+      <p class="m">자료 기준 ${esc(meta.updated)} · ${types} · 영업 중인 숙소 기준 · 백분위 비교 대상: ${esc(peerLevel ? peerName : '없음(전국)')}</p></div>
+      <div class="rp-tiles">${tiles}</div>
+      <div class="rp-two"><div><h2>두드러지게 높은 지표</h2><ul>${pl(hi, true)}</ul></div><div><h2>두드러지게 낮은 지표</h2><ul>${pl(lo, false)}</ul></div></div>
+      <p class="m">비교 대상 중 상위·하위 20% 안에 드는 지표입니다. 값이 크다고 좋거나 작다고 나쁜 것이 아니며, 정책 목적에 따라 해석하세요.</p>
+      <h2>정책 검토 신호</h2>${sig}
+      <p class="m">지표 조합이 대시보드의 조건(정책 맥락 탭에 공개)에 맞을 때 띄우는 신호이며 정책 결론이 아닙니다.</p>
+      <h2>규제·지정 현황과 노후 숙박</h2><table><thead><tr><th>항목</th><th>이 지역</th><th>전국</th><th>출처·기준</th></tr></thead><tbody>${pol}</tbody></table>
+      <div class="rp-break"></div>
+      <h2>영역별 지표</h2><table><thead><tr><th>영역</th><th>지표</th><th>신뢰</th><th>값</th><th>백분위</th><th>${esc(peerLevel ? peerName : '')} 중위</th><th>전국</th></tr></thead><tbody>${ind}</tbody></table>
+      <div class="rp-foot"><p><b>신뢰 수준</b> ${Object.entries(IND.tiers).map(([k, v]) => `${k} = ${esc(v)}`).join(' · ')}</p>
+        <p><b>자료</b> 행정안전부 숙박 인허가(매일), 한국관광공사 한국관광데이터랩(방문자·관광수요지수), 행정안전부 주민등록 인구, 국토교통부 도시계획현황·버스정류장, OpenStreetMap, 한국부동산원, VWorld. 지표별 산식은 대시보드 '지역 진단 → 종합 → 지표 정의와 근거'와 코드북에 있습니다.</p>
+        <p><b>한계</b> 인허가 신고 기준이라 미신고·공유숙박 플랫폼 전용 숙소는 없습니다. 방문자는 이동통신 기반 연인원이라 숙박객 수가 아니며, 가동률·가격 자료는 없습니다. 거리는 직선거리입니다. 국가승인통계가 아니라 행정자료를 가공한 분석 결과입니다.</p>
+        <p><b>인용</b> ms1238 (${meta.updated.slice(0, 4)}). 숙박관광 대시보드: 지역 진단 리포트 – ${esc(regLabel(r))}. ${esc(url)} (자료 기준 ${meta.updated.slice(0, 10)}).</p></div>`;
+  }
+  function openReport() {
+    const r = unionOn() ? null : curReg();
+    if (!r) { alert('합쳐 보기 중에는 리포트를 만들 수 없습니다. 상단에서 지역 하나를 고르세요.'); return; }
+    $('rep-body').innerHTML = reportHTML(r);
+    $('report').hidden = false; document.body.classList.add('rep-open'); $('rep-print').focus();
+  }
+  const closeReport = () => { $('report').hidden = true; document.body.classList.remove('rep-open'); };
+  document.addEventListener('click', e => { if (e.target.closest('[data-report]')) openReport(); });
+  $('rep-close').onclick = closeReport;
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('report').hidden) closeReport(); });
+  $('rep-print').onclick = () => print();  // 열려 있으면 print CSS가 리포트만 인쇄
 
   /* ---------- 데이터·방법: 공식 통계 대조, 데이터 품질, 인용 ---------- */
   function roomCovText() {  // 업종별 기재율(meta.room_cov)을 영업 시설 수로 가중해 업종대분류별로

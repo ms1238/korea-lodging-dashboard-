@@ -75,6 +75,7 @@
 
   <section data-tab="summary" id="sum-sec">
     <div class="sechead"><h2 id="sum-title">종합</h2><p class="sub" id="sum-sub"></p>
+      <button class="btn rep-btn" type="button" data-report>📄 지역 진단 리포트 (PDF)</button>
       <div class="seg" id="peer-seg" role="group" aria-label="비교 대상" hidden style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구와 비교</button><button data-v="decl" aria-pressed="false">인구감소지역끼리 비교</button></div></div>
     <div class="card"><button class="btn csv" id="sum-print" type="button">인쇄 · PDF</button><h3 style="margin-bottom:8px">한눈에 보기</h3><ul class="sumlist" id="sum-text"></ul></div>
     <div class="sumgrid" id="sum-grid"></div>
@@ -411,6 +412,7 @@
 
   <section data-tab="policy" id="pol-sec">
     <div class="sechead"><h2 id="pol-title">정책 맥락</h2><p class="sub" id="pol-sub"></p>
+      <button class="btn rep-btn" type="button" data-report>📄 지역 진단 리포트 (PDF)</button>
       <div class="seg" id="pol-peer" role="group" aria-label="비교 대상" hidden style="margin-top:8px"><button data-v="all" aria-pressed="true">전국 시군구와 비교</button><button data-v="decl" aria-pressed="false">인구감소지역끼리 비교</button></div></div>
     <div class="card"><h3 style="margin-bottom:8px">정책 검토 신호</h3><ul class="sumlist" id="pol-signals"></ul>
       <p class="note">지표 조합이 아래 조건에 맞을 때 띄우는 '검토할 만한 신호'이며 정책 결론이 아닙니다. 조건의 기준(백분위 등)은 이 대시보드가 정한 값이라 지역 사정과 현장 확인으로 판단하세요. 조건 목록은 맨 아래 표에 있습니다.</p></div>
@@ -445,6 +447,10 @@
   </section>
 
   <footer class="note" id="foot"></footer>
+</div>
+<div id="report" hidden role="dialog" aria-modal="true" aria-label="지역 진단 리포트">
+  <div class="rep-bar"><b>지역 진단 리포트</b><span class="rep-hint">A4 미리보기 · 인쇄 창에서 'PDF로 저장'을 고르세요</span><button class="btn" id="rep-print" type="button">인쇄 · PDF 저장</button><button class="btn" id="rep-close" type="button">닫기</button></div>
+  <div class="rep-page" id="rep-body"></div>
 </div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="app.js"></script>

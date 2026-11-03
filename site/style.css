@@ -227,6 +227,41 @@ th:first-child,td:first-child{text-align:left}
 .sumcard small.ref b{font-size:12px;display:inline;font-weight:700}
 .sumcard small{color:var(--muted);font-size:12px;line-height:1.5;display:block}
 @media print{header,.controls,.mapgrid,section:not(#sum-sec),#sum-print,.btn.csv,footer,.tabs{display:none!important}#sum-sec{display:block!important}body{background:#fff}}
+/* 지역 진단 리포트: 화면에서는 A4 미리보기 겹창, 인쇄 때는 리포트만 */
+.rep-btn{margin-top:10px;font-weight:600}
+body.rep-open{overflow:hidden}
+#report{position:fixed;inset:0;z-index:2000;background:rgba(15,27,45,.94);overflow:auto;padding:12px 12px 40px}
+.rep-bar{position:sticky;top:0;z-index:1;max-width:210mm;margin:0 auto 10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--panel);color:var(--fg);border-radius:10px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.rep-bar .rep-hint{flex:1 1 200px;font-size:12px;color:var(--muted)}
+.rep-page{max-width:210mm;margin:0 auto;background:#fff;color:#14202b;padding:14mm 13mm;border-radius:4px;font-size:12.5px;line-height:1.55;color-scheme:light}
+.rep-page h1{font-size:22px;margin:2px 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.rep-page h2{font-size:14px;margin:16px 0 6px;padding-bottom:3px;border-bottom:2px solid #14202b}
+.rep-page .rp-eye{font-size:11px;letter-spacing:.06em;color:#2f6bff;font-weight:700;margin:0}
+.rep-page .m{color:#5b6778;font-size:11px}
+.rep-page p{margin:4px 0}
+.rep-page ul{margin:4px 0;padding-left:18px}
+.rp-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}
+.rp-tiles .rt{border:1px solid #d9dee6;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.rp-tiles .rt b{font-size:19px}.rp-tiles .rt small{color:#5b6778;font-size:10.5px}
+.rp-tiles .spark{width:100%;height:24px}.rp-tiles .spark polygon{fill:#dfe8ff}.rp-tiles .spark polyline{fill:none;stroke:#2f6bff;stroke-width:1.5}
+.rp-two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rep-page table{width:100%;border-collapse:collapse;font-size:11px;margin:4px 0}
+.rep-page th,.rep-page td{border-bottom:1px solid #e3e7ee;padding:3px 5px;text-align:left;vertical-align:top}
+.rep-page th{color:#5b6778;font-weight:600;background:#f5f7fa}
+.rep-page td.n{text-align:right;white-space:nowrap}.rep-page td.c{text-align:center}
+.rp-foot{margin-top:12px;padding-top:8px;border-top:1px solid #d9dee6;font-size:10.5px;color:#3a4656}
+.rp-break{height:1px}
+@media (max-width:700px){.rep-page{padding:16px 14px}.rp-tiles{grid-template-columns:1fr 1fr}.rp-two{grid-template-columns:1fr}.rep-page table{display:block;overflow-x:auto}}
+@media print{
+  @page{size:A4;margin:12mm}
+  body.rep-open{background:#fff;overflow:visible}
+  body.rep-open > *:not(#report){display:none!important}
+  body.rep-open #report{position:static;padding:0;background:#fff;overflow:visible}
+  body.rep-open .rep-bar{display:none}
+  body.rep-open .rep-page{max-width:none;padding:0;border-radius:0}
+  .rp-break{break-before:page}
+  .rep-page tr,.rp-tiles .rt{break-inside:avoid}
+}
 .festinfo{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;font-size:13.5px;line-height:1.6}
 .festinfo:empty{display:none}
 .festinfo img{width:120px;height:80px;object-fit:cover;border-radius:6px;flex:none}
