@@ -2764,7 +2764,10 @@
       ? `<p class="sub" style="margin-bottom:8px">${esc(v.table)}(${esc(v.date)} 기준)의 시도별 관광숙박업 업체·객실 수와, 같은 날 영업·휴업 중이던 인허가 기록의 관광숙박업을 비교합니다. 객실은 인허가 기록에 적힌 값의 합(빈 값은 0)입니다.</p>`
         + '<div class="tablewrap"><table><thead><tr><th style="text-align:left">시도</th><th>공식 업체</th><th>인허가 기록</th><th>비율</th><th>공식 객실</th><th>인허가 객실</th><th>비율</th></tr></thead><tbody>'
         + v.rows.map(([nm, a, b, c, d]) => `<tr${nm === '합계' ? ' class="sum"' : ''}><td style="text-align:left">${esc(nm)}</td><td>${fmt(a)}</td><td>${fmt(b)}</td><td>${a ? (b / a * 100).toFixed(0) + '%' : '·'}</td><td>${c == null ? '·' : fmt(c)}</td><td>${fmt(d)}</td><td>${c ? (d / c * 100).toFixed(0) + '%' : '·'}</td></tr>`).join('')
-        + '</tbody></table></div><p class="note">비율 = 인허가 기록 ÷ 공식 통계. 100%에서 멀수록 인허가 데이터의 갱신 누락·업종 분류 차이가 크다는 뜻입니다. 공식 통계는 지자체 제출 자료라 같은 날짜라도 집계 시점이 조금 다를 수 있습니다.</p>'
+        + '</tbody></table></div>'
+        + (v.types && v.types.length ? '<h4 style="margin:14px 0 6px">세부 업종별 (전국)</h4><div class="tablewrap"><table><thead><tr><th style="text-align:left">업종</th><th>공식 업체</th><th>인허가 기록</th><th>비율</th><th>공식 객실</th><th>인허가 객실</th><th>비율</th></tr></thead><tbody>'
+          + v.types.filter(x => x[1] || x[2]).map(([nm, a, b, c, d]) => `<tr><td style="text-align:left">${esc(nm)}</td><td>${a ? fmt(a) : '·'}</td><td>${fmt(b)}</td><td>${a ? (b / a * 100).toFixed(0) + '%' : '·'}</td><td>${c ? fmt(c) : '·'}</td><td>${fmt(d)}</td><td>${c ? (d / c * 100).toFixed(0) + '%' : '·'}</td></tr>`).join('') + '</tbody></table></div>' : '')
+        + '<p class="note">비율 = 인허가 기록 ÷ 공식 통계. 업체 수가 100%를 넘으면 인허가 쪽에 폐업 반영이 늦거나 업종 분류가 다른 기록이, 모자라면 인허가 쪽 누락이 있다는 신호입니다. 인허가 객실은 신고된 값만 더해(빈 칸은 0) 공식 객실보다 작게 나옵니다. 공식 통계의 광주·전남은 전남광주통합특별시로 합쳤습니다. 공식 통계는 지자체 제출 자료라 같은 날짜라도 집계 시점이 조금 다를 수 있습니다.</p>'
       : '<p>공식 통계(문화체육관광부 「전국 관광숙박시설 현황」 시도별 업체·객실 수)와의 대조표가 여기에 나옵니다. 아직 그 자료를 받지 못했습니다.</p>'
         + '<p class="note">다른 업종(숙박업·농어촌민박업 등)은 인허가 데이터와 독립된 시도별 공식 집계를 공개 API로 찾지 못해 대조하지 않습니다. 통계청 전국사업체조사(숙박업)는 사업체 단위라 인허가 건수와 개념이 다릅니다.</p>';
     const raw = meta.counts ? Object.values(meta.counts.raw).reduce((a, b) => a + b, 0) : 0, kept = meta.counts ? meta.counts.kept : 0;

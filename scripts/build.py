@@ -1493,7 +1493,8 @@ def add_typology(sido_meta, cube_rows, types, visits):
 def add_validation(rows, sidos, merged):
     """meta "valid": 문화체육관광부 전국 관광숙박시설 현황 (raw/mcst_lodging.json, 시도별 관광숙박업 업체·객실) next to the
     permit records' 관광숙박업 operating or paused on the table's date (closed records without a date left out; 객실 =
-    reported values, empty as 0): {"table", "date", "rows": [[시도, 공식 업체, 인허가, 공식 객실 or None, 인허가 객실], …, 합계]}.
+    reported values, empty as 0): {"table", "date", "rows": [[시도, 공식 업체, 인허가, 공식 객실 or None, 인허가 객실], …, 합계]}
+    and, for the 시도-as-columns layout the ministry has used since 2023, "types" = the same per 세부 업종 nationally.
     The column layout is not fixed in advance, so the table is used only when it reads as exactly one total row per 시도
     (a 계/합계 column or row is taken when there are several); otherwise its columns are printed and None is returned."""
     path = os.path.join(RAW, "mcst_lodging.json")
@@ -1517,6 +1518,39 @@ def add_validation(rows, sidos, merged):
         except ValueError:
             return None
     total = lambda k: any(t in ("계", "합계", "총계", "소계", "전체") for t in re.split(r"[\s_()\[\]·-]+", k)) or "합계" in k or "총계" in k
+    ref = f"{title[-8:-4]}-{title[-4:-2]}-{title[-2:]}" if title[-8:].isdigit() else datetime.now(KST).strftime("%Y-%m-%d")
+
+    def ours_by(key):  # permit records' 관광숙박업 operating or paused on the table's date, by key(r)
+        out = defaultdict(lambda: [0, 0])
+        for r in rows:
+            if r["cat"] == "관광숙박업" and r["date"] and r["date"] <= ref and (r["status"] < 2 or (r["closed"] and r["closed"] > ref)):
+                out[key(r)][0] += 1
+                out[key(r)][1] += r["rooms"] or 0
+        return out
+    # layout used since 2023: 시도 are columns; rows are 구분 (업종) × 등급 × 분류 (업체수 / 객실수), no total rows
+    sido_cols = [k for k in keys if norm(k)]
+    kind = next((k for k in keys if any(str(r.get(k)) == "업체수" for r in recs)), None)
+    if len(sido_cols) >= 10 and kind:
+        typ = next((k for k in keys if k not in sido_cols and k != kind and any("업" in str(r.get(k) or "") for r in recs)), None)
+        cnt, rooms, tcnt, trooms = defaultdict(float), defaultdict(float), defaultdict(float), defaultdict(float)
+        for r in recs:
+            tgt, ttgt = (cnt, tcnt) if r[kind] == "업체수" else (rooms, trooms) if r[kind] == "객실수" else (None, None)
+            if tgt is None:
+                continue
+            for c in sido_cols:
+                v = num(r.get(c)) or 0
+                tgt[norm(c)] += v
+                if typ:
+                    ttgt[str(r[typ]).replace(" ", "")] += v
+        mine_s, mine_t = ours_by(lambda r: r["sido"]), ours_by(lambda r: r["type"].replace(" ", ""))
+        out = sorted(([s, round(cnt[s]), mine_s[s][0], round(rooms[s]), mine_s[s][1]] for s in cnt), key=lambda x: -x[1])
+        out.append(["합계", sum(x[1] for x in out), sum(x[2] for x in out), sum(x[3] for x in out), sum(x[4] for x in out)])
+        tout = sorted(([t, round(tcnt[t]), mine_t[t][0], round(trooms[t]), mine_t[t][1]] for t in tcnt), key=lambda x: -x[1])
+        other = {t: v for t, v in mine_t.items() if t not in tcnt}  # 인허가 쪽에만 있는 세부 업종(예: 관광숙박업(기타))
+        if other:
+            tout.append(["그 밖의 인허가 업종", 0, sum(v[0] for v in other.values()), 0, sum(v[1] for v in other.values())])
+        print(f"mcst_lodging: validation {ref}, official {out[-1][1]} / permit records {out[-1][2]} 관광숙박업, rooms {out[-1][3]} / {out[-1][4]}", flush=True)
+        return {"table": re.sub(r"_?\d{8}$", "", title).replace("_", " "), "date": ref, "rows": out, "types": tout}
     reg = max(keys, key=lambda k: sum(1 for r in recs if norm(r.get(k))), default=None)
     mine = [r for r in recs if reg and norm(r.get(reg))]
     if len({norm(r[reg]) for r in mine}) < 10:
@@ -1541,17 +1575,12 @@ def add_validation(rows, sidos, merged):
     if not cnt_k or bad:
         print(f"mcst_lodging: ambiguous layout (count column {cnt_k}, rooms column {room_k}, repeated 시도 {bad}); validation skipped", flush=True)
         return None
-    ref = f"{title[-8:-4]}-{title[-4:-2]}-{title[-2:]}" if title[-8:].isdigit() else datetime.now(KST).strftime("%Y-%m-%d")
-    ours = defaultdict(lambda: [0, 0])
-    for r in rows:
-        if r["cat"] == "관광숙박업" and r["date"] and r["date"] <= ref and (r["status"] < 2 or (r["closed"] and r["closed"] > ref)):
-            ours[r["sido"]][0] += 1
-            ours[r["sido"]][1] += r["rooms"] or 0
+    ours = ours_by(lambda r: r["sido"])
     out = sorted(([s, round(sum(num(x[cnt_k]) for x in xs)), ours[s][0], round(sum(num(x[room_k]) for x in xs)) if room_k else None, ours[s][1]]
                   for s, xs in by.items()), key=lambda x: -x[1])
     out.append(["합계", sum(x[1] for x in out), sum(x[2] for x in out), sum(x[3] for x in out) if room_k else None, sum(x[4] for x in out)])
     print(f"mcst_lodging: validation {ref}, official {out[-1][1]} / permit records {out[-1][2]} 관광숙박업 (count column {cnt_k}, rooms {room_k})", flush=True)
-    return {"table": re.sub(r"_?\d{8}$", "", title), "date": ref, "rows": out}
+    return {"table": re.sub(r"_?\d{8}$", "", title).replace("_", " "), "date": ref, "rows": out}
 
 
 PANEL_FROM = 2010
