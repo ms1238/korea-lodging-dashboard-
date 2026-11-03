@@ -503,6 +503,12 @@
       radBtn.onclick = () => { radiusOn = !radiusOn; radBtn.setAttribute('aria-pressed', String(radiusOn)); map.getCanvas().style.cursor = radiusOn ? 'crosshair' : '';
         if (!radiusOn && radPop) radPop.remove(); };
       map.on('mousemove', () => { if (radiusOn) map.getCanvas().style.cursor = 'crosshair'; });
+      map.on('click', e => {  // 행사 수용력: 지도에서 기준 지점 고르기
+        if (!evPicking) return;
+        evPicking = false; $('ev-pick').setAttribute('aria-pressed', 'false'); map.getCanvas().style.cursor = '';
+        evPoint = [e.lngLat.lat, e.lngLat.lng, `지도에서 고른 지점 (${e.lngLat.lat.toFixed(4)}, ${e.lngLat.lng.toFixed(4)})`, true]; evKey = '';
+        renderEvent(); $('ev-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
       map.on('click', async e => {
         if (!radiusOn) return;
         const { lat, lng: lon } = e.lngLat, kx = 111.32 * Math.cos(lat * Math.PI / 180), RR = [0.5, 1, 3];
@@ -734,7 +740,7 @@
     renderCompare();
     renderDemandVis();
     renderKix(); renderLodem(); renderFoodDem(); renderFood();
-    renderOverview(); renderPolicy();
+    renderOverview(); renderPolicy(); renderEvent();
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
@@ -2777,10 +2783,78 @@
     $('cite-text').textContent = `ms1238 (${meta.updated.slice(0, 4)}). 전국 숙박시설 현황 대시보드 [데이터셋]. https://ms1238.github.io/korea-lodging-dashboard-/ (자료 기준 ${meta.updated.slice(0, 10)}, 접속일 YYYY-MM-DD). 원자료: 행정안전부 숙박 인허가 데이터 외.`;
   })();
 
+  /* ---------- 행사 수용력: 기준 지점 반경 안 객실(보정) × 가용 비율 vs 방문객 × 숙박 비율 ÷ 객실당 인원 ---------- */
+  const EV_R = [1, 3, 5, 10, 20, 30];  // km
+  let evPoint = null, evPicking = false, evTok = 0, evKey = '';
+  const evRooms = r => {  // 신고 객실(업종 99.9백분위로 자름), 없으면 업종 중앙값. 펜션·야영장은 객실 칸이 없어 0
+    const rr = meta.room_rule || { med: [], cap: [] }, t = r[2], v = r[16];
+    return v > 0 ? Math.min(v, rr.cap[t] ?? v) : rr.med[t] || 0;
+  };
+  function evPlaces() {  // [이름, lat, lon]: 고른 지역의 중심, 그 지역의 축제·관광지
+    const r = curReg(), inR = (si, gi) => r.si >= 0 && inReg(r, si, gi), opts = [];
+    if (r.si >= 0) { const c = r.gi >= 0 ? S[r.si].sggc[r.gi] : S[r.si].c; if (c) opts.push(['지역', `${regLabel(r)} 중심`, c[0], c[1]]); }
+    if (FEST) for (const f of FEST.f) if (inR(f[3], f[4])) opts.push(['축제', f[2], f[0], f[1]]);
+    if (TRR) for (const t of TRR.t) if (inR(t[4], t[5])) opts.push([t[3] ? '관광단지' : '관광지', t[2], t[0], t[1]]);
+    return opts;
+  }
+  async function renderEvent() {
+    if (tab !== 'event') return;
+    const r = curReg(), key = regKey(r) + (FEST ? 'f' : '') + (TRR ? 't' : '');
+    if (key !== evKey) {  // 지역(또는 축제·관광지 자료)이 바뀌면 목록을 다시
+      evKey = key;
+      const opts = evPlaces(), groups = [...new Set(opts.map(o => o[0]))];
+      $('ev-place').innerHTML = (evPoint && evPoint[3] ? `<option value="pick">${esc(evPoint[2])}</option>` : '')
+        + groups.map(g => `<optgroup label="${esc(g)}">${opts.map((o, i) => o[0] === g ? `<option value="${i}">${esc(o[1])}</option>` : '').join('')}</optgroup>`).join('');
+      $('ev-place').dataset.opts = JSON.stringify(opts);
+      if (!evPoint || !evPoint[3]) evPoint = opts.length ? [opts[0][2], opts[0][3], opts[0][1], false] : null;
+    }
+    const num = id => Math.max(0, +$(id).value || 0), vis = num('ev-vis'), stay = num('ev-stay') / 100, ppr = Math.max(1, num('ev-ppr')), avail = num('ev-avail') / 100;
+    if (!evPoint) { $('ev-kpis').innerHTML = ''; $('ev-table').innerHTML = ''; $('ev-note').textContent = '광역이나 기초를 고르거나, 지도에서 지점을 고르세요.'; csvSet('ev-table', [], []); return; }
+    const [lat, lon, name] = evPoint, kx = 111.32 * Math.cos(lat * Math.PI / 180), maxR = EV_R.at(-1), tok = ++evTok;
+    const near = S.map((_, si) => si).filter(si => S[si].sggc.some(c => c && Math.hypot((c[0] - lat) * 110.95, (c[1] - lon) * kx) < maxR + 45));
+    const det = await Promise.all(near.map(loadDetail));
+    if (tok !== evTok) return;
+    const acc = EV_R.map(() => ({ n: 0, rooms: 0 }));
+    let noRoom = 0;
+    for (const d of det) for (const x of d.rows) {
+      if (x[0] == null || x[6] !== 0 || !state.types.has(x[2])) continue;
+      const d2 = ((x[0] - lat) * 110.95) ** 2 + ((x[1] - lon) * kx) ** 2;
+      if (d2 > maxR * maxR) continue;
+      const rm = evRooms(x); if (!rm) noRoom++;
+      EV_R.forEach((km, k) => { if (d2 <= km * km) { acc[k].n++; acc[k].rooms += rm; } });
+    }
+    const need = vis * stay / ppr, k10 = EV_R.indexOf(10), enough = EV_R.findIndex((_, k) => acc[k].rooms * avail >= need);
+    $('ev-sub').textContent = `${name} 기준 · ${state.types.size < T.length ? '선택한 업종 · ' : ''}영업 중인 숙소 · 직선거리`;
+    $('ev-kpis').innerHTML = [
+      [fmt(Math.round(need)) + '실', `필요 객실 (방문객 ${fmt(vis)}명 × ${Math.round(stay * 100)}% ÷ ${ppr}명)`],
+      [fmt(Math.round(acc[k10].rooms * avail)) + '실', `반경 10km 행사 가용 객실 (전체 ${fmt(Math.round(acc[k10].rooms))}실의 ${Math.round(avail * 100)}%)`],
+      [need === 0 ? '-' : enough >= 0 ? EV_R[enough] + 'km' : `${maxR}km 밖`, need === 0 ? '방문객·숙박 비율을 넣으세요' : enough >= 0 ? '필요 객실을 채우는 최소 반경' : `${maxR}km 안 객실로도 부족 (최대 ${Math.round(acc.at(-1).rooms * avail / need * 100)}%)`],
+    ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${esc(k[1])}</span></div>`).join('');
+    const pctOf = k => need ? Math.round(acc[k].rooms * avail / need * 100) : null;
+    $('ev-table').innerHTML = '<thead><tr><th>반경</th><th>영업 숙소</th><th>객실(보정)</th><th>행사 가용 객실</th><th>필요 객실 대비</th></tr></thead><tbody>'
+      + EV_R.map((km, k) => `<tr${k === enough ? ' class="sum"' : ''}><td>${km}km</td><td>${fmt(acc[k].n)}</td><td>${fmt(Math.round(acc[k].rooms))}</td><td>${fmt(Math.round(acc[k].rooms * avail))}</td><td style="color:${pctOf(k) == null ? '' : pctOf(k) >= 100 ? 'var(--ok)' : 'var(--closed)'}">${pctOf(k) == null ? '-' : pctOf(k) + '%'}</td></tr>`).join('') + '</tbody>';
+    $('ev-note').textContent = `객실(보정): 인허가 신고 객실, 비어 있으면 같은 업종의 중앙값, 업종 상위 0.1%를 넘으면 그 값으로 자름. 관광펜션업·야영장업은 원자료에 객실 칸이 없어 0으로 셉니다(${maxR}km 안 ${fmt(noRoom)}곳). `
+      + '동 단위 근사 위치의 숙소도 포함합니다. 미신고·공유숙박 숙소, 행사 기간의 기존 예약, 교통편은 반영하지 않으므로 계획의 출발점으로만 쓰세요.';
+    csvSet('ev-table', ['기준 지점', '반경(km)', '영업 숙소', '객실(보정)', '행사 가용 객실', '필요 객실', '필요 객실 대비(%)', '가정: 방문객', '숙박 비율(%)', '객실당 인원', '가용 비율(%)'],
+      EV_R.map((km, k) => [name, km, acc[k].n, Math.round(acc[k].rooms), Math.round(acc[k].rooms * avail), Math.round(need), pctOf(k) ?? '', vis, Math.round(stay * 100), ppr, Math.round(avail * 100)]));
+    drawRings([lat, lon], false, 'event', EV_R);
+  }
+  $('ev-place').onchange = () => {
+    const v = $('ev-place').value;
+    if (v !== 'pick') { const o = JSON.parse($('ev-place').dataset.opts || '[]')[+v]; if (o) evPoint = [o[2], o[3], o[1], false]; }
+    renderEvent(); if (evPoint) drawRings([evPoint[0], evPoint[1]], true, 'event', EV_R);
+  };
+  ['ev-vis', 'ev-stay', 'ev-ppr', 'ev-avail'].forEach(id => { $(id).oninput = renderEvent; });
+  $('ev-pick').onclick = () => {
+    if (!mapReady) { alert('지도를 불러오지 못해 지점을 고를 수 없습니다. 목록에서 고르세요.'); return; }
+    evPicking = !evPicking; $('ev-pick').setAttribute('aria-pressed', String(evPicking)); map.getCanvas().style.cursor = evPicking ? 'crosshair' : '';
+    if (evPicking) $('map-sec').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
   /* ---------- 탭 ---------- */
   // 탭은 관광 수용태세 영역별 8개 묶음, 묶음 안에 세부 탭(하나뿐이면 세부 줄을 숨김). tab은 세부 탭 이름이라 공유 링크(#tab=…)도 그대로 씀
   const GROUPS = [['diag', [['summary', '종합'], ['compare', '지역 비교']]], ['dem', [['demand', '방문자·수요']]], ['supply', [['now', '현황'], ['trend', '동향']]],
-    ['bal', [['balance', '수요 대비 숙소']]], ['access', [['transit', '대중교통']]],
+    ['bal', [['balance', '수요 대비 숙소'], ['event', '행사 수용력']]], ['access', [['transit', '대중교통']]],
     ['res', [['tourist', '관광지·단지'], ['park', '국립공원'], ['festival', '축제'], ['food', '미식']]],
     ['policy', [['policy', '규제·지정과 검토 신호'], ['minbak', '도시민박']]], ['method', [['method', '데이터·방법']]]];
   const TABS = GROUPS.flatMap(g => g[1].map(x => x[0])), groupOf = t => GROUPS.find(g => g[1].some(x => x[0] === t));
@@ -2805,6 +2879,7 @@
     if (PARK) showPark(t === 'park');
     if (t === 'summary') renderOverview();
     if (t === 'policy') renderPolicy();
+    if (t === 'event') renderEvent();
     writeHash();
   }
   $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b) { const g = GROUPS.find(x => x[0] === b.dataset.g); setTab(lastSub[g[0]] || g[1][0][0]); scrollTo({ top: 0, behavior: 'smooth' }); } });

@@ -1994,7 +1994,7 @@ def main():
             lat, lon = r["ll"] if r["ll"] else (None, None)
             out.append([lat, lon, tidx[(r["cat"], r["type"])], g, d, q, r["status"], y, cy,
                         r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0),
-                        r["zone"], r["bldg"]])
+                        r["zone"], r["bldg"], r["rooms"] or 0])
             if r["ll"]:
                 cen[r["sgg"]].append(r["ll"])
         # 읍·면·동 주민 수(생활계 인구현황): 같은 시군구의 같은 이름, 없으면 시도 안에서 이름이 하나뿐인 동
@@ -2137,6 +2137,7 @@ def main():
         "bus": bus,
         "stock_years": stock_years,
         "room_cov": room_cov,
+        "room_rule": (lambda mc: {"med": [mc[0].get(t) for t in range(len(types))], "cap": [mc[1].get(t) for t in range(len(types))]})(room_rule(rows, tidx)),
         "land_year": land_year,
         "urban_year": urban_year,
         "valid": valid,
