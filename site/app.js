@@ -740,7 +740,7 @@
     renderCompare();
     renderDemandVis();
     renderKix(); renderLodem(); renderFoodDem(); renderFood();
-    renderOverview(); renderPolicy(); renderEvent();
+    renderOverview(); renderPolicy(); renderEvent(); renderFav();
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
@@ -2850,6 +2850,34 @@
     evPicking = !evPicking; $('ev-pick').setAttribute('aria-pressed', String(evPicking)); map.getCanvas().style.cursor = evPicking ? 'crosshair' : '';
     if (evPicking) $('map-sec').scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
+
+  /* ---------- 관심 지역: 이 기기(localStorage)에만 저장, 칩을 누르면 그 지역으로 ---------- */
+  const FAV_KEY = 'favRegions';
+  // 여기서는 형식만 확인(parseReg는 아래에서 정의되어 지금 부르면 안 됨). 이름이 바뀐 지역은 그릴 때 건너뜀
+  const favLoad = () => { try { const x = JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); return Array.isArray(x) ? x.filter(k => typeof k === 'string') : []; } catch { return []; } };
+  const favSave = xs => { try { localStorage.setItem(FAV_KEY, JSON.stringify(xs)); } catch { /* 저장소를 못 쓰면 이번 방문 동안만 */ } };
+  let favs = favLoad();
+  function renderFav() {
+    const r = unionOn() ? null : curReg(), k = r && r.si >= 0 ? regKey(r) : null, on = !!k && favs.includes(k);
+    $('fav-toggle').disabled = !k;
+    $('fav-toggle').setAttribute('aria-pressed', String(on));
+    $('fav-toggle').textContent = on ? '★ 관심 지역' : '☆ 관심 지역';
+    $('fav-chips').innerHTML = favs.map(f => { const q = parseReg(f); return q ? `<span class="chip fav" data-fav="${esc(f)}" title="이 지역으로 이동"><span>★ ${esc(regLabel(q))}</span><button type="button" data-unfav="${esc(f)}" aria-label="${esc(regLabel(q))} 관심 지역에서 빼기">×</button></span>` : ''; }).join('');
+  }
+  $('fav-toggle').onclick = () => {
+    const r = curReg(); if (!r || r.si < 0) return;
+    const k = regKey(r); favs = favs.includes(k) ? favs.filter(x => x !== k) : [...favs, k].slice(-12);
+    favSave(favs); renderFav();
+  };
+  $('fav-chips').addEventListener('click', async e => {
+    const x = e.target.closest('[data-unfav]');
+    if (x) { favs = favs.filter(f => f !== x.dataset.unfav); favSave(favs); renderFav(); return; }
+    const c = e.target.closest('[data-fav]'); if (!c) return;
+    const q = parseReg(c.dataset.fav); if (!q || q.si < 0) return;
+    if (U) { $('cmp-union').checked = false; await applyUnion(); }
+    await setSido(q.si);
+    if (q.gi >= 0) setSgg(q.gi); else if (q.grp != null) await setGroup(q.grp);
+  });
 
   /* ---------- 탭 ---------- */
   // 탭은 관광 수용태세 영역별 8개 묶음, 묶음 안에 세부 탭(하나뿐이면 세부 줄을 숨김). tab은 세부 탭 이름이라 공유 링크(#tab=…)도 그대로 씀
