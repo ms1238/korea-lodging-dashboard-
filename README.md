@@ -57,7 +57,7 @@
 
 1. Settings → Secrets and variables → Actions → New repository secret: 이름 `DATA_GO_KR_KEY`, 값은 공공데이터포털 일반 인증키.
 2. Settings → Pages → Build and deployment → Source: **GitHub Actions**.
-3. Actions 탭 → "Update data and deploy" → Run workflow.
+3. Actions 탭 → "Update data and deploy" → Run workflow. 새로 활용신청한 API처럼 **빠진 자료만** 받으려면 'only_missing'을 켜고 실행하세요(다른 API의 하루 호출 한도를 다시 쓰지 않음).
 
 ## 로컬 실행
 

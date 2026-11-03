@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "17 18 * * *"   # 매일 03:17 KST
   workflow_dispatch:
+    inputs:
+      only_missing:
+        description: "빠진 자료만 받기 (새로 활용신청한 API 등). 끄면 전체 수집"
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: ["site/**", "scripts/**", ".github/workflows/**", "requirements.txt"]
@@ -37,13 +42,13 @@ jobs:
           key: raw-${{ github.run_id }}
           restore-keys: raw-
       - name: Fetch permit APIs, TourAPI, DataLab and arrivals
-        if: github.event_name != 'push' || steps.raw.outputs.cache-matched-key == ''
+        if: (github.event_name != 'push' && !inputs.only_missing) || steps.raw.outputs.cache-matched-key == ''
         env:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           REB_KEY: ${{ secrets.REB_KEY }}
         run: python scripts/fetch.py
       - name: Fetch only sources missing from the cached data (code pushes)
-        if: github.event_name == 'push' && steps.raw.outputs.cache-matched-key != ''
+        if: (github.event_name == 'push' || inputs.only_missing) && steps.raw.outputs.cache-matched-key != ''
         env:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           REB_KEY: ${{ secrets.REB_KEY }}
@@ -58,7 +63,7 @@ jobs:
         run: python scripts/build.py
       # The permit APIs only give the current state, so keep the first scheduled/manual build of each month.
       - name: Monthly snapshot (GitHub Release)
-        if: github.event_name != 'push'
+        if: github.event_name != 'push' && !inputs.only_missing
         env:
           GH_TOKEN: ${{ github.token }}
           # optional DOI: Zenodo token secret + the record id variable (scripts/zenodo.py); without the token this is skipped
