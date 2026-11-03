@@ -740,7 +740,7 @@
     renderCompare();
     renderDemandVis();
     renderKix(); renderLodem(); renderFoodDem(); renderFood();
-    renderOverview(); renderPolicy(); renderEvent(); renderFav();
+    renderOverview(); renderPolicy(); renderEvent(); renderFav(); renderEffect();
     renderSupply();
     renderSummary(a, renderTrend(names));
     renderMinbak(names);
@@ -2851,6 +2851,110 @@
     if (evPicking) $('map-sec').scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
+  /* ---------- 사업 전후 비교: 시군구별 연도 재고·신생·소멸(패널 CSV와 같은 규칙)과 연간 외지인 ---------- */
+  const EFF_Y0 = 2005;
+  let effCache = null;
+  function effTable() {  // 'si:gi' → {stock, birth, death}[연도 - EFF_Y0], 선택 업종 기준. 폐업일 없는 폐업 기록은 뺌
+    const sig = [...state.types].join(',');
+    if (effCache && effCache.sig === sig) return effCache.t;
+    const n = yNow - EFF_Y0, t = {}, at = (si, gi) => (t[si + ':' + gi] ||= { stock: new Array(n).fill(0), birth: new Array(n).fill(0), death: new Array(n).fill(0) });
+    for (const c of cube) {  // 지금 영업·휴업: 인허가 해부터 계속 재고
+      if (!state.types.has(c[2]) || c[3] >= 2 || !c[4]) continue;
+      const x = at(c[0], c[1]);
+      for (let y = Math.max(c[4], EFF_Y0); y < yNow; y++) x.stock[y - EFF_Y0] += c[5];
+      if (c[4] >= EFF_Y0 && c[4] < yNow) x.birth[c[4] - EFF_Y0] += c[5];
+    }
+    for (const c of close) {  // 폐업: 인허가 해부터 폐업 전 해까지 재고, 폐업한 해에 소멸
+      if (!state.types.has(c[2]) || !c[4]) continue;
+      const x = at(c[0], c[1]);
+      for (let y = Math.max(c[4], EFF_Y0); y < Math.min(c[3], yNow); y++) x.stock[y - EFF_Y0] += c[5];
+      if (c[4] >= EFF_Y0 && c[4] < yNow && c[3] >= c[4]) x.birth[c[4] - EFF_Y0] += c[5];
+      if (c[3] >= EFF_Y0 && c[3] < yNow) x.death[c[3] - EFF_Y0] += c[5];
+    }
+    effCache = { sig, t };
+    return t;
+  }
+  const effVis = (si, gi, y) => {  // 그해 외지인 누적 방문자(네 분기가 다 있고 날짜가 다 찬 해만)
+    if (!visits || !visits.sgg) return null;
+    const ser = (visits.sgg[si] || [])[gi], idx = [1, 2, 3, 4].map(k => visits.q.indexOf(`${y}Q${k}`));
+    if (!ser || idx.includes(-1) || idx.reduce((a, i) => a + visits.qdays[i], 0) < 365) return null;
+    return idx.every(i => ser[0][i] != null) ? idx.reduce((a, i) => a + ser[0][i], 0) : null;
+  };
+  function effIdxChart(svg, years, series, base) {  // 지수 꺾은선: 세로축은 값 범위에 맞춤, base 연도에 세로선
+    const W = 900, H = 260, L = 48, R = 14, Tp = 14, B = 28, iw = W - L - R, ih = H - Tp - B;
+    const all = series.flatMap(s => s.vals).filter(v => v != null), lo = Math.min(100, ...all), hi = Math.max(100, ...all), pad = (hi - lo) * .1 || 5;
+    const y0 = Math.floor((lo - pad) / 5) * 5, y1 = Math.ceil((hi + pad) / 5) * 5, X = i => L + (years.length < 2 ? iw / 2 : i / (years.length - 1) * iw), Y = v => Tp + ih - (v - y0) / (y1 - y0) * ih;
+    const step = Math.max(5, Math.ceil((y1 - y0) / 6 / 5) * 5);
+    let s = '';
+    for (let v = y0; v <= y1; v += step) s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
+    const bi = years.indexOf(base);
+    if (bi >= 0) s += `<line x1="${X(bi)}" x2="${X(bi)}" y1="${Tp}" y2="${Tp + ih}" stroke="var(--muted)" stroke-dasharray="4 4"/><text x="${X(bi) + 4}" y="${Tp + 10}" fill="var(--muted)">사업 시작</text>`;
+    years.forEach((y, i) => { s += `<text x="${X(i)}" y="${H - 8}" text-anchor="middle">${y}</text>`; });
+    for (const se of series) {
+      let d = ''; se.vals.forEach((v, i) => { if (v != null) d += (d && se.vals[i - 1] != null ? 'L' : 'M') + `${X(i)},${Y(v)}`; });
+      s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.4"/>` + se.vals.map((v, i) => v == null ? '' : `<circle cx="${X(i)}" cy="${Y(v)}" r="3" fill="${se.color}"><title>${esc(se.name)} ${years[i]}: ${v.toFixed(1)}</title></circle>`).join('');
+    }
+    svg.innerHTML = s;
+  }
+  function renderEffect() {
+    if (tab !== 'effect') return;
+    const last = yNow - 1, span = +$('eff-span').value;
+    if (!$('eff-year').options.length) { for (let y = last; y >= EFF_Y0 + 3; y--) $('eff-year').add(new Option(y + '년', y)); $('eff-year').value = String(yNow - 4); }
+    const base = +$('eff-year').value, who = $('eff-who').value, ctrl = $('eff-ctrl').value;
+    // 대상: 시군구 목록(si, gi)
+    const sggOf = r => r.si < 0 ? [] : (gisOf(r) || S[r.si].sgg.map((_, gi) => gi)).map(gi => [r.si, gi]);
+    const regs = who === 'cmp' ? state.cmp : unionOn() ? [] : [curReg()];
+    const treat = regs.flatMap(sggOf), tset = new Set(treat.map(([si, gi]) => si + ':' + gi));
+    const msg = m => { $('eff-kpis').innerHTML = ''; $('eff-chart').innerHTML = ''; $('eff-legend').innerHTML = ''; $('eff-table').innerHTML = ''; $('eff-note').textContent = m; csvSet('eff-table', [], []); };
+    if (!treat.length) return msg(who === 'cmp' ? "비교 목록이 비어 있습니다. 상단에서 지역을 고르고 '＋ 비교에 추가'로 사업 대상 지역을 담으세요." : '광역이나 기초를 고르세요(전국은 비교 집단이 없습니다).');
+    const t0 = typOf(regs[0]), sid = treat[0][0];
+    const ctrlOk = (si, gi) => !tset.has(si + ':' + gi) && (ctrl === 'all' || (ctrl === 'sido' && si === sid) || (ctrl === 'decl' && (S[si].decl || [])[gi] === 1) || (ctrl === 'type' && t0 != null && (S[si].typ || [])[gi] === t0));
+    if (ctrl === 'type' && t0 == null) return msg('같은 유형 비교는 기초 지역 하나를 골랐을 때만 됩니다. 다른 비교 집단을 고르세요.');
+    const control = S.flatMap((sd, si) => sd.sgg.map((_, gi) => [si, gi])).filter(([si, gi]) => ctrlOk(si, gi));
+    if (control.length < 3) return msg('비교 집단이 3곳 미만이라 비교하지 않습니다. 다른 비교 집단을 고르세요.');
+    const tb = effTable(), sum = (set, k, y) => set.reduce((a, [si, gi]) => a + ((tb[si + ':' + gi] || {})[k]?.[y - EFF_Y0] || 0), 0);
+    const visSum = (set, y) => { let a = 0; for (const [si, gi] of set) { const v = effVis(si, gi, y); if (v == null) return null; a += v; } return a; };
+    const yA = Math.max(EFF_Y0, base - 1 - span), yB = Math.min(last, base - 1 + span), years = []; for (let y = yA; y <= yB; y++) years.push(y);
+    const idx = set => { const b = sum(set, 'stock', base - 1); return years.map(y => b ? sum(set, 'stock', y) / b * 100 : null); };
+    const rate = (set, k, ys) => { const a = ys.reduce((p, y) => p + sum(set, 'stock', y) + sum(set, 'death', y), 0); return a ? ys.reduce((p, y) => p + sum(set, k, y), 0) / a : null; };
+    const growth = (set, y1, y2) => { const a = sum(set, 'stock', y1), b = sum(set, 'stock', y2); return a ? b / a - 1 : null; };
+    const vgrowth = (set, y1, y2) => { const a = visSum(set, y1), b = visSum(set, y2); return a && b != null ? b / a - 1 : null; };
+    const pre = [], post = []; for (let y = base - span; y <= base - 1; y++) if (y >= EFF_Y0) pre.push(y); for (let y = base; y <= Math.min(last, base + span - 1); y++) post.push(y);
+    const tName = who === 'cmp' ? `대상 ${regs.length}곳` : regLabel(regs[0]), cName = { type: `같은 유형(${t0 != null ? TYP.types[t0].name : ''})`, sido: `${S[sid].name}의 다른 시군구`, decl: '인구감소지역', all: '전국 시군구' }[ctrl] + ` ${control.length}곳`;
+    const short = post.length < span;
+    const rows = [  // [지표, 사업 전 대상, 사업 전 비교, 사업 후 대상, 사업 후 비교, 형식]
+      ['숙소 재고 증가율', growth(treat, base - 1 - span, base - 1), growth(control, base - 1 - span, base - 1), growth(treat, base - 1, base - 1 + post.length), growth(control, base - 1, base - 1 + post.length), 'pct'],
+      ['연평균 신생률', rate(treat, 'birth', pre), rate(control, 'birth', pre), rate(treat, 'birth', post), rate(control, 'birth', post), 'rate'],
+      ['연평균 소멸률', rate(treat, 'death', pre), rate(control, 'death', pre), rate(treat, 'death', post), rate(control, 'death', post), 'rate'],
+      ['외지인 누적 방문자 증가율', vgrowth(treat, base - 1 - span, base - 1), vgrowth(control, base - 1 - span, base - 1), vgrowth(treat, base - 1, base - 1 + post.length), vgrowth(control, base - 1, base - 1 + post.length), 'pct'],
+    ];
+    const did = x => [x[1], x[2], x[3], x[4]].some(v => v == null) ? null : (x[3] - x[4]) - (x[1] - x[2]);
+    const pp = v => v == null ? '-' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`, ppp = v => v == null ? '-' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%p`;
+    $('eff-sub').textContent = `${tName} vs ${cName} · 사업 시작 ${base}년 · 전후 ${span}년${short ? `(사업 후는 ${post.length}년만 자료 있음)` : ''} · ${state.types.size < T.length ? '선택 업종' : '전체 업종'}`;
+    if (!post.length) return msg(`${base}년 이후 다 끝난 해가 없어 사업 후를 볼 수 없습니다. 더 이른 연도를 고르세요.`);
+    const d0 = did(rows[0]);
+    $('eff-kpis').innerHTML = [
+      [pp(rows[0][3]), `사업 후 ${post.length}년 숙소 증가율 · ${tName}`],
+      [pp(rows[0][4]), `같은 기간 비교 집단`],
+      [ppp(d0), '이중차분(사업 후 차이 − 사업 전 차이)'],
+    ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${esc(k[1])}</span></div>`).join('');
+    const ser = [{ name: tName, color: 'var(--c0)', vals: idx(treat) }, { name: cName, color: 'var(--c3)', vals: idx(control) }];
+    $('eff-legend').innerHTML = ser.map(x => `<span><i style="background:${x.color}"></i>${esc(x.name)}</span>`).join('');
+    effIdxChart($('eff-chart'), years, ser, base);
+    $('eff-table').innerHTML = '<thead><tr><th style="text-align:left">지표</th><th>사업 전 대상</th><th>사업 전 비교</th><th>사업 후 대상</th><th>사업 후 비교</th><th>이중차분</th></tr></thead><tbody>'
+      + rows.map(x => { const f = x[5] === 'rate' ? (v => v == null ? '-' : (v * 100).toFixed(1) + '%') : pp;
+        return `<tr><td style="text-align:left">${esc(x[0])}</td><td>${f(x[1])}</td><td>${f(x[2])}</td><td>${f(x[3])}</td><td>${f(x[4])}</td><td><b>${ppp(did(x))}</b></td></tr>`; }).join('') + '</tbody>';
+    const preGap = rows[0][1] != null && rows[0][2] != null ? rows[0][1] - rows[0][2] : null;
+    $('eff-note').textContent = `사업 전 = ${pre[0]}~${pre.at(-1)}년, 사업 후 = ${post[0]}~${post.at(-1)}년. 증가율은 사업 전 ${base - 1 - span}년 말→${base - 1}년 말, 사업 후 ${base - 1}년 말→${base - 1 + post.length}년 말. `
+      + '신생률·소멸률 = 신규·폐업 ÷ 그해 활동 숙소(통계청 기업생멸 정의). 이중차분은 사업 후 대상·비교의 차이에서 사업 전 차이를 뺀 값으로, 두 집단이 사업이 없었다면 같은 흐름이었을 것이라는 가정 아래에서만 사업의 영향을 가리킵니다. '
+      + (preGap != null && Math.abs(preGap) > .05 ? `사업 전에도 증가율 차이가 ${ppp(preGap)}로 커서 이 가정이 약합니다. ` : '')
+      + '같은 기간의 다른 정책·경기·행정구역 변경·자료 누락도 결과에 섞입니다. 외지인 방문자는 2018년부터 있습니다.';
+    csvSet('eff-table', ['연도', `${tName} 연말 숙소`, `${cName} 연말 숙소`, `${tName} 지수(${base - 1}=100)`, `${cName} 지수`, `${tName} 신규`, `${tName} 폐업`, `${cName} 신규`, `${cName} 폐업`, `${tName} 외지인`, `${cName} 외지인`],
+      years.map((y, i) => [y, sum(treat, 'stock', y), sum(control, 'stock', y), ser[0].vals[i] == null ? '' : +ser[0].vals[i].toFixed(2), ser[1].vals[i] == null ? '' : +ser[1].vals[i].toFixed(2),
+        sum(treat, 'birth', y), sum(treat, 'death', y), sum(control, 'birth', y), sum(control, 'death', y), visSum(treat, y) ?? '', visSum(control, y) ?? '']));
+  }
+  ['eff-who', 'eff-year', 'eff-span', 'eff-ctrl'].forEach(id => { $(id).onchange = renderEffect; });
+
   /* ---------- 관심 지역: 이 기기(localStorage)에만 저장, 칩을 누르면 그 지역으로 ---------- */
   const FAV_KEY = 'favRegions';
   // 여기서는 형식만 확인(parseReg는 아래에서 정의되어 지금 부르면 안 됨). 이름이 바뀐 지역은 그릴 때 건너뜀
@@ -2884,7 +2988,7 @@
   const GROUPS = [['diag', [['summary', '종합'], ['compare', '지역 비교']]], ['dem', [['demand', '방문자·수요']]], ['supply', [['now', '현황'], ['trend', '동향']]],
     ['bal', [['balance', '수요 대비 숙소'], ['event', '행사 수용력']]], ['access', [['transit', '대중교통']]],
     ['res', [['tourist', '관광지·단지'], ['park', '국립공원'], ['festival', '축제'], ['food', '미식']]],
-    ['policy', [['policy', '규제·지정과 검토 신호'], ['minbak', '도시민박']]], ['method', [['method', '데이터·방법']]]];
+    ['policy', [['policy', '규제·지정과 검토 신호'], ['effect', '사업 전후 비교'], ['minbak', '도시민박']]], ['method', [['method', '데이터·방법']]]];
   const TABS = GROUPS.flatMap(g => g[1].map(x => x[0])), groupOf = t => GROUPS.find(g => g[1].some(x => x[0] === t));
   const lastSub = {};
   let tab = TABS.includes(initHash.get('tab')) ? initHash.get('tab') : 'summary';
@@ -2908,6 +3012,7 @@
     if (t === 'summary') renderOverview();
     if (t === 'policy') renderPolicy();
     if (t === 'event') renderEvent();
+    if (t === 'effect') renderEffect();
     writeHash();
   }
   $('tabs').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b) { const g = GROUPS.find(x => x[0] === b.dataset.g); setTab(lastSub[g[0]] || g[1][0][0]); scrollTo({ top: 0, behavior: 'smooth' }); } });
