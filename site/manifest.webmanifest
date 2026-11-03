@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "name": "숙박관광 대시보드",
+  "short_name": "숙박관광",
+  "description": "전국 숙박시설 인허가와 관광 수요·접근성·정책 맥락을 매일 갱신해 보여 주는 관광 수용태세 대시보드",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./?source=app",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f6f8",
+  "theme_color": "#0f1b2d",
+  "categories": ["travel", "business", "productivity"],
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    {"src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
+}

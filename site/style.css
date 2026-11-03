@@ -253,6 +253,8 @@ th:first-child,td:first-child{text-align:left}
 .roles .q{font:inherit;font-size:12.5px;line-height:1.4;padding:4px 10px;border-radius:999px;border:1px solid rgba(143,176,255,.45);background:rgba(47,107,255,.18);color:#e9eef6;cursor:pointer;text-decoration:none}
 .roles .q:hover{background:rgba(47,107,255,.35)}
 .linkbtn{border:0;background:none;padding:0;font:inherit;font-size:13px;color:#dfe7f5;text-decoration:underline;cursor:pointer}
+.appbtn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:#fff;font:inherit;font-size:13px;font-weight:600;border-radius:999px;padding:5px 14px;cursor:pointer;margin-left:10px}
+.appbtn:hover{background:rgba(255,255,255,.22)}
 #ytd-table tr.sum td{font-weight:700}
 @media (max-width:520px){.roles > div{grid-template-columns:86px minmax(0,1fr)}.roles dt{font-size:12px;white-space:nowrap}.roles dd .q + .q{display:none}.intro .ex,.intro .hint{display:none}}  /* 휴대폰: 역할마다 질문 하나만 */
 .choro{margin-top:8px;display:flex;flex-direction:column;gap:6px;font-size:13px}

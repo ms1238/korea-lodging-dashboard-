@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>전국 숙박시설 현황</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f1b2d">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="숙박관광">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<script src="pwa.js" defer></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <link rel="stylesheet" href="style.css">
@@ -16,7 +25,8 @@
     <p class="sub">행정안전부 인허가 API 8종과 한국관광공사 관광지 정보를 매일 자동으로 모읍니다. <span id="updated"></span></p>
     <div class="meta"><details class="fresh" id="fresh"><summary>데이터 기준일</summary><div class="tablewrap"><table id="fresh-table"></table></div>
       <p class="note">자료마다 공개 주기가 달라 최신 시점이 다릅니다. 인용할 때는 이 기준일을 함께 적어 주세요.</p></details>
-    <p class="dl">전체 시설 내려받기: <a href="data/download/lodging.csv.gz" download>CSV (gzip, 약 5MB)</a> · <a href="codebook.html">코드북</a> · <a href="https://github.com/ms1238/korea-lodging-dashboard-/releases">월별 스냅샷</a></p><button class="linkbtn" id="intro-open" type="button" hidden>어떤 일에 쓰나요?</button></div></div>
+    <p class="dl">전체 시설 내려받기: <a href="data/download/lodging.csv.gz" download>CSV (gzip, 약 5MB)</a> · <a href="codebook.html">코드북</a> · <a href="https://github.com/ms1238/korea-lodging-dashboard-/releases">월별 스냅샷</a></p><button class="linkbtn" id="intro-open" type="button" hidden>어떤 일에 쓰나요?</button><button class="appbtn" id="app-install" type="button" hidden>📲 앱으로 설치</button>
+    <p class="note" id="app-ios" hidden>iPhone·iPad: Safari 아래쪽 공유 단추 → '홈 화면에 추가'를 누르면 '숙박관광' 앱으로 쓸 수 있습니다.</p></div></div>
     <div class="intro" id="intro"><button class="x" id="intro-x" type="button" aria-label="안내 닫기">×</button>
       <b>어떤 일에 쓰시나요?</b> <span class="hint">질문을 누르면 답이 있는 화면으로 갑니다.</span>
       <dl class="roles">

@@ -39,6 +39,20 @@
 - 데이터·방법 탭의 공식 통계 대조는 문화체육관광부 「전국 관광숙박시설 현황」(공공데이터포털 3075666)을 씁니다. 공공데이터포털에서 이 데이터의 **활용신청**을 해야 `DATA_GO_KR_KEY`로 받아집니다(신청 전에는 건너뜀).
 - `CITATION.cff` — GitHub의 'Cite this repository'. 월별 스냅샷에 DOI를 붙이려면(선택) zenodo.org 개인 토큰(deposit:write, deposit:actions)을 secret `ZENODO_TOKEN`으로 넣습니다. 첫 달에 새 레코드가 만들어지고 로그에 나온 레코드 번호를 variable `ZENODO_DEPOSITION`에 넣으면 다음 달부터 같은 DOI의 새 버전이 됩니다. 라이선스는 variable `ZENODO_LICENSE`(예: `cc-by-4.0`), 저자명은 `ZENODO_CREATOR`. `ZENODO_API=https://sandbox.zenodo.org/api`로 먼저 시험할 수 있습니다(`scripts/zenodo.py`).
 
+## 앱(PWA) '숙박관광 대시보드'
+
+사이트가 설치형 웹앱입니다. 안드로이드·PC 크롬/엣지는 머리말의 '앱으로 설치' 단추(또는 주소창 설치 아이콘), iPhone·iPad는 Safari 공유 단추 → '홈 화면에 추가'.
+
+- `site/manifest.webmanifest` — 앱 이름·아이콘·색. `id`는 바꾸지 마세요(설치된 앱의 신원).
+- `site/sw.js` — 한 번 연 화면과 자료를 저장해 오프라인에서도 열림(자료는 온라인이면 늘 새로 받음). 배포 때 워크플로가 `__BUILD__`에 커밋을 넣어 새 버전으로 바뀝니다. 지도 타일과 CSV 내려받기는 저장하지 않습니다.
+- `site/pwa.js` — 서비스 워커 등록, 설치 단추, iPhone 안내. `site/icons/` — 아이콘(원본 `icon.svg`, 안드로이드 둥근 마스크용 `maskable.svg`).
+
+상용화(스토어 등록) 전에 정할 것:
+1. **도메인**: 설치된 앱은 주소(origin)에 묶여, 나중에 도메인을 옮기면 사용자가 다시 설치해야 합니다. 상용화하려면 자체 도메인을 먼저 정하세요.
+2. **Google Play(TWA)**: PWABuilder나 Bubblewrap으로 이 PWA를 감쌉니다. 도메인 루트에 `/.well-known/assetlinks.json`이 있어야 해서 지금 주소(`ms1238.github.io/korea-lodging-dashboard-/`)로는 어렵고 자체 도메인이 필요합니다. 개발자 등록비, 개인정보처리방침 URL, 신규 개인 계정의 비공개 테스트 요건은 등록 시점 정책을 확인하세요.
+3. **App Store**: 웹을 감싸기만 한 앱은 심사(최소 기능 기준)에서 거절되기 쉬워, 알림·즐겨찾기 지역 같은 앱 전용 기능을 먼저 갖추는 편이 낫습니다.
+4. **자료 이용 조건**: 공공누리 1유형(출처 표시)은 상업 이용이 됩니다. VWorld(페이지에 키가 노출됨), 지도 타일(OpenFreeMap), 한국관광공사 데이터랩·TourAPI는 상업 서비스 조건을 각각 확인하세요.
+
 ## 처음 설정
 
 1. Settings → Secrets and variables → Actions → New repository secret: 이름 `DATA_GO_KR_KEY`, 값은 공공데이터포털 일반 인증키.

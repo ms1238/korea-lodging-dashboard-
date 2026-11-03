@@ -87,7 +87,9 @@ jobs:
           VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
         run: if [ -n "$VWORLD_KEY" ]; then sed -i "s|__VWORLD_KEY__|$VWORLD_KEY|" site/app.js; fi
       - name: Version the page assets so browsers do not mix a new page with cached old scripts
-        run: sed -i -E "s/(app\.js|style\.css)\"/\1?v=${GITHUB_SHA::7}\"/g" site/index.html
+        run: |
+          sed -i -E "s/(app\.js|style\.css|pwa\.js)\"/\1?v=${GITHUB_SHA::7}\"/g" site/index.html
+          sed -i "s/__BUILD__/${GITHUB_SHA::7}/" site/sw.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
