@@ -456,13 +456,13 @@ def fetch_trrsrt(key):
 
 def fetch_transit_stops(_key):
     """Bus stops from the transit-gap dashboard (국토교통부 위치 + OSM 보완, 정차 노선수 matched by name):
-    {stops: [[lon, lat, routes (-1 unknown), osm]], grid_bounds, route_days}."""
+    {stops: [[lon, lat, routes (-1 unknown), osm]], route_days}."""
     stops = requests.get(TRANSIT + "stops.json", timeout=120).json()
     meta = requests.get(TRANSIT + "stats.json", timeout=120).json()["meta"]
     print(f"transit_stops: {len(stops)} stops, route counts for {sum(1 for s in stops if s[2] >= 0)} ({', '.join(meta.get('route_days', []))})", flush=True)
     if len(stops) < 100000:
         raise RuntimeError(f"only {len(stops)} stops")
-    save_json("transit_stops.json", {"stops": stops, "grid_bounds": meta.get("grid_bounds"), "route_days": meta.get("route_days", [])})
+    save_json("transit_stops.json", {"stops": stops, "route_days": meta.get("route_days", [])})
 
 
 def fetch_bus_official(key):

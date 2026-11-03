@@ -481,12 +481,7 @@
         pop(e.lngLat, `<b>${esc(p.park)}</b><br>지도상 면적 약 ${fmt(p.km2)}㎢<br><small>${p.src === 'traced' ? '지정 도면을 따라 그린 근사 경계 (지정 면적 66.859㎢) · 2026.3.3 지정' : '출처: OpenStreetMap 경계 (공식 지정 면적과 다를 수 있음)'}</small>`);
       });
       map.on('click', 'rail-st', e => { if (radiusOn) return; const p = e.features[0].properties; pop(e.lngLat, `<b>${esc(p['name:ko'] || p.name || '역')}</b><br><small>출처: OpenStreetMap</small>`); });
-      if (meta.transit && meta.transit.grid_bounds) {  // 교통소외 대시보드의 PM 연계 격자 (도보권은 투명)
-        const [tl, br] = meta.transit.grid_bounds;
-        map.addSource('pmgrid', { type: 'image', url: 'https://ms1238.github.io/korea-transit-gap/data/pmgrid.png', coordinates: [tl, [br[0], tl[1]], br, [tl[0], br[1]]] });
-        map.addLayer({ id: 'pmgrid', type: 'raster', source: 'pmgrid', layout: { visibility: 'none' }, paint: { 'raster-opacity': 0.75, 'raster-resampling': 'nearest' } }, map.getLayer('pts') ? 'pts' : undefined);
-      } else $('pmgrid-wrap').hidden = true;
-      for (const [ck, ls] of [['ck-pmgrid', ['pmgrid']], ['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']]]) {
+      for (const [ck, ls] of [['ck-park', ['park-fill', 'park-line', 'park-label']], ['ck-air', ['airports']], ['ck-rail', ['rail-line', 'rail-st', 'subway']], ['ck-ktx', ['ktx']], ['ck-food0', ['food0']], ['ck-food1', ['food1']], ['ck-bus', ['bus0', 'bus1']]]) {
         const sync = () => ls.forEach(l => map.getLayer(l) && map.setLayoutProperty(l, 'visibility', $(ck).checked ? 'visible' : 'none'));
         $(ck).onchange = sync; sync();
       }

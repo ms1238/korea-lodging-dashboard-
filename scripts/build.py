@@ -54,7 +54,7 @@ Steps
 33. meta.json sido[]["urban"] / ["urban_sido"] / groups[]["urban"] / "urban_year": 법정 도시지역 area and population
     (국토교통부 도시계획현황, scripts/static/upis.csv).
 34. stations.json "near" [4..6] / meta.json "transit": lodgings within 0.5 km of a bus stop, of a stop with a known route
-    count and of a stop with 3+ routes (stops and 정차 노선수 from the korea-transit-gap dashboard), and its PM grid bounds;
+    count and of a stop with 3+ routes (stops and 정차 노선수 from the korea-transit-gap dashboard), and the route-count dates;
     "near" [7]: within 1 km of a station or 0.5 km of a bus stop (UN SDG 11.2.1 distances).
 35. meta.json "valid": 문화체육관광부 전국 관광숙박시설 현황 per 시도 next to the permit records' 관광숙박업 on the same date.
 """
@@ -2028,7 +2028,7 @@ def main():
         "land_year": land_year,
         "urban_year": urban_year,
         "valid": valid,
-        "transit": (lambda t: {"grid_bounds": t.get("grid_bounds"), "route_days": t.get("route_days", [])})(json.load(open(os.path.join(RAW, "transit_stops.json"), encoding="utf-8")))
+        "transit": (lambda t: {"route_days": t.get("route_days", [])})(json.load(open(os.path.join(RAW, "transit_stops.json"), encoding="utf-8")))
         if os.path.exists(os.path.join(RAW, "transit_stops.json")) else None,
         "vworld_year": Counter(v[1] for v in vland.values() if v[1]).most_common(1)[0][0] if vland else None,
     }
