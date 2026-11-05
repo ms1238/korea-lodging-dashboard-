@@ -1224,8 +1224,11 @@ def write_kto_index(sidos, sgg_of):
     # 관광 소비 강도 세부 지표: the codes were inferred, so their labels are the names the service returns
     said = {r["ix"]: r["name"] for r in rows if len(r["ix"]) == 4 and r["ix"].startswith("22") and r.get("name")}
     ix_names = [(c, said.get(c, n)) for c, n in KTO_IX]
-    if said:
-        print(f"kto_index: 관광 소비 강도 names {said}", flush=True)
+    if said:  # names and the latest month's spread, so the log shows whether the values are indices or amounts
+        last = max(r["ym"] for r in rows if r["ix"] in said)
+        spread = {c: sorted(r["v"] for r in rows if r["ix"] == c and r["ym"] == last) for c in said}
+        print(f"kto_index: 관광 소비 강도 names {said}; {last} min/median/max "
+              f"{ {c: (v[0], v[len(v) // 2], v[-1]) for c, v in spread.items() if v} }", flush=True)
     months = sorted({r["ym"] for r in rows})
     mi, xi = {m: i for i, m in enumerate(months)}, {c: i for i, (c, _) in enumerate(KTO_IX)}
     merged = MERGED_GWANGJU_JEONNAM in sidos
