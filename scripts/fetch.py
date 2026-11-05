@@ -64,6 +64,9 @@ KTO_INDEX = [
     ("AreaTarDivService/areaExpDivList", "expDivIxCd", ("32",)),
     ("AreaTarDivService/areaIntlDivList", "intlDivIxCd", ("33",)),
 ]
+# 관광 소비 강도 세부 지표 (외지인 소비액·소비 비중·방문량 대비 소비액; codes inferred from 21 → 2101…, so the build log prints the
+# names the service returns): own raw file so a code push fetches it when missing
+KTO_EXP = [("AreaTarDemDsService/areaTarExpDsList", "tarExpDsIxCd", ("2201", "2202", "2203"))]
 # 관광 자원 수요 (same family, own raw file so a code push fetches it when missing): 관광서비스 수요, 숙박업 소비액,
 # 내비게이션 숙박유형 검색량, 미식여행 SNS 언급량, 식음료 소비액, 문화자연자원 수요
 KTO_RES = [
@@ -114,7 +117,7 @@ RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
 TRANSIT = "https://ms1238.github.io/korea-transit-gap/data/"  # the sister transit-gap dashboard (bus stops with route counts)
-OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "mcst_lodging"}  # the page works without these, so a failed first fetch does not stop the deploy
+OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "mcst_lodging"}  # the page works without these, so a failed first fetch does not stop the deploy
 JSON_FILES = {"mcst_lodging", "transit_stops", "trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
@@ -299,7 +302,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
@@ -308,7 +311,7 @@ def main():
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
-             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "pop_month": fetch_population,
+             "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "kto_exp": lambda k: fetch_kto_index(k, KTO_EXP, "kto_exp"), "pop_month": fetch_population,
              "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong, "transit_stops": fetch_transit_stops, "mcst_lodging": fetch_mcst_lodging}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
@@ -850,8 +853,12 @@ def fetch_kto_index(key, spec=KTO_INDEX, name="kto_index"):
                 time.sleep(3 + attempt * 3)
         print(f"  {name} {ym} {ix} {area}: {last}", flush=True)
         return None
+    # one request first: a code the service does not know would otherwise retry every request and use up the run
+    got = [one(todo[0])] if todo else []
+    if todo and got[0] is None:
+        raise RuntimeError(f"first request failed: {todo[0]}")
     with ThreadPoolExecutor(4) as pool:
-        got = list(pool.map(one, todo))
+        got += list(pool.map(one, todo[1:]))
     failed = sum(g is None for g in got)
     rows = kept + [r for g in got if g for r in g]
     total = len(months) * sum(len(c) for _, _, c in spec) * len(KTO_INDEX_AREAS)
@@ -859,6 +866,7 @@ def fetch_kto_index(key, spec=KTO_INDEX, name="kto_index"):
           f"{total - len({(r['ym'], r['ix'], r['area']) for r in rows})} of {total} (month, indicator, 시도) still to fetch", flush=True)
     if todo and failed == len(todo):
         raise RuntimeError("every request failed")
+    print(f"{name}: indicators {sorted({(r['ix'], r.get('name', '')) for r in rows if not r.get('empty')})}", flush=True)
     write_rows(name, sorted(rows, key=lambda r: (r["ym"], r["ix"], r["area"])))
 
 

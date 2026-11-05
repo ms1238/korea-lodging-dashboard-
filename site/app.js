@@ -1901,8 +1901,8 @@
   // 휴대폰 Safari는 단추를 눌러도 포커스가 가지 않아 눌러서 여닫게 함
   document.addEventListener('click', e => { const t = e.target.closest('.info');
     document.querySelectorAll('.info.on').forEach(x => { if (x !== t) x.classList.remove('on'); }); if (t) t.classList.toggle('on'); });
-  function spark(vals) {  // 작은 추세선: 최근 값들을 0~최댓값 축에 그림
-    const W = 120, H = 30, mx = Math.max(1, ...vals), x = i => (i / (vals.length - 1) * W).toFixed(1), y = v => (H - 2 - v / mx * (H - 4)).toFixed(1);
+  function spark(vals, lo = 0) {  // 작은 추세선: 최근 값들을 lo(기본 0)~최댓값 축에 그림
+    const W = 120, H = 30, mx = Math.max(lo + 1, ...vals), x = i => (i / (vals.length - 1) * W).toFixed(1), y = v => (H - 2 - (v - lo) / (mx - lo) * (H - 4)).toFixed(1);
     const pts = vals.map((v, i) => `${x(i)},${y(v)}`).join(' ');
     return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,${H} ${pts} ${W},${H}"/><polyline points="${pts}"/></svg>`;
   }
@@ -2060,11 +2060,14 @@
 
   /* ---------- 관광수요지수 세부 지표 (한국관광데이터랩, build.py → kto_index.json) ---------- */
   let kix = null;
-  const KIX_SHOW = ['21', '2102', '2103', '2104', '2105', '22', '31', '33'];  // 카드·표에 보이는 지표 (나머지는 CSV)
+  // 카드·표에 보이는 지표 (나머지는 CSV). 관광 소비 강도 세부 지표(22xx)는 자료가 들어온 뒤에만 보임
+  const KIX_BASE = ['21', '2102', '2103', '2104', '2105', '22', '2201', '2202', '2203', '31', '33'];
+  let KIX_SHOW = KIX_BASE;
   function renderKix() {
     $('kix-sec').hidden = !kix || !kix.months.length;
     if (!kix || !kix.months.length) return;
     const M = kix.months, n = M.length, ym = k => `${k.slice(0, 4)}.${k.slice(4)}`, ixi = c => kix.ix.findIndex(x => x[0] === c);
+    KIX_SHOW = KIX_BASE.filter(c => ixi(c) >= 0 && Object.values(kix.v).some(v => v[ixi(c)].some(x => x != null)));
     const keyOf = r => r.si < 0 ? null : r.gi >= 0 ? `${r.si}:${r.gi}` : String(r.si);
     const cur = U ? null : curReg(), ck = cur && cur.grp == null ? keyOf(cur) : null, row = k => k && kix.v[k];
     // 가장 최근 달: 고른 지역에 값이 있는 마지막 달 (없으면 전체의 마지막 달)
@@ -2073,8 +2076,11 @@
     const chg = (v, i) => v && v[i] != null && yo >= 0 && v[yo] != null ? v[i] - v[yo] : null;
     const sign = d => d == null ? '' : ` (전년 동월 ${d >= 0 ? '+' : ''}${d.toFixed(1)})`;
     const vr = row(ck);
-    $('kix-kpis').innerHTML = vr ? KIX_SHOW.map(c => { const v = vr[ixi(c)];
-      return `<div class="kpi"><b>${v[li] == null ? '-' : v[li].toFixed(1)}</b><span>${esc(kix.ix[ixi(c)][1])}${sign(chg(v, li))}</span></div>`; }).join('') : '';
+    // 관광 소비 강도 세부 지표(22xx)는 같은 단위(광역끼리 또는 전국 시군구끼리) 안 순위와 월별 추세선을 덧붙임
+    const rankOf = (j, k) => { const sgg = k.includes(':'), xs = Object.entries(kix.v).filter(([kk]) => kk.includes(':') === sgg).map(([, v]) => v[j][li]).filter(x => x != null);
+      const me = kix.v[k][j][li]; return me == null ? '' : ` · ${sgg ? '전국 시군구' : '광역'} ${xs.length}곳 중 ${xs.filter(x => x > me).length + 1}위`; };
+    $('kix-kpis').innerHTML = vr ? KIX_SHOW.map(c => { const j = ixi(c), v = vr[j], sub = c.length === 4 && c.startsWith('22'), tr = v.filter(x => x != null);
+      return `<div class="kpi"><b>${v[li] == null ? '-' : v[li].toFixed(1)}</b><span>${esc(kix.ix[j][1])}${sign(chg(v, li))}${sub ? rankOf(j, ck) : ''}</span>${sub && tr.length > 1 ? spark(tr, Math.min(...tr) - 5) : ''}</div>`; }).join('') : '';
     $('kix-sub').textContent = `${ck ? regionName() : '광역'} · ${ym(M[li])} 기준. 숙박 비중과 1·2·3박 방문자는 숙박 수요와 직접 이어지는 지표입니다.`;
     // 표: 전국이면 광역, 광역·기초를 골랐으면 그 광역의 시군구, 합쳐 보기면 그 지역들
     let rows;

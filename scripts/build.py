@@ -24,7 +24,7 @@ Steps
     boardings / alightings of 코레일 광역철도 and 간선열차 stations matched by name (latest 12 months).
 16. icn.json: 인천공항 arriving / departing passengers per month and the top countries of the route.
 17. kac.json: passengers per airport and year, domestic / international (한국공항공사 공항별 여객실적).
-18. kto_index.json: 관광수요지수 세부 지표 (체류·소비 강도, 다양성, 관광 자원 수요: 숙박업 소비액·숙박 검색량 등) per 시도 / 시군구 and month (한국관광데이터랩, indices).
+18. kto_index.json: 관광수요지수 세부 지표 (체류·소비 강도와 그 세부 지표: 외지인 소비액·방문량 대비 소비액 등, 다양성, 관광 자원 수요: 숙박업 소비액·숙박 검색량 등) per 시도 / 시군구 and month (한국관광데이터랩, indices).
 19. festivals.json: TourAPI festivals with every edition collected so far and the operating lodgings per type within
     0.5 / 1 / 3 / 5 km, as for stations.
 20. park_lodging.json: per national park, lodgings inside it or within 1 / 3 / 5 km of its boundary (every status,
@@ -1206,7 +1206,8 @@ def write_kac():
 
 
 KTO_IX = [("21", "관광 체류 강도"), ("2101", "타권역 방문자 비중"), ("2102", "숙박 비중"), ("2103", "1박 방문자"), ("2104", "2박 방문자"),
-          ("2105", "3박 방문자"), ("22", "관광 소비 강도"), ("31", "관광객 다양성"), ("32", "관광 소비 다양성"), ("33", "국제적 다양성"),
+          ("2105", "3박 방문자"), ("22", "관광 소비 강도"), ("2201", "외지인 소비액"), ("2202", "외지인 소비 비중"),
+          ("2203", "방문량 대비 소비액"), ("31", "관광객 다양성"), ("32", "관광 소비 다양성"), ("33", "국제적 다양성"),
           ("11", "관광서비스 수요"), ("1107", "숙박업 소비액"), ("1110", "숙박 검색량"), ("12", "문화자연자원 수요"),
           ("1103", "미식여행 SNS 언급량"), ("1106", "식음료 소비액")]
 
@@ -1216,10 +1217,15 @@ def write_kto_index(sidos, sgg_of):
     "approx": [keys]}. Old 광주광역시/전라남도 rows go to 전남광주통합특별시 when it exists (its own 시도 row wins). Cities the
     service reports only by 일반구 ("수원시 장안구") get the plain mean of their 구 (an index, so no weights exist); those keys
     are listed in "approx"."""
-    paths = [p for p in (os.path.join(RAW, f) for f in ("kto_index.jsonl", "kto_res.jsonl")) if os.path.exists(p)]
+    paths = [p for p in (os.path.join(RAW, f) for f in ("kto_index.jsonl", "kto_res.jsonl", "kto_exp.jsonl")) if os.path.exists(p)]
     if not paths:
         return
     rows = [r for p in paths for r in (json.loads(l) for l in open(p, encoding="utf-8")) if not r.get("empty")]
+    # 관광 소비 강도 세부 지표: the codes were inferred, so their labels are the names the service returns
+    said = {r["ix"]: r["name"] for r in rows if len(r["ix"]) == 4 and r["ix"].startswith("22") and r.get("name")}
+    ix_names = [(c, said.get(c, n)) for c, n in KTO_IX]
+    if said:
+        print(f"kto_index: 관광 소비 강도 names {said}", flush=True)
     months = sorted({r["ym"] for r in rows})
     mi, xi = {m: i for i, m in enumerate(months)}, {c: i for i, (c, _) in enumerate(KTO_IX)}
     merged = MERGED_GWANGJU_JEONNAM in sidos
@@ -1260,7 +1266,7 @@ def write_kto_index(sidos, sgg_of):
     print(f"kto_index: {len(months)} months {months[:1]}~{months[-1:]}, {len(out)} areas ({len(approx)} from the mean of their 일반구); "
           f"unmatched: {' '.join(sorted(unmatched))}", flush=True)
     with open(os.path.join(OUT, "kto_index.json"), "w", encoding="utf-8") as f:
-        json.dump({"months": months, "ix": KTO_IX, "v": out, "approx": sorted(approx)}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"months": months, "ix": ix_names, "v": out, "approx": sorted(approx)}, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def add_population(sidos, sgg_of, sido_meta):
