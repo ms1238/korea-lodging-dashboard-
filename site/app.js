@@ -1592,9 +1592,54 @@
       + rows.map(c => `<tr><td><span class="sw" style="background:var(--c${catOf[c[0]]})"></span>${esc(T[c[0]].name)}</td>${c.slice(1).map(v => `<td>${fmt(v)}</td>`).join('')}</tr>`).join('')
       + `<tr><td><b>합계</b></td>${R.map((_, k) => `<td><b>${fmt(festCount(f, k))}</b></td>`).join('')}</tr></tbody>`;
     csvSet('fest-table', ['축제', '업종', ...R.map(km => `반경 ${kmLabel(km)}`)], rows.map(c => [f[2], T[c[0]].name, ...c.slice(1)]));
+    renderFestAge(f);
     renderFestVis(f);
     drawRings(f, false, 'festival');
   }
+  /* ---------- 축제 주변 업종별 객실·노후도: 시설 목록(pts/<si>.json)에서 반경 안 영업 숙소(좌표 정확한 시설)를 직접 셈 ---------- */
+  const AGE_BANDS = [[0, 10, '10년 미만', '#a1d99b'], [10, 20, '10~19년', '#fdd49e'], [20, 30, '20~29년', '#fc8d59'], [30, 1e9, '30년 이상', '#d7301f']];
+  let festAgeR = null, festAgeTok = 0;
+  async function renderFestAge(f) {
+    const R = FEST.r;
+    if (festAgeR == null || !R.includes(festAgeR)) festAgeR = R.includes(3) ? 3 : R.at(-1);
+    $('fest-age-r').innerHTML = R.map(km => `<button data-km="${km}" aria-pressed="${km === festAgeR}">반경 ${kmLabel(km)}</button>`).join('');
+    const [lat, lon] = f, km = festAgeR, kx = 111.32 * Math.cos(lat * Math.PI / 180), tok = ++festAgeTok;
+    const near = S.map((_, si) => si).filter(si => S[si].sggc.some(c => c && Math.hypot((c[0] - lat) * 110.95, (c[1] - lon) * kx) < km + 45));
+    const det = await Promise.all(near.map(loadDetail));
+    if (tok !== festAgeTok) return;
+    const rr = meta.room_rule || { med: [] }, by = new Map();
+    for (const d of det) for (const x of d.rows) {
+      if (x[0] == null || x[13] || x[6] !== 0 || !state.types.has(x[2])) continue;
+      if (((x[0] - lat) * 110.95) ** 2 + ((x[1] - lon) * kx) ** 2 > km * km) continue;
+      const a = by.get(x[2]) || by.set(x[2], { n: 0, rooms: 0, rep: 0, ageN: 0, ageSum: 0, band: [0, 0, 0, 0] }).get(x[2]);
+      a.n++; a.rooms += evRooms(x); a.rep += x[16] > 0;
+      if (x[7] > 0) { const age = yNow - x[7]; a.ageN++; a.ageSum += age; a.band[AGE_BANDS.findIndex(b => age >= b[0] && age < b[1])]++; }
+    }
+    const rows = [...by].sort((a, b) => b[1].rooms - a[1].rooms || b[1].n - a[1].n);
+    const hasRoom = t => rr.med[t] != null || by.get(t).rep > 0;  // 관광펜션업·야영장업은 원자료에 객실 칸이 없음
+    const tot = rows.reduce((o, [t, a]) => { o.n += a.n; if (hasRoom(t)) { o.rn += a.n; o.rooms += a.rooms; o.rep += a.rep; } o.ageN += a.ageN; o.ageSum += a.ageSum; a.band.forEach((v, i) => { o.band[i] += v; }); return o; },
+      { n: 0, rn: 0, rooms: 0, rep: 0, ageN: 0, ageSum: 0, band: [0, 0, 0, 0] });
+    const old = a => a.ageN ? (a.band[2] + a.band[3]) / a.ageN : null, P = x => x == null ? '-' : Math.round(x * 100) + '%';
+    $('fest-age-title').textContent = `${f[2]} 반경 ${kmLabel(km)} 업종별 객실과 노후도`;
+    $('fest-age-kpis').innerHTML = !tot.n ? '' : [
+      [fmt(Math.round(tot.rooms)) + '실', `객실 (${tot.rn ? `${P(tot.rep / tot.rn)}는 신고값, 나머지는 업종 중앙값` : '객실 자료 없음'})`],
+      [tot.rn ? (tot.rooms / tot.rn).toFixed(1) + '실' : '-', '숙소당 평균 객실'],
+      [tot.ageN ? (tot.ageSum / tot.ageN).toFixed(1) + '년' : '-', '평균 업력 (인허가 후 지난 해)'],
+      [P(old(tot)), `인허가 20년 이상 숙소 (30년 이상 ${P(tot.ageN ? tot.band[3] / tot.ageN : null)})`],
+    ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${esc(k[1])}</span></div>`).join('');
+    const bar = a => !a.ageN ? '<span class="agebar"></span>' : `<span class="agebar" title="${AGE_BANDS.map((b, i) => `${b[2]} ${a.band[i]}곳`).join(' · ')}">${a.band.map((v, i) => v ? `<i style="width:${v / a.ageN * 100}%;background:${AGE_BANDS[i][3]}"></i>` : '').join('')}</span>`;
+    const line = (a, rn) => `<td>${a.n ? fmt(a.n) : '-'}</td><td>${rn ? fmt(Math.round(a.rooms)) : '—'}</td><td>${rn ? (a.rooms / rn).toFixed(1) : '—'}</td>`
+      + `<td>${a.ageN ? (a.ageSum / a.ageN).toFixed(1) + '년' : '-'}</td><td><span class="agecell">${bar(a)}<b>${P(old(a))}</b></span></td>`;
+    $('fest-age').innerHTML = !rows.length ? '<tbody><tr><td>반경 안에 영업 중인 숙소가 없습니다.</td></tr></tbody>'
+      : '<thead><tr><th>업종</th><th>숙소</th><th>객실</th><th>숙소당 객실</th><th>평균 업력</th><th>업력 분포 · 20년 이상</th></tr></thead><tbody>'
+      + rows.map(([t, a]) => `<tr><td><span class="sw" style="background:var(--c${catOf[t]})"></span>${esc(T[t].name)}</td>${line(a, hasRoom(t) ? a.n : 0)}</tr>`).join('')
+      + `<tr class="sum"><td><b>합계</b></td>${line(tot, tot.rn).replace(/<td>([^<]*)<\/td>/g, '<td><b>$1</b></td>')}</tr></tbody>`;
+    $('fest-age-legend').innerHTML = AGE_BANDS.map(b => `<span><i style="background:${b[3]};border-radius:2px"></i>${b[2]}</span>`).join('');
+    csvSet('fest-age', ['축제', '반경(km)', '업종', '영업 숙소', '객실(보정)', '객실 신고 숙소', '숙소당 객실', '평균 업력(년)', ...AGE_BANDS.map(b => `업력 ${b[2]}`), '업력 미상', '인허가 20년 이상 비율(%)'],
+      rows.map(([t, a]) => [f[2], km, T[t].name, a.n, hasRoom(t) ? Math.round(a.rooms) : '', a.rep, hasRoom(t) && a.n ? +(a.rooms / a.n).toFixed(1) : '', a.ageN ? +(a.ageSum / a.ageN).toFixed(1) : '',
+        ...a.band, a.n - a.ageN, old(a) == null ? '' : Math.round(old(a) * 100)]));
+  }
+  $('fest-age-r').addEventListener('click', e => { const b = e.target.closest('button[data-km]'); if (!b || !FEST.f[fSel]) return; festAgeR = +b.dataset.km; renderFestAge(FEST.f[fSel]); });
   // 축제 달: 모은 회차는 실제 일정, 모으기 전 해는 가장 최근 회차와 같은 날짜에 열렸다고 추정
   function festMonths(f, months) {
     const got = new Map(f[5].map(e => [Math.floor(e[0] / 1e4), e])), [a0, b0] = f[5].at(-1), y0 = Math.floor(a0 / 1e4);
@@ -2795,10 +2840,10 @@
   /* ---------- 행사 수용력: 기준 지점 반경 안 객실(보정) × 가용 비율 vs 방문객 × 숙박 비율 ÷ 객실당 인원 ---------- */
   const EV_R = [1, 3, 5, 10, 20, 30];  // km
   let evPoint = null, evPicking = false, evTok = 0, evKey = '';
-  const evRooms = r => {  // 신고 객실(업종 99.9백분위로 자름), 없으면 업종 중앙값. 펜션·야영장은 객실 칸이 없어 0
+  function evRooms(r) {  // 신고 객실(업종 99.9백분위로 자름), 없으면 업종 중앙값. 펜션·야영장은 객실 칸이 없어 0 (축제 탭도 씀)
     const rr = meta.room_rule || { med: [], cap: [] }, t = r[2], v = r[16];
     return v > 0 ? Math.min(v, rr.cap[t] ?? v) : rr.med[t] || 0;
-  };
+  }
   function evPlaces() {  // [이름, lat, lon]: 고른 지역의 중심, 그 지역의 축제·관광지
     const r = curReg(), inR = (si, gi) => r.si >= 0 && inReg(r, si, gi), opts = [];
     if (r.si >= 0) { const c = r.gi >= 0 ? S[r.si].sggc[r.gi] : S[r.si].c; if (c) opts.push(['지역', `${regLabel(r)} 중심`, c[0], c[1]]); }

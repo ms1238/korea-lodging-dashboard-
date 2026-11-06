@@ -277,6 +277,10 @@ body.rep-open{overflow:hidden}
 #fest-list tbody tr{cursor:pointer}
 #fest-list tbody tr:hover,#fest-list tbody tr[aria-selected=true]{background:color-mix(in srgb,var(--fg) 7%,transparent)}
 .mix{display:grid;grid-template-columns:minmax(80px,max-content) minmax(0,1fr) max-content;gap:6px 10px;align-items:center;font-size:13px}
+.agecell{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.agebar{display:flex;width:120px;height:12px;border-radius:3px;overflow:hidden;background:color-mix(in srgb,var(--fg) 6%,transparent);flex:none}
+.agebar i{display:block;height:100%}
+.agecell b{min-width:40px;text-align:right}
 .mix .bar{display:flex;height:22px;border-radius:3px;overflow:hidden;background:color-mix(in srgb,var(--fg) 6%,transparent)}
 .mix .bar i{display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-style:normal;overflow:hidden;white-space:nowrap}
 .mix .n{font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}

@@ -283,6 +283,12 @@
     </div>
     <div class="card"><button class="btn csv" data-csv="fest-table" data-name="축제주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="fest-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="fest-table"></table></div>
       <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 한국관광공사가 등록한 축제 위치에서 잰 직선거리입니다. 행사장이 넓거나 여러 곳이면 실제 생활권과 다를 수 있습니다.</p></div>
+    <div class="card"><button class="btn csv" data-csv="fest-age" data-name="축제주변_객실_노후도">CSV</button><h3 style="margin-bottom:10px" id="fest-age-title">업종별 객실과 노후도</h3>
+      <div class="seg" id="fest-age-r" role="group" aria-label="반경" style="margin-bottom:12px"></div>
+      <div class="kpis" id="fest-age-kpis"></div>
+      <div class="legend" id="fest-age-legend" style="margin-top:12px"></div>
+      <div class="tablewrap"><table id="fest-age"></table></div>
+      <p class="note">객실: 인허가에 신고된 객실 수, 비어 있으면 같은 업종의 중앙값으로 채움(업종 상위 0.1%를 넘는 값은 그 값으로 자름). 관광펜션업·야영장업은 원자료에 객실 칸이 없어 —로 표시하고 합계에서도 뺍니다. 업력은 인허가 날짜부터 지난 햇수로, 건물이 지어진 해가 아닙니다(리모델링·영업자 변경은 반영되지 않음). 위 표와 같이 영업 중이고 좌표가 정확한 숙소만 셉니다.</p></div>
     <div class="card"><button class="btn csv" data-csv="fest-vis" data-name="축제지역_월별_외지인">CSV</button><h3 style="margin-bottom:6px" id="fest-vis-title">축제 달과 월별 외지인 방문자</h3>
       <div class="legend"><span><i style="background:var(--c0)"></i>외지인 방문자</span><span><i style="background:#e67e22"></i>축제가 열린 달</span><span><i style="background:#e67e22;opacity:.4"></i>열렸을 것으로 추정한 달(예년 일정 기준)</span></div>
       <div class="chartwrap"><svg id="fest-vis" viewBox="0 0 900 260" role="img" aria-label="축제 달과 월별 외지인 방문자"></svg><div class="tip" id="fest-vis-tip" hidden></div></div>
