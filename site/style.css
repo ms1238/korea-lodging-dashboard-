@@ -277,6 +277,7 @@ body.rep-open{overflow:hidden}
 #fest-list tbody tr{cursor:pointer}
 #fest-list tbody tr:hover,#fest-list tbody tr[aria-selected=true]{background:color-mix(in srgb,var(--fg) 7%,transparent)}
 .mix{display:grid;grid-template-columns:minmax(80px,max-content) minmax(0,1fr) max-content;gap:6px 10px;align-items:center;font-size:13px}
+.roomest{margin:12px 0 4px;padding:8px 12px;border-radius:8px;background:color-mix(in srgb,#f0a500 12%,transparent);font-size:12.5px;line-height:1.5}
 .agecell{display:flex;align-items:center;justify-content:flex-end;gap:8px}
 .agebar{display:flex;width:120px;height:12px;border-radius:3px;overflow:hidden;background:color-mix(in srgb,var(--fg) 6%,transparent);flex:none}
 .agebar i{display:block;height:100%}

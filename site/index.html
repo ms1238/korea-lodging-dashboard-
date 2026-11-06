@@ -248,6 +248,7 @@
     </div>
     <div class="card"><button class="btn csv" data-csv="stn-table" data-name="역세권_업종별">CSV</button><h3 style="margin-bottom:10px" id="stn-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="stn-table"></table></div>
       <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 역 위치에서 잰 직선거리입니다. 역 위치와 노선: OpenStreetMap. 역의 시·군·구는 반경 1km 안 숙소 주소로 정했습니다.</p></div>
+    <div class="card" data-agecard="stn" data-name="역세권_객실_노후도"></div>
   </section>
 
   <section data-tab="transit" id="trm-sec">
@@ -258,6 +259,7 @@
     </div>
     <div class="card"><button class="btn csv" data-csv="trm-table" data-name="터미널주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="trm-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="trm-table"></table></div>
       <p class="note">이름에 '터미널'이 들어간 곳만 다룹니다(시외버스 정류장·매표소 제외). 영업 중이고 좌표가 정확한 숙소만, 터미널 위치에서 잰 직선거리로 셉니다. 터미널 위치: OpenStreetMap(지역마다 빠진 곳이 있을 수 있음). 터미널의 시·군·구는 반경 3km 안 숙소 주소로 정했습니다.</p></div>
+    <div class="card" data-agecard="trm" data-name="터미널주변_객실_노후도"></div>
   </section>
 
   <section data-tab="tourist" id="trr-sec">
@@ -268,6 +270,7 @@
       <p class="note" id="trr-info" style="margin-top:10px"></p>
     </div>
     <div class="card"><button class="btn csv" data-csv="trr-table" data-name="관광지주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="trr-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="trr-table"></table></div></div>
+    <div class="card" data-agecard="trr" data-name="관광지주변_객실_노후도"></div>
     <div class="card"><button class="btn csv" data-csv="trr-list" data-name="관광지_목록">CSV</button><h3 style="margin-bottom:10px" id="trr-list-title">관광지 목록</h3>
       <div class="tlrow" style="margin-bottom:8px"><label style="font-size:13px"><input type="checkbox" id="trr-decl"> 인구감소·관심지역만</label><small id="trr-gap" style="color:var(--muted)"></small></div>
       <div class="tablewrap" style="max-height:480px;overflow:auto"><table id="trr-list"></table></div>
@@ -283,12 +286,7 @@
     </div>
     <div class="card"><button class="btn csv" data-csv="fest-table" data-name="축제주변_업종별">CSV</button><h3 style="margin-bottom:10px" id="fest-table-title">업종별 숙소 수</h3><div class="tablewrap"><table id="fest-table"></table></div>
       <p class="note">영업 중인 숙소만, 좌표가 정확한 시설만 셉니다(주소의 동 단위로 위치를 추정한 시설 제외). 반경은 한국관광공사가 등록한 축제 위치에서 잰 직선거리입니다. 행사장이 넓거나 여러 곳이면 실제 생활권과 다를 수 있습니다.</p></div>
-    <div class="card"><button class="btn csv" data-csv="fest-age" data-name="축제주변_객실_노후도">CSV</button><h3 style="margin-bottom:10px" id="fest-age-title">업종별 객실과 노후도</h3>
-      <div class="seg" id="fest-age-r" role="group" aria-label="반경" style="margin-bottom:12px"></div>
-      <div class="kpis" id="fest-age-kpis"></div>
-      <div class="legend" id="fest-age-legend" style="margin-top:12px"></div>
-      <div class="tablewrap"><table id="fest-age"></table></div>
-      <p class="note">객실: 인허가에 신고된 객실 수, 비어 있으면 같은 업종의 중앙값으로 채움(업종 상위 0.1%를 넘는 값은 그 값으로 자름). 관광펜션업·야영장업은 원자료에 객실 칸이 없어 —로 표시하고 합계에서도 뺍니다. 업력은 인허가 날짜부터 지난 햇수로, 건물이 지어진 해가 아닙니다(리모델링·영업자 변경은 반영되지 않음). 위 표와 같이 영업 중이고 좌표가 정확한 숙소만 셉니다.</p></div>
+    <div class="card" data-agecard="fest" data-name="축제주변_객실_노후도"></div>
     <div class="card"><button class="btn csv" data-csv="fest-vis" data-name="축제지역_월별_외지인">CSV</button><h3 style="margin-bottom:6px" id="fest-vis-title">축제 달과 월별 외지인 방문자</h3>
       <div class="legend"><span><i style="background:var(--c0)"></i>외지인 방문자</span><span><i style="background:#e67e22"></i>축제가 열린 달</span><span><i style="background:#e67e22;opacity:.4"></i>열렸을 것으로 추정한 달(예년 일정 기준)</span></div>
       <div class="chartwrap"><svg id="fest-vis" viewBox="0 0 900 260" role="img" aria-label="축제 달과 월별 외지인 방문자"></svg><div class="tip" id="fest-vis-tip" hidden></div></div>
