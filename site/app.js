@@ -743,6 +743,7 @@
     renderOverview(); renderPolicy(); renderEvent(); renderFav(); renderEffect();
     renderSupply();
     renderSummary(a, renderTrend(names));
+    renderRegAge();
     renderMinbak(names);
     renderStations(); renderTerminals(); renderTrr();
     renderRecent(); renderYTD(); renderChange(); renderSD(); if ($('choro-mode').value === 'net') renderChoro();
@@ -1339,67 +1340,110 @@
   /* ---------- 대중교통: 역세권 숙소 (지하철·도시철도역 반경 안 영업 숙소, build.py → stations.json) ---------- */
   let STN = null, stnSel = -1;
   const kmLabel = km => km < 1 ? km * 1000 + 'm' : km + 'km';
-  /* ---------- 반경 안 업종별 객실·노후도 (역·터미널·관광지·축제 공통): 시설 목록(pts/<si>.json)에서 영업 중이고 좌표가 정확한
-     숙소를 직접 셈(위 '업종별 숙소 수' 표와 같은 기준). 카드 틀은 index.html의 [data-agecard] 자리에 만들어 넣음 ---------- */
+  /* ---------- 업종별 객실·노후도: 반경 카드(역·터미널·관광지·축제)와 지역 카드(종합). 시설 목록(pts/<si>.json)의 영업 숙소를 직접 셈.
+     반경 카드는 위 '업종별 숙소 수' 표와 같이 좌표가 정확한 숙소만, 지역 카드는 주소로 지역이 정해진 모든 영업 숙소.
+     카드 틀은 index.html의 [data-agecard] 자리에 만들어 넣음 ---------- */
   const AGE_BANDS = [[0, 10, '10년 미만', '#a1d99b'], [10, 20, '10~19년', '#fdd49e'], [20, 30, '20~29년', '#fc8d59'], [30, 1e9, '30년 이상', '#d7301f']];
-  const ageCards = {};  // 카드 id → { km: 고른 반경, tok, redo: 반경을 바꿨을 때 다시 그리기 }
+  const ageCards = {};  // 카드 id → { km: 고른 반경(또는 지역 카드의 보기), tok, redo: 버튼을 눌렀을 때 다시 그리기 }
   document.querySelectorAll('[data-agecard]').forEach(el => {
-    const p = el.dataset.agecard;
+    const p = el.dataset.agecard, reg = el.dataset.kind === 'region';
     el.innerHTML = `<button class="btn csv" data-csv="${p}-age" data-name="${esc(el.dataset.name)}">CSV</button><h3 style="margin-bottom:10px" id="${p}-age-title">업종별 객실과 노후도</h3>
-      <div class="seg" id="${p}-age-r" role="group" aria-label="반경" style="margin-bottom:12px"></div>
+      <div class="seg" id="${p}-age-r" role="group" aria-label="${reg ? '보기' : '반경'}" style="margin-bottom:12px"></div>
       <div class="kpis" id="${p}-age-kpis"></div>
       <p class="roomest" id="${p}-age-est" hidden></p>
       <div class="legend" id="${p}-age-legend" style="margin-top:12px"></div>
-      <div class="tablewrap"><table id="${p}-age"></table></div>
-      <p class="note">객실: 인허가에 신고된 객실 수입니다. 신고값이 비어 있는 숙소는 같은 업종의 중앙값으로 추정해 더했고(객실 숫자의 * 표시), 업종 상위 0.1%를 넘는 신고값은 그 값으로 잘랐습니다. 관광펜션업·야영장업은 원자료에 객실 칸이 없어 —로 표시하고 객실 합계에서도 뺍니다. 업력은 인허가 날짜부터 지난 햇수로, 건물이 지어진 해가 아닙니다(리모델링·영업자 변경은 반영되지 않음). 위 표와 같이 영업 중이고 좌표가 정확한 숙소만 셉니다.</p>`;
+      <div class="tablewrap"${reg ? ' style="max-height:560px;overflow:auto"' : ''}><table id="${p}-age"></table></div>
+      <p class="note">객실: 인허가에 신고된 객실 수입니다. 신고값이 비어 있는 숙소는 같은 업종의 중앙값으로 추정해 더했고(객실 숫자의 * 표시), 업종 상위 0.1%를 넘는 신고값은 그 값으로 잘랐습니다. 관광펜션업·야영장업은 원자료에 객실 칸이 없어 —로 표시하고 객실 합계에서도 뺍니다. 업력은 인허가 날짜부터 지난 햇수로, 건물이 지어진 해가 아닙니다(리모델링·영업자 변경은 반영되지 않음). ${reg ? '영업 중인 숙소만 셉니다(영업 상태 필터와 무관, 업종 선택은 따름). 읍·면·동은 주소로 정했고, 주소에서 읍·면·동을 찾지 못한 숙소는 \'미상\'으로 묶습니다.' : '위 표와 같이 영업 중이고 좌표가 정확한 숙소만 셉니다.'}</p>`;
     ageCards[p] = { km: null, tok: 0, redo: null };
-    $(`${p}-age-r`).addEventListener('click', e => { const b = e.target.closest('button[data-km]'); if (!b || !ageCards[p].redo) return; ageCards[p].km = +b.dataset.km; ageCards[p].redo(); });
+    $(`${p}-age-r`).addEventListener('click', e => { const b = e.target.closest('button[data-km]'); if (!b || !ageCards[p].redo) return; ageCards[p].km = b.dataset.km; ageCards[p].redo(); });
   });
-  // p: 카드 id, pt: [lat, lon, …] 또는 null(고른 곳 없음), name: 표 제목에 쓸 이름, R: 반경(km) 목록
-  async function renderAge(p, pt, name, R) {
-    const c = ageCards[p];
-    if (!pt) { c.redo = null; c.tok++; ['r', 'kpis', 'legend'].forEach(k => { $(`${p}-age-${k}`).innerHTML = ''; }); $(`${p}-age`).innerHTML = ''; $(`${p}-age-est`).hidden = true; $(`${p}-age-title`).textContent = '업종별 객실과 노후도'; csvSet(`${p}-age`, [], []); return; }
-    c.redo = () => renderAge(p, pt, name, R);
-    if (c.km == null || !R.includes(c.km)) c.km = R.includes(3) ? 3 : R.at(-1);
-    $(`${p}-age-r`).innerHTML = R.map(km => `<button data-km="${km}" aria-pressed="${km === c.km}">반경 ${kmLabel(km)}</button>`).join('');
-    const [lat, lon] = pt, km = c.km, kx = 111.32 * Math.cos(lat * Math.PI / 180), tok = ++c.tok;
-    const near = S.map((_, si) => si).filter(si => S[si].sggc.some(g => g && Math.hypot((g[0] - lat) * 110.95, (g[1] - lon) * kx) < km + 45));
-    const det = await Promise.all(near.map(loadDetail));
-    if (tok !== c.tok) return;
-    const rr = meta.room_rule || { med: [] }, by = new Map();
-    for (const d of det) for (const x of d.rows) {
-      if (x[0] == null || x[13] || x[6] !== 0 || !state.types.has(x[2])) continue;
-      if (((x[0] - lat) * 110.95) ** 2 + ((x[1] - lon) * kx) ** 2 > km * km) continue;
-      const a = by.get(x[2]) || by.set(x[2], { n: 0, rooms: 0, rep: 0, ageN: 0, ageSum: 0, band: [0, 0, 0, 0] }).get(x[2]);
-      a.n++; a.rooms += evRooms(x); a.rep += x[16] > 0;
-      if (x[7] > 0) { const age = yNow - x[7]; a.ageN++; a.ageSum += age; a.band[AGE_BANDS.findIndex(b => age >= b[0] && age < b[1])]++; }
-    }
-    const rows = [...by].sort((a, b) => b[1].rooms - a[1].rooms || b[1].n - a[1].n);
-    const hasRoom = t => rr.med[t] != null || by.get(t).rep > 0;  // 관광펜션업·야영장업은 원자료에 객실 칸이 없음
-    const tot = rows.reduce((o, [t, a]) => { o.n += a.n; if (hasRoom(t)) { o.rn += a.n; o.rooms += a.rooms; o.rep += a.rep; } o.ageN += a.ageN; o.ageSum += a.ageSum; a.band.forEach((v, i) => { o.band[i] += v; }); return o; },
-      { n: 0, rn: 0, rooms: 0, rep: 0, ageN: 0, ageSum: 0, band: [0, 0, 0, 0] });
-    const old = a => a.ageN ? (a.band[2] + a.band[3]) / a.ageN : null, P = x => x == null ? '-' : Math.round(x * 100) + '%';
-    $(`${p}-age-title`).textContent = `${name} 반경 ${kmLabel(km)} 업종별 객실과 노후도`;
+  // 집계 칸: 숙소 n, 객실을 셀 수 있는 숙소 rn(관광펜션업·야영장업 제외) 중 신고 rep, 객실 rooms(신고+추정), 업력
+  const ageAcc = () => ({ n: 0, rn: 0, rep: 0, rooms: 0, ageN: 0, ageSum: 0, band: [0, 0, 0, 0] });
+  const roomT = t => (meta.room_rule || { med: [] }).med[t] != null;
+  function ageAdd(a, x) {
+    a.n++;
+    if (roomT(x[2])) { a.rn++; a.rooms += evRooms(x); a.rep += x[16] > 0; }
+    if (x[7] > 0) { const age = yNow - x[7]; a.ageN++; a.ageSum += age; a.band[AGE_BANDS.findIndex(b => age >= b[0] && age < b[1])]++; }
+  }
+  const ageSum = accs => accs.reduce((o, a) => { for (const k of ['n', 'rn', 'rep', 'rooms', 'ageN', 'ageSum']) o[k] += a[k]; a.band.forEach((v, i) => { o.band[i] += v; }); return o; }, ageAcc());
+  const ageOld = a => a.ageN ? (a.band[2] + a.band[3]) / a.ageN : null, agePct = x => x == null ? '-' : Math.round(x * 100) + '%';
+  // rows: [[이름 칸 HTML, 이름(CSV), 집계]], head: 첫 열 제목, title: 카드 제목, csvLead: CSV 앞쪽 열 [[제목], 값들]
+  function ageDraw(p, rows, head, title, csvHead, csvLead) {
+    const tot = ageSum(rows.map(r => r[2])), P = agePct;
+    $(`${p}-age-title`).textContent = title;
     $(`${p}-age-kpis`).innerHTML = !tot.n ? '' : [
       [fmt(Math.round(tot.rooms)) + '실', tot.rn && tot.rep < tot.rn ? '객실 (추정 포함, 아래 설명)' : '객실 (모두 신고값)'],
       [tot.rn ? (tot.rooms / tot.rn).toFixed(1) + '실' : '-', '숙소당 평균 객실'],
       [tot.ageN ? (tot.ageSum / tot.ageN).toFixed(1) + '년' : '-', '평균 업력 (인허가 후 지난 해)'],
-      [P(old(tot)), `인허가 20년 이상 숙소 (30년 이상 ${P(tot.ageN ? tot.band[3] / tot.ageN : null)})`],
+      [P(ageOld(tot)), `인허가 20년 이상 숙소 (30년 이상 ${P(tot.ageN ? tot.band[3] / tot.ageN : null)})`],
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${esc(k[1])}</span></div>`).join('');
     const est = tot.rn - tot.rep;
     $(`${p}-age-est`).hidden = !est;
-    $(`${p}-age-est`).textContent = est ? `※ 객실 수 안내: 객실을 셀 수 있는 숙소 ${fmt(tot.rn)}곳 중 ${fmt(est)}곳(${P(est / tot.rn)})은 인허가 자료에 객실 수가 비어 있어, 같은 업종 숙소의 객실 수 중앙값으로 추정해 더했습니다. 추정이 섞인 업종은 객실 숫자에 *를 붙였습니다.` : '';
+    $(`${p}-age-est`).textContent = est ? `※ 객실 수 안내: 객실을 셀 수 있는 숙소 ${fmt(tot.rn)}곳 중 ${fmt(est)}곳(${P(est / tot.rn)})은 인허가 자료에 객실 수가 비어 있어, 같은 업종 숙소의 객실 수 중앙값으로 추정해 더했습니다. 추정이 섞인 칸은 객실 숫자에 *를 붙였습니다.` : '';
     const bar = a => !a.ageN ? '<span class="agebar"></span>' : `<span class="agebar" title="${AGE_BANDS.map((b, i) => `${b[2]} ${a.band[i]}곳`).join(' · ')}">${a.band.map((v, i) => v ? `<i style="width:${v / a.ageN * 100}%;background:${AGE_BANDS[i][3]}"></i>` : '').join('')}</span>`;
-    const line = (a, rn) => `<td>${a.n ? fmt(a.n) : '-'}</td><td>${rn ? fmt(Math.round(a.rooms)) + (a.rep < rn ? '*' : '') : '—'}</td><td>${rn ? (a.rooms / rn).toFixed(1) : '—'}</td>`
-      + `<td>${a.ageN ? (a.ageSum / a.ageN).toFixed(1) + '년' : '-'}</td><td><span class="agecell">${bar(a)}<b>${P(old(a))}</b></span></td>`;
+    const line = a => `<td>${a.n ? fmt(a.n) : '-'}</td><td>${a.rn ? fmt(Math.round(a.rooms)) + (a.rep < a.rn ? '*' : '') : '—'}</td><td>${a.rn ? (a.rooms / a.rn).toFixed(1) : '—'}</td>`
+      + `<td>${a.ageN ? (a.ageSum / a.ageN).toFixed(1) + '년' : '-'}</td><td><span class="agecell">${bar(a)}<b>${P(ageOld(a))}</b></span></td>`;
     $(`${p}-age-legend`).innerHTML = rows.length ? AGE_BANDS.map(b => `<span><i style="background:${b[3]};border-radius:2px"></i>${b[2]}</span>`).join('') : '';
-    $(`${p}-age`).innerHTML = !rows.length ? '<tbody><tr><td>반경 안에 영업 중인 숙소가 없습니다.</td></tr></tbody>'
-      : '<thead><tr><th>업종</th><th>숙소</th><th>객실</th><th>숙소당 객실</th><th>평균 업력</th><th>업력 분포 · 20년 이상</th></tr></thead><tbody>'
-      + rows.map(([t, a]) => `<tr><td><span class="sw" style="background:var(--c${catOf[t]})"></span>${esc(T[t].name)}</td>${line(a, hasRoom(t) ? a.n : 0)}</tr>`).join('')
-      + `<tr class="sum"><td><b>합계</b></td>${line(tot, tot.rn).replace(/<td>([^<]*)<\/td>/g, '<td><b>$1</b></td>')}</tr></tbody>`;
-    csvSet(`${p}-age`, ['장소', '반경(km)', '업종', '영업 숙소', '객실(신고+추정)', '객실 신고 숙소', '객실 추정 숙소', '숙소당 객실', '평균 업력(년)', ...AGE_BANDS.map(b => `업력 ${b[2]}`), '업력 미상', '인허가 20년 이상 비율(%)'],
-      rows.map(([t, a]) => [name, km, T[t].name, a.n, hasRoom(t) ? Math.round(a.rooms) : '', a.rep, hasRoom(t) ? a.n - a.rep : '', hasRoom(t) && a.n ? +(a.rooms / a.n).toFixed(1) : '', a.ageN ? +(a.ageSum / a.ageN).toFixed(1) : '',
-        ...a.band, a.n - a.ageN, old(a) == null ? '' : Math.round(old(a) * 100)]));
+    $(`${p}-age`).innerHTML = !rows.length ? '<tbody><tr><td>영업 중인 숙소가 없습니다.</td></tr></tbody>'
+      : `<thead><tr><th>${head}</th><th>숙소</th><th>객실</th><th>숙소당 객실</th><th>평균 업력</th><th>업력 분포 · 20년 이상</th></tr></thead><tbody>`
+      + rows.map(([nm, , a]) => `<tr><td>${nm}</td>${line(a)}</tr>`).join('')
+      + `<tr class="sum"><td><b>합계</b></td>${line(tot).replace(/<td>([^<]*)<\/td>/g, '<td><b>$1</b></td>')}</tr></tbody>`;
+    csvSet(`${p}-age`, [...csvHead, head, '영업 숙소', '객실(신고+추정)', '객실 신고 숙소', '객실 추정 숙소', '숙소당 객실', '평균 업력(년)', ...AGE_BANDS.map(b => `업력 ${b[2]}`), '업력 미상', '인허가 20년 이상 비율(%)'],
+      rows.map(([, nm, a]) => [...csvLead, nm, a.n, a.rn ? Math.round(a.rooms) : '', a.rep, a.rn ? a.rn - a.rep : '', a.rn ? +(a.rooms / a.rn).toFixed(1) : '', a.ageN ? +(a.ageSum / a.ageN).toFixed(1) : '',
+        ...a.band, a.n - a.ageN, ageOld(a) == null ? '' : Math.round(ageOld(a) * 100)]));
+  }
+  const typeCell = t => `<span class="sw" style="background:var(--c${catOf[t]})"></span>${esc(T[t].name)}`;
+  const byTypeRows = by => [...by].sort((a, b) => b[1].rooms - a[1].rooms || b[1].n - a[1].n).map(([t, a]) => [typeCell(t), T[t].name, a]);
+  function ageClear(p) {
+    const c = ageCards[p]; c.redo = null; c.tok++;
+    ['r', 'kpis', 'legend'].forEach(k => { $(`${p}-age-${k}`).innerHTML = ''; }); $(`${p}-age`).innerHTML = ''; $(`${p}-age-est`).hidden = true;
+    $(`${p}-age-title`).textContent = '업종별 객실과 노후도'; csvSet(`${p}-age`, [], []);
+  }
+  // 반경 카드. p: 카드 id, pt: [lat, lon, …] 또는 null(고른 곳 없음), name: 표 제목에 쓸 이름, R: 반경(km) 목록
+  async function renderAge(p, pt, name, R) {
+    const c = ageCards[p];
+    if (!pt) { ageClear(p); return; }
+    c.redo = () => renderAge(p, pt, name, R);
+    if (c.km == null || !R.includes(+c.km)) c.km = R.includes(3) ? 3 : R.at(-1);
+    const km = +c.km;
+    $(`${p}-age-r`).innerHTML = R.map(r => `<button data-km="${r}" aria-pressed="${r === km}">반경 ${kmLabel(r)}</button>`).join('');
+    const [lat, lon] = pt, kx = 111.32 * Math.cos(lat * Math.PI / 180), tok = ++c.tok;
+    const near = S.map((_, si) => si).filter(si => S[si].sggc.some(g => g && Math.hypot((g[0] - lat) * 110.95, (g[1] - lon) * kx) < km + 45));
+    const det = await Promise.all(near.map(loadDetail));
+    if (tok !== c.tok) return;
+    const by = new Map();
+    for (const d of det) for (const x of d.rows) {
+      if (x[0] == null || x[13] || x[6] !== 0 || !state.types.has(x[2])) continue;
+      if (((x[0] - lat) * 110.95) ** 2 + ((x[1] - lon) * kx) ** 2 > km * km) continue;
+      ageAdd(by.get(x[2]) || by.set(x[2], ageAcc()).get(x[2]), x);
+    }
+    ageDraw(p, byTypeRows(by), '업종', `${name} 반경 ${kmLabel(km)} 업종별 객실과 노후도`, ['장소', '반경(km)'], [name, km]);
+  }
+  // 지역 카드(종합): 고른 지역 전체를 업종별로, 또는 산하 지역(광역 → 기초, 기초 → 읍·면·동, 읍·면·동 → 리)별로
+  function renderRegAge() {
+    const p = 'sum', c = ageCards[p];
+    if (!c) return;
+    if (!D) {
+      ageClear(p);
+      $(`${p}-age`).innerHTML = '<tbody><tr><td>광역이나 기초 지자체를 고르면 그 지역 숙소의 객실과 노후도를 업종별·산하 지역별로 보여 줍니다.</td></tr></tbody>';
+      return;
+    }
+    c.redo = renderRegAge;
+    const names = childNames(), lab = childLabel(), canChild = names.length > 0;
+    if (c.km !== 'child' || !canChild) c.km = 'type';
+    $(`${p}-age-r`).innerHTML = `<button data-km="type" aria-pressed="${c.km === 'type'}">전체 · 업종별</button>`
+      + (canChild ? `<button data-km="child" aria-pressed="${c.km === 'child'}">${esc(lab)}별</button>` : '');
+    const by = new Map();
+    for (const x of D.rows) {
+      if (!inDetail(x) || x[6] !== 0 || !state.types.has(x[2])) continue;
+      const k = c.km === 'type' ? x[2] : childOfRow(x);
+      ageAdd(by.get(k) || by.set(k, ageAcc()).get(k), x);
+    }
+    const rn = regionName();
+    if (c.km === 'type') { ageDraw(p, byTypeRows(by), '업종', `${rn} 업종별 객실과 노후도`, ['지역'], [rn]); return; }
+    const nm = k => k == null || k < 0 || names[k] == null ? '미상' : names[k];
+    const rows = [...by].sort((a, b) => (nm(a[0]) === '미상') - (nm(b[0]) === '미상') || b[1].rooms - a[1].rooms || b[1].n - a[1].n).map(([k, a]) => [esc(nm(k)), nm(k), a]);
+    ageDraw(p, rows, lab, `${rn} ${lab}별 객실과 노후도`, ['지역'], [rn]);
   }
   const stnCount = (s, k) => s[6].reduce((a, c) => a + (state.types.has(c[0]) ? c[k + 1] : 0), 0);
   function renderStations() {
