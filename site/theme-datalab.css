@@ -1,7 +1,7 @@
 /* 데이터랩풍 화면 테마(한국관광 데이터랩 메인 화면의 배치·색감을 참고해 새로 쓴 스타일, 원본 코드·이미지는 쓰지 않음).
    style.css 위에 덧씌우기만 함: index.html의 <link id="theme-dl">를 끄면(화면 위 '기존 디자인' 단추, 또는 이 파일 연결을 지우면) 그대로 원래 화면.
    흰 머리띠, 굵은 검은 글자 대메뉴(선택 = 파란 밑줄), 회색 통 안의 둥근 흰 알약 세부 탭(선택 = 주황), 둥근 흰 카드, 연한 살구색 바탕. */
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
+/* 글꼴(Noto Sans KR)은 index.html에서 화면 그리기를 막지 않게 따로 불러옴(구글 글꼴이 막히거나 느린 망에서도 바로 뜨게) */
 
 :root{
   --dl-blue:#0075be; --dl-navy:#01559c; --dl-orange:#f7b84b; --dl-orange-ink:#ffffff; --dl-band:#fdf1dc; --dl-pillbox:#f1f1f1;
