@@ -211,6 +211,7 @@
   const natType = () => { const b = T.map(() => 0); let n = 0; for (const r of cube) if (state.status < 0 || r[3] === state.status) { b[r[2]] += r[5]; n += r[5]; } return [b, n]; };
 
   /* ---------- map ---------- */
+  await window.mapLibReady;  // index.html이 따로 받는 지도 라이브러리(최대 8초)
   if (typeof maplibregl === 'undefined') $('map').innerHTML = '<p class="note" style="padding:16px">지도 라이브러리를 불러오지 못했습니다. 새로고침해 주세요.</p>';
   // 지도 점 색: 업종(기본) 또는 업력(인허가 후 지난 햇수, 객실·노후도 카드와 같은 구간). 업력 미상은 회색
   let ptColor = 'type';
