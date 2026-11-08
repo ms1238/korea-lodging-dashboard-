@@ -43,7 +43,7 @@ DONG_POP = "https://apis.data.go.kr/1480523/LvlhPpnSttusService/getLvlhPpnSttusI
 FOOD_MATCH_BUDGET = 6000  # 일반음식점 lookups per run (one per restaurant); the rest waits for the next run
 FOOD_MATCH_MINUTES = 20  # stop after this long so the job (90 min limit) still saves what it found
 FESTIVAL_INTRO = "https://apis.data.go.kr/B551011/KorService2/detailIntro2"  # TourAPI 소개정보 (축제: 운영시간·프로그램 등)
-FESTIVAL_INTRO_BUDGET = 300  # requests per run; the rest waits for later runs (pushes included)
+FESTIVAL_INTRO_BUDGET = 400  # festivals per run; the rest waits for later runs (pushes included)
 FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
@@ -425,39 +425,48 @@ def fetch_festivals(key):
 
 def fetch_festival_intro(key):
     """TourAPI 소개정보 (detailIntro2, contentTypeId 15) of every festival in raw/festivals.jsonl: 운영시간 (playtime),
-    프로그램 and the other intro fields, for the festival stay-conversion analysis. Kept in raw/festival_intro.json as
-    {contentid: {field: value}}; only festivals not fetched yet are asked, up to FESTIVAL_INTRO_BUDGET per run."""
+    프로그램, 축제 등급 and the other intro fields, for the festival stay-conversion analysis. Kept in raw/festival_intro.json
+    as {contentid: {field: value}}; festivals not asked yet are asked newest edition first, up to FESTIVAL_INTRO_BUDGET per
+    run, four at a time (the service answers slowly). A festival without an intro is remembered as empty; a passing
+    HTTP error is retried in a later run; the daily limit or a key error stops the run."""
     path = os.path.join(RAW_DIR, "festival_intro.json")
     have = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
-    ids = sorted({json.loads(l)["contentid"] for l in open(os.path.join(RAW_DIR, "festivals.jsonl"), encoding="utf-8")})
-    todo = [c for c in ids if c not in have][:FESTIVAL_INTRO_BUDGET]
-    got = failed = 0
-    for c in todo:
+    latest = {}
+    for l in open(os.path.join(RAW_DIR, "festivals.jsonl"), encoding="utf-8"):
+        r = json.loads(l)
+        latest[r["contentid"]] = max(latest.get(r["contentid"], ""), r["eventstartdate"])
+    todo = sorted((c for c in latest if c not in have), key=lambda c: latest[c], reverse=True)[:FESTIVAL_INTRO_BUDGET]
+    stop = []
+
+    def one(c):
+        if stop:
+            return c, None
         params = {"serviceKey": key, "MobileOS": "ETC", "MobileApp": "korea-lodging-dashboard", "_type": "json", "contentId": c, "contentTypeId": 15}
-        try:
-            d = requests.get(FESTIVAL_INTRO, params=params, timeout=60).json()
-        except Exception:  # noqa: BLE001
-            failed += 1
-            continue
-        if "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in str(d):
-            print("  festival_intro: daily limit reached, the rest waits for the next run", flush=True)
-            break
-        if "response" not in d or d["response"].get("header", {}).get("resultCode") not in ("0000", "00", None):
-            print(f"  festival_intro: API error {str(d)[:200]}; stopping for this run", flush=True)
-            break
-        items = items_of(d["response"].get("body", {}))
-        if not items:  # remembered as empty so it is not asked again
-            failed += 1
-            have[c] = {}
-            if failed <= 2:
-                print(f"  festival_intro {c}: {str(d)[:200]}", flush=True)
-            continue
-        have[c] = {k: v for k, v in items[0].items() if k not in ("contentid", "contenttypeid") and v not in ("", None)}
-        if not got:
-            print(f"  festival_intro fields: {sorted(items[0])}; example playtime: {str(items[0].get('playtime', ''))[:80]!r}", flush=True)
-        got += 1
-    print(f"festival_intro: {got} fetched, {failed} without intro, {sum(1 for v in have.values() if v)} of {len(ids)} festivals have one", flush=True)
-    if todo and not got and not have:
+        for attempt in range(2):
+            try:
+                d = requests.get(FESTIVAL_INTRO, params=params, timeout=40).json()
+            except Exception:  # noqa: BLE001
+                time.sleep(2)
+                continue
+            text = str(d)
+            if "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in text or "SERVICE_KEY" in text:
+                stop.append(text[:200])
+                return c, None
+            if "response" not in d:  # e.g. a passing HTTP_ERROR
+                time.sleep(2)
+                continue
+            items = items_of(d["response"].get("body", {}))
+            return c, ({k: v for k, v in items[0].items() if k not in ("contentid", "contenttypeid") and v not in ("", None)} if items else {})
+        return c, None
+    with ThreadPoolExecutor(4) as pool:
+        got = list(pool.map(one, todo))
+    ok = [(c, v) for c, v in got if v is not None]
+    have.update(ok)
+    if stop:
+        print(f"  festival_intro: stopped ({stop[0]})", flush=True)
+    print(f"festival_intro: {sum(1 for _, v in ok if v)} fetched, {sum(1 for _, v in ok if not v)} without intro, "
+          f"{len(todo) - len(ok)} to retry; {sum(1 for v in have.values() if v)} of {len(latest)} festivals have one", flush=True)
+    if todo and not ok and not have:
         raise RuntimeError("every request failed")
     save_json("festival_intro.json", have)
 
