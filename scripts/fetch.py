@@ -42,6 +42,8 @@ CENTURY_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15132695/v1"  # �
 DONG_POP = "https://apis.data.go.kr/1480523/LvlhPpnSttusService/getLvlhPpnSttusInfo"  # 국립환경과학원 생활계 인구현황 (법정동·리, yearly)
 FOOD_MATCH_BUDGET = 6000  # 일반음식점 lookups per run (one per restaurant); the rest waits for the next run
 FOOD_MATCH_MINUTES = 20  # stop after this long so the job (90 min limit) still saves what it found
+FESTIVAL_INTRO = "https://apis.data.go.kr/B551011/KorService2/detailIntro2"  # TourAPI 소개정보 (축제: 운영시간·프로그램 등)
+FESTIVAL_INTRO_BUDGET = 300  # requests per run; the rest waits for later runs (pushes included)
 FESTIVALS_FROM = "20180101"  # an entry carries only its latest edition's dates, so an early start date returns the whole list
 DATALAB_BASE = "https://apis.data.go.kr/B551011/DataLabService/{}"
 # output file -> (operation, region code field, region name field); 광역 and 기초 visitor counts per day
@@ -118,8 +120,8 @@ RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
 TRANSIT = "https://ms1238.github.io/korea-transit-gap/data/"  # the sister transit-gap dashboard (bus stops with route counts)
-OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "mcst_lodging"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"mcst_lodging", "transit_stops", "trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "festival_intro", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "mcst_lodging"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"festival_intro", "mcst_lodging", "transit_stops", "trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -303,17 +305,17 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "festival_intro", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
-        if only_missing and have and ep != "food_coords":  # food_coords fills over several runs, so it also runs on pushes
+        if only_missing and have and ep not in ("food_coords", "festival_intro"):  # these fill over several runs, so they also run on pushes
             continue
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "kto_exp": lambda k: fetch_kto_index(k, KTO_EXP, "kto_exp"), "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong, "transit_stops": fetch_transit_stops, "mcst_lodging": fetch_mcst_lodging}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "festival_intro": fetch_festival_intro, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong, "transit_stops": fetch_transit_stops, "mcst_lodging": fetch_mcst_lodging}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -419,6 +421,45 @@ def fetch_festivals(key):
     # an earlier year of a listed festival stays; the same year again is a correction of its dates
     rows = [r for r in old if r["eventstartdate"][:4] < year.get(r["contentid"], "9999")] + new
     write_rows("festivals", sorted(rows, key=lambda r: (r["eventstartdate"], r["contentid"])))
+
+
+def fetch_festival_intro(key):
+    """TourAPI 소개정보 (detailIntro2, contentTypeId 15) of every festival in raw/festivals.jsonl: 운영시간 (playtime),
+    프로그램 and the other intro fields, for the festival stay-conversion analysis. Kept in raw/festival_intro.json as
+    {contentid: {field: value}}; only festivals not fetched yet are asked, up to FESTIVAL_INTRO_BUDGET per run."""
+    path = os.path.join(RAW_DIR, "festival_intro.json")
+    have = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
+    ids = sorted({json.loads(l)["contentid"] for l in open(os.path.join(RAW_DIR, "festivals.jsonl"), encoding="utf-8")})
+    todo = [c for c in ids if c not in have][:FESTIVAL_INTRO_BUDGET]
+    got = failed = 0
+    for c in todo:
+        params = {"serviceKey": key, "MobileOS": "ETC", "MobileApp": "korea-lodging-dashboard", "_type": "json", "contentId": c, "contentTypeId": 15}
+        try:
+            d = requests.get(FESTIVAL_INTRO, params=params, timeout=60).json()
+        except Exception:  # noqa: BLE001
+            failed += 1
+            continue
+        if "LIMITED_NUMBER_OF_SERVICE_REQUESTS" in str(d):
+            print("  festival_intro: daily limit reached, the rest waits for the next run", flush=True)
+            break
+        if "response" not in d or d["response"].get("header", {}).get("resultCode") not in ("0000", "00", None):
+            print(f"  festival_intro: API error {str(d)[:200]}; stopping for this run", flush=True)
+            break
+        items = items_of(d["response"].get("body", {}))
+        if not items:  # remembered as empty so it is not asked again
+            failed += 1
+            have[c] = {}
+            if failed <= 2:
+                print(f"  festival_intro {c}: {str(d)[:200]}", flush=True)
+            continue
+        have[c] = {k: v for k, v in items[0].items() if k not in ("contentid", "contenttypeid") and v not in ("", None)}
+        if not got:
+            print(f"  festival_intro fields: {sorted(items[0])}; example playtime: {str(items[0].get('playtime', ''))[:80]!r}", flush=True)
+        got += 1
+    print(f"festival_intro: {got} fetched, {failed} without intro, {sum(1 for v in have.values() if v)} of {len(ids)} festivals have one", flush=True)
+    if todo and not got and not have:
+        raise RuntimeError("every request failed")
+    save_json("festival_intro.json", have)
 
 
 def fetch_century(key):
