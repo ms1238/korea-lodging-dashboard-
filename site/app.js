@@ -1771,7 +1771,7 @@
   function renderFestOne() {
     const f = FEST.f[fSel], R = FEST.r;
     $('fest-list').querySelectorAll('tbody tr').forEach(tr => tr.setAttribute('aria-selected', String(+tr.dataset.i === fSel)));
-    if (!f) { ['fest-info', 'fest-kpis', 'fest-table', 'fest-vis', 'fest-vis-note'].forEach(id => { $(id).innerHTML = ''; }); renderAge('fest', null); drawRings(null, false, 'festival'); return; }
+    if (!f) { ['fest-info', 'fest-kpis', 'fest-table', 'fest-vis', 'fest-vis-note'].forEach(id => { $(id).innerHTML = ''; }); renderAge('fest', null); renderFestDiag(null); drawRings(null, false, 'festival'); return; }
     const st = festState(f), last = f[5].at(-1), dday = Math.round((new Date(ymd(last[0]).replace(/\./g, '-')) - new Date(ymd(today).replace(/\./g, '-'))) / 864e5);
     $('fest-info').innerHTML = (f[7] ? `<img src="${esc(f[7])}" alt="" loading="lazy" onerror="this.remove()">` : '')
       + `<div><b style="font-size:15px">${esc(f[2])}</b><br>${edSpan(last)} · <b>${st === 1 ? `D-${dday}` : FST[st]}</b><br>${esc(short(S[f[3]].name))} ${esc(f[6])}${f[8] ? `<br><small style="color:var(--muted)">문의 ${esc(f[8])}</small>` : ''}`
@@ -1784,6 +1784,7 @@
       + `<tr><td><b>합계</b></td>${R.map((_, k) => `<td><b>${fmt(festCount(f, k))}</b></td>`).join('')}</tr></tbody>`;
     csvSet('fest-table', ['축제', '업종', ...R.map(km => `반경 ${kmLabel(km)}`)], rows.map(c => [f[2], T[c[0]].name, ...c.slice(1)]));
     renderAge('fest', f, f[2], R);
+    renderFestDiag(f);
     renderFestVis(f);
     drawRings(f, false, 'festival');
   }
@@ -1845,6 +1846,11 @@
      얼마나 붐비는지를 전국 축제끼리 백분위로 매김. 가격 자료가 없어 요금이 아니라 '요금이 오르기 쉬운 조건'만 봄 ----------
      점수 = 100 × (0.6 × 객실 1실당 하루 외지인의 백분위 + 0.4 × 평소 대비 배율의 백분위). 80 이상 높음, 60 이상 주의 */
   let riskAll = false, riskCache = null;
+  const festMonth = f => {  // 최근 회차의 날짜가 가장 많이 걸친 달(YYYYMM)
+    const [a, b] = f[5].at(-1).map(d => new Date(ymd(d).replace(/\./g, '-'))), c = {};
+    for (let t = +a; t <= +b; t += 864e5) { const k = new Date(t).toISOString().slice(0, 7).replace('-', ''); c[k] = (c[k] || 0) + 1; }
+    return Object.entries(c).sort((x, y) => y[1] - x[1])[0][0];
+  };
   function festRiskAll() {  // 축제 번호 → { day, lift, perRoom, rooms, ym, score, grade } (자료가 되는 축제만)
     if (riskCache && riskCache.f === FEST) return riskCache.m;
     const m = new Map(), RR = FEST.rr || [], k10 = RR.indexOf(10);
@@ -1854,7 +1860,7 @@
         const ser = f[4] >= 0 ? visits.msgg[f[3]]?.[f[4]] : null, rooms = f[10] ? f[10][k10] : 0;
         const [d0, d1] = f[5].at(-1).map(d => new Date(ymd(d).replace(/\./g, '-')));
         if (!ser || !rooms || (d1 - d0) / 864e5 + 1 > 31) return;  // 한 달 넘게 이어지는 전시·행사는 짧은 수요 집중이 아니라 뺌
-        const mm = String(f[5].at(-1)[0]).slice(4, 6), j = [...full].reverse().find(x => M[x].slice(4) === mm && ser[x] != null);
+        const mm = festMonth(f).slice(4), j = [...full].reverse().find(x => M[x].slice(4) === mm && ser[x] != null);
         const base = full.slice(-12).map(x => ser[x]).filter(v => v != null);
         if (j == null || base.length < 6) return;
         const days = new Date(+M[j].slice(0, 4), +M[j].slice(4), 0).getDate(), avg = base.reduce((a, b) => a + b, 0) / base.length;
@@ -1893,6 +1899,52 @@
     csvSet('frisk-table', ['등급', '점수', '축제', '시작', '끝', '상태', '지역', '기준 월(작년 같은 달)', '축제 달 하루 외지인', '평소 대비(배)', '반경 3km 객실', '반경 10km 객실', '객실 1실당 하루 외지인', '객실당 백분위', '평소 대비 백분위'],
       ids.map(i => { const f = FEST.f[i], v = m.get(i), e = f[5].at(-1); return [RISK_G[v.grade][0], v.score, f[2], ymd(e[0]), ymd(e[1]), FST[festState(f)], festPlace(f), `${v.ym.slice(0, 4)}-${v.ym.slice(4)}`,
         Math.round(v.day), +v.lift.toFixed(3), f[10][0], v.rooms, +v.perRoom.toFixed(2), Math.round(v.p_perRoom * 100), Math.round(v.p_lift * 100)]; }));
+  }
+  /* ---------- 숙박 전환 점검표: 고른 축제의 공급·프로그램·주변 여건·접근 요인을 전국(또는 같은 광역) 축제와 견줘 보여 줌 ----------
+     전국 축제 시군구-월 313곳 회귀분석에서 이 요인들이 축제 달 숙박 비중 변화를 뚜렷이 설명하지 못해(R² 0.03), 유형을 단정하지
+     않고 '점검할 신호'만 표시함 */
+  let diagOld = null, diagTok = 0;
+  const diagPct = (xs, x) => { const v = xs.filter(y => y != null); return v.length ? (v.filter(y => y < x).length + v.filter(y => y === x).length / 2) / v.length : null; };
+  async function renderFestDiag(f) {
+    const box = $('fdiag-body'), tok = ++diagTok;
+    if (!f) { box.innerHTML = ''; csvSet('fdiag', [], []); return; }
+    const rk = festRiskAll().get(FEST.f.indexOf(f)), RR = FEST.rr || [], k10 = RR.indexOf(10);
+    // 노후: 시군구 객실 가운데 인허가 20년 이상 숙소의 몫(전국 시군구 백분위, 객실 100실 이상)
+    diagOld ||= S.flatMap(sd => (sd.rage || []).filter(r => r && r[0] >= 100).map(r => r[1] / r[0]));
+    const rg = f[4] >= 0 ? (S[f[3]].rage || [])[f[4]] : null, old = rg && rg[0] ? rg[1] / rg[0] : null;
+    // 주변 관광지: 같은 광역 축제들과 비교(반경 10km 안 TourAPI 관광지)
+    const tour = (await loadTour(f[3])).filter(t => t[2] === 0);
+    if (tok !== diagTok) return;
+    const near = (lat, lon) => { const kx = 111.32 * Math.cos(lat * Math.PI / 180); return tour.filter(t => ((t[0] - lat) * 110.95) ** 2 + ((t[1] - lon) * kx) ** 2 <= 100).length; };
+    const tn = near(f[0], f[1]), tAll = FEST.f.filter(g => g[3] === f[3]).map(g => near(g[0], g[1]));
+    const seoul = Math.hypot((f[0] - 37.5663) * 110.95, (f[1] - 126.9779) * 111.32 * Math.cos(f[0] * Math.PI / 180));
+    const e = f[5].at(-1), d0 = new Date(ymd(e[0]).replace(/\./g, '-')), d1 = new Date(ymd(e[1]).replace(/\./g, '-')), days = Math.round((d1 - d0) / 864e5) + 1;
+    const night = f[11] ? f[11][0] : undefined, P = x => x == null ? '' : ` · 상위 ${Math.max(1, Math.round((1 - x) * 100))}%`;
+    // 참고: 축제 달 숙박 비중 효과(관광수요지수, 그 달 − 나머지 달 평균 − 같은 달 전국 시군구 변화의 중위)
+    let eff = null;
+    if (kix && f[4] >= 0) {
+      const j = kix.ix.findIndex(x => x[0] === '2102'), mo = festMonth(f), t = kix.months.indexOf(mo);
+      const dl = v => { if (!v || v[t] == null) return null; const r = v.filter((x, i) => i !== t && x != null); return r.length >= 8 ? v[t] - r.reduce((a, b) => a + b, 0) / r.length : null; };
+      if (j >= 0 && t >= 0) { const me = dl(kix.v[`${f[3]}:${f[4]}`]?.[j]), all = Object.entries(kix.v).filter(([k]) => k.includes(':')).map(([, v]) => dl(v[j])).filter(x => x != null).sort((a, b) => a - b);
+        if (me != null && all.length) eff = [me - all[all.length >> 1], `${mo.slice(0, 4)}.${mo.slice(4)}`]; }
+    }
+    // [영역, 항목, 값, 비교, 신호(1 = 점검)]
+    const rows = [
+      ['공급', '반경 10km 객실 1실당 하루 외지인', rk ? rk.perRoom.toFixed(1) + '명' : '-', rk ? `전국 축제${P(rk.p_perRoom)}` : '방문자·객실 자료 없음', rk ? rk.p_perRoom >= .75 : null],
+      ['공급', '반경 10km 객실', k10 >= 0 && f[10] ? fmt(f[10][k10]) + '실' : '-', '신고값, 빈 칸은 업종 중앙값', null],
+      ['공급', '시군구 객실 중 인허가 20년 이상 숙소 몫', old == null ? '-' : Math.round(old * 100) + '%', old == null ? '' : `전국 시군구${P(diagPct(diagOld, old))}`, old == null ? null : diagPct(diagOld, old) >= .75],
+      ['프로그램', '야간 운영(20시 이후)', night === 1 ? '있음' : night === 0 ? '없음' : '확인 안 됨', f[11] && f[11][1] ? `운영시간: ${f[11][1]}` : '관광공사 소개정보 없음', night === 0],
+      ['프로그램', '축제 기간', days + '일', days <= 1 ? '하루짜리는 숙박 동기가 약함' : '', days <= 1],
+      ['주변 여건', '반경 10km 관광지', tn + '곳', `같은 광역 축제${P(diagPct(tAll, tn))}`, diagPct(tAll, tn) <= .25],
+      ['접근', '서울에서 직선거리', Math.round(seoul) + 'km', seoul < 150 ? '수도권 당일 왕복권' : '', seoul < 150],
+    ];
+    const flags = { 공급: 0, 프로그램: 0, '주변 여건': 0, 접근: 0 };
+    rows.forEach(r => { if (r[4]) flags[r[0]]++; });
+    const on = Object.entries(flags).filter(([, n]) => n);
+    box.innerHTML = `<p class="sub" style="margin-bottom:10px">${on.length ? `점검 신호: ${on.map(([k, n]) => `<b>${esc(k)}</b> ${n}개`).join(' · ')}` : '두드러진 점검 신호가 없습니다.'}${eff ? ` · 참고: 축제 달(${eff[1]}) 숙박 비중 지수 변화 <b>${eff[0] >= 0 ? '+' : '−'}${Math.abs(eff[0]).toFixed(1)}</b> (계절 보정)` : ''}</p>`
+      + '<div class="tablewrap"><table><thead><tr><th style="text-align:left">영역</th><th style="text-align:left">항목</th><th>값</th><th style="text-align:left">비교</th><th>점검</th></tr></thead><tbody>'
+      + rows.map(r => `<tr><td style="text-align:left">${esc(r[0])}</td><td style="text-align:left">${esc(r[1])}</td><td>${esc(r[2])}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(r[3])}</td><td>${r[4] ? '<b style="color:#e67e22">●</b>' : r[4] === false ? '<span style="color:var(--muted)">·</span>' : ''}</td></tr>`).join('') + '</tbody></table></div>';
+    csvSet('fdiag', ['축제', '영역', '항목', '값', '비교', '점검 신호'], rows.map(r => [f[2], r[0], r[1], r[2], r[3], r[4] ? 'Y' : '']));
   }
   $('frisk-table').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (!tr) return;
     fSel = +tr.dataset.i; renderFest(); drawRings(FEST.f[fSel], true, 'festival'); $('fest-sel').closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
