@@ -26,7 +26,7 @@ Steps
 17. kac.json: passengers per airport and year, domestic / international (한국공항공사 공항별 여객실적).
 18. kto_index.json: 관광수요지수 세부 지표 (체류·소비 강도와 그 세부 지표: 외지인 소비액·방문량 대비 소비액 등, 다양성, 관광 자원 수요: 숙박업 소비액·숙박 검색량 등) per 시도 / 시군구 and month (한국관광데이터랩, indices).
 19. festivals.json: TourAPI festivals with every edition collected so far and the operating lodgings per type within
-    0.5 / 1 / 3 / 5 km, as for stations.
+    0.5 / 1 / 3 / 5 km, as for stations, and the 객실 within 3 / 10 km ("rr", f[10]).
 20. park_lodging.json: per national park, lodgings inside it or within 1 / 3 / 5 km of its boundary (every status,
     exact positions) with permit and closing month, for the stock over time; "vis" = monthly visitors (국립공원공단) where published.
 21. food.json: 모범음식점 (designated, open) and 백년가게 at the coordinates of their 일반음식점 인허가 record (raw/food_coords.json).
@@ -922,10 +922,14 @@ def write_stations(rows, sidos, sgg_of, tidx):
         json.dump({"r": RADII, "lines": lines, "st": out, "kym": kym, "mym": mym, "near": near}, f, ensure_ascii=False, separators=(",", ":"))
 
 
+FEST_ROOM_RADII = (3, 10)  # km, 객실 (room_rule) around festivals, for the 숙박 수급 압박 early warning
+
+
 def write_festivals(rows, sidos, sgg_of, tidx, merged):
     """TourAPI festivals with every edition seen so far and the operating lodgings (exact positions) within RADII of
-    the festival, per type, as for stations. Editions the service no longer lists and that have not ended are dropped
-    (cancelled or moved)."""
+    the festival, per type, as for stations, then the 객실 (room_rule; 업종 without a 객실 column left out) within
+    FEST_ROOM_RADII. Editions the service no longer lists and that have not ended are dropped (cancelled or moved)."""
+    med, cap, _ = room_rule(rows, tidx)
     path = os.path.join(RAW, "festivals.jsonl")
     if not os.path.exists(path):
         return
@@ -953,21 +957,26 @@ def write_festivals(rows, sidos, sgg_of, tidx, merged):
             continue
         kx = 111.32 * math.cos(math.radians(lat))
         cnt = defaultdict(lambda: [0] * len(RADII))
+        rooms = [0.0] * len(FEST_ROOM_RADII)
         ci, cj = int(lat * 100), int(lon * 100)
-        for i in range(ci - 5, ci + 6):
-            for j in range(cj - 6, cj + 7):
+        for i in range(ci - 10, ci + 11):  # 10 km: ~9 cells of 0.01° north-south, ~11 east-west
+            for j in range(cj - 13, cj + 14):
                 for r in grid.get((i, j), ()):
                     d2 = ((r["ll"][0] - lat) * 110.95) ** 2 + ((r["ll"][1] - lon) * kx) ** 2
+                    t = tidx[(r["cat"], r["type"])]
                     for k, rad in enumerate(RADII):
                         if d2 <= rad * rad:
-                            cnt[tidx[(r["cat"], r["type"])]][k] += 1
+                            cnt[t][k] += 1
+                    for k, rad in enumerate(FEST_ROOM_RADII):
+                        if d2 <= rad * rad and t in med:
+                            rooms[k] += min(r["rooms"], cap.get(t, r["rooms"])) if r["rooms"] else med[t]
         out.append([round(lat, 5), round(lon, 5), clean(rec["title"]), sidos.index(sido), sgg_of[sido].index(sgg) if sgg in sgg_of[sido] else -1,
                     [[int(r["eventstartdate"]), int(r["eventenddate"] or r["eventstartdate"])] for r in recs],
                     re.sub(r"^\S+\s", "", clean(rec["addr1"])), clean(rec["firstimage2"] or rec["firstimage"]).replace("http://", "https://"),
-                    clean(rec["tel"]), [[t, *c] for t, c in sorted(cnt.items())]])
+                    clean(rec["tel"]), [[t, *c] for t, c in sorted(cnt.items())], [round(x) for x in rooms]])
     print(f"festivals: {len(out)} festivals, {sum(len(f[5]) for f in out)} editions; skipped (no position or region) {skipped}", flush=True)
     with open(os.path.join(OUT, "festivals.json"), "w", encoding="utf-8") as f:
-        json.dump({"r": RADII, "f": out}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"r": RADII, "rr": FEST_ROOM_RADII, "f": out}, f, ensure_ascii=False, separators=(",", ":"))
 
 
 TRRSRT_RADII = (1, 3, 5)  # km, rings around 관광지·관광단지

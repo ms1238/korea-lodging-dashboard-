@@ -290,6 +290,11 @@
 
   <section data-tab="festival" id="fest-sec">
     <div class="sechead"><h2>축제 주변 숙소</h2><p class="sub" id="fest-sub"></p></div>
+    <div class="card" id="frisk-sec" hidden><button class="btn csv" data-csv="frisk-table" data-name="축제_숙박수급압박">CSV</button><h3 style="margin-bottom:4px">다가오는 축제 숙박 수급 압박 (조기경보)</h3><p class="sub" id="frisk-sub" style="margin-bottom:10px"></p>
+      <div class="kpis" id="frisk-kpis"></div>
+      <div class="tablewrap" style="margin-top:12px"><table id="frisk-table"></table></div>
+      <button class="btn more" id="frisk-more" type="button" hidden></button>
+      <p class="note">요금을 예측하는 것이 아니라, 요금이 오르기 쉬운 조건(짧은 기간 수요 집중 대비 주변 객실 부족)을 비교하는 지표입니다. 축제 달 하루 외지인 = 축제가 열리는 시군구의 작년 같은 달 외지인 누적 방문자 ÷ 그 달 일수(데이터랩, 당일 방문 포함), 평소 대비 = 그 달 ÷ 최근 12개월 월평균, 객실 = 축제 위치에서 직선 10km 안 영업 숙소 객실(신고값, 빈 칸은 업종 중앙값, 펜션·야영장 제외). 점수 = 0.6 × 객실 1실당 하루 외지인의 전국 축제 백분위 + 0.4 × 평소 대비 배율의 백분위(×100). 80점 이상 '높음', 60점 이상 '주의'. 한 달(31일)을 넘게 이어지는 전시·행사와 광역 단위로만 등록된 축제는 뺍니다. 가중치와 기준은 이 대시보드가 정한 값이며, 실제 요금·예약률·미신고 숙소·인근 시군 숙박은 반영되지 않습니다. 점검·안내 우선순위를 정하는 참고자료로만 쓰세요. 행을 누르면 그 축제의 주변 숙소를 보여 줍니다.</p></div>
     <div class="card">
       <div class="tlrow" style="margin-bottom:10px"><label for="fest-q" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">축제<span class="suggwrap"><input type="search" id="fest-q" placeholder="축제 이름·장소 검색" autocomplete="off" role="combobox" aria-controls="fest-sugg"><span class="sugg" id="fest-sugg" role="listbox" hidden></span></span></label><select id="fest-sel" aria-label="축제 선택"></select></div>
       <div class="festinfo" id="fest-info"></div>
