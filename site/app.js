@@ -3,7 +3,8 @@
    data/cube.json   – [sidoIdx, sggIdx, typeIdx, status, permitYear, count]  (national view)
    data/close.json  – [sidoIdx, sggIdx, typeIdx, closeYear, permitYear, count] (national view)
    data/pts/<si>.json – {dongs:[[읍면동…] per 시군구], ris:{"g:d":[리…]},
-                         rows:[[lat, lon, type, sgg, dong, ri, status, year, closeYear, name, addr, date, closed, approx, zone, bldg]]}
+                         rows:[[lat, lon, type, sgg, dong, ri, status, year, closeYear, name, addr, date, closed, approx, zone, bldg, rooms,
+                                (여관·여인숙 with VWorld data only:) vzone (meta.vzones index), 공시지가 원/㎡]]}
    data/tour/<si>.json – [[lat, lon, tourType, sgg, title, addr, img, contentId, lodgings≤1km, lodgings≤3km]]
    data/minbak.json – [sidoIdx, sggIdx, status, zone, bldg, count]  (외국인관광 도시민박, national view)
    data/visits.json – {q:[분기…], qdays, last, sido:[[외지인[], 외국인[]]…], sgg:[[[외지인[], 외국인[]]…]…]} (null = 자료 없음) */
@@ -211,6 +212,19 @@
 
   /* ---------- map ---------- */
   if (typeof maplibregl === 'undefined') $('map').innerHTML = '<p class="note" style="padding:16px">지도 라이브러리를 불러오지 못했습니다. 새로고침해 주세요.</p>';
+  // 지도 점 색: 업종(기본) 또는 업력(인허가 후 지난 햇수, 객실·노후도 카드와 같은 구간). 업력 미상은 회색
+  let ptColor = 'type';
+  const ptPaint = () => ptColor === 'age'
+    ? ['case', ['<', ['get', 'age'], 0], '#b0b7c0', ['step', ['get', 'age'], AGE_COLS[0], 10, AGE_COLS[1], 20, AGE_COLS[2], 30, AGE_COLS[3]]]
+    : ['match', ['get', 'c'], ...CATS.flatMap((_, i) => [i, col(i)]), '#888'];
+  const AGE_COLS = ['#a1d99b', '#fdd49e', '#fc8d59', '#d7301f'];
+  $('pt-color').addEventListener('click', e => {
+    const b = e.target.closest('button[data-v]'); if (!b) return;
+    ptColor = b.dataset.v;
+    document.querySelectorAll('#pt-color button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    $('pt-age-legend').hidden = ptColor !== 'age';
+    if (mapReady && map.getLayer('pts')) map.setPaintProperty('pts', 'circle-color', ptPaint());
+  });
   const map = typeof maplibregl === 'undefined' ? null : new maplibregl.Map({
     container: 'map', style: 'https://tiles.openfreemap.org/styles/positron', center: [127.8, 36.2], zoom: 5.6, attributionControl: { compact: true } });
   let mapReady = false, radiusOn = false;  // radiusOn: 반경 분석 모드(지도 클릭 = 반경 숙소 세기)
@@ -356,7 +370,7 @@
       map.addSource('pts', { type: 'geojson', data: empty });
       map.addLayer({ id: 'pts', type: 'circle', source: 'pts', paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 7, 2.2, 11, 3.6, 15, 6],
-        'circle-color': ['match', ['get', 'c'], ...CATS.flatMap((_, i) => [i, col(i)]), '#888'],
+        'circle-color': ptPaint(),
         'circle-opacity': .85, 'circle-stroke-color': '#fff', 'circle-stroke-width': .6 } });
       // 역세권 반경(대중교통 탭에서 고른 역)
       map.addSource('stn-ring', { type: 'geojson', data: empty });
@@ -452,7 +466,7 @@
       map.on('click', 'pts', e => { if (radiusOn) return;
         const p = e.features[0].properties;
         new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(e.lngLat).setHTML(
-          `<b>${esc(p.name)}</b><br>${esc(T[p.t].name)} · ${ST[p.s]}<br>${esc(p.addr)}<br><small>인허가 ${esc(p.date)}${p.closed ? ' · 폐업 ' + esc(p.closed) : ''}${p.ap ? ' · 위치는 동 단위 근사' : ''}</small>`).addTo(map);
+          `<b>${esc(p.name)}</b><br>${esc(T[p.t].name)} · ${ST[p.s]}<br>${esc(p.addr)}<br><small>인허가 ${esc(p.date)}${p.age >= 0 ? ` (${p.age}년)` : ''}${p.closed ? ' · 폐업 ' + esc(p.closed) : ''}${p.ap ? ' · 위치는 동 단위 근사' : ''}</small>`).addTo(map);
       });
       map.on('click', 'tour', e => { if (radiusOn) return;
         const p = e.features[0].properties;
@@ -660,7 +674,7 @@
     for (const r of D.rows) {
       if (r[0] == null || !inDetail(r) || !state.types.has(r[2]) || !tlRowOK(r)) continue;
       feats.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [r[1], r[0]] },
-        properties: { t: r[2], c: catOf[r[2]], s: r[6], name: r[9], addr: r[10], date: r[11], closed: r[12], ap: r[13] } });
+        properties: { t: r[2], c: catOf[r[2]], s: r[6], name: r[9], addr: r[10], date: r[11], closed: r[12], ap: r[13], age: r[7] > 0 ? yNow - r[7] : -1 } });
     }
     map.getSource('pts').setData({ type: 'FeatureCollection', features: feats });
     drawTour();
@@ -746,7 +760,7 @@
     renderRegAge();
     renderMinbak(names);
     renderStations(); renderTerminals(); renderTrr();
-    renderRecent(); renderYTD(); renderChange(); renderSD(); if ($('choro-mode').value === 'net') renderChoro();
+    renderRecent(); renderYTD(); renderChange(); renderSD(); renderMatrix(); if ($('choro-mode').value === 'net') renderChoro();
     renderSurv();
     syncMore();
     renderFest();
@@ -1250,6 +1264,67 @@
     csvSet('sd-table', ['지역', `${uh} ${y0}년 말`, `${uh} ${y1}년 말`, `${unitName} 증가율(%)`, `${kindName} ${y0}`, `${kindName} ${y1}`, '방문 증가율(%)', '차이(%p)'],
       rows.map(p => [regLabel(p), Math.round(p.st[2]), Math.round(p.st[3]), p.gs == null ? '' : +(p.gs * 100).toFixed(2), p.d ? p.d[0] : '', p.d ? p.d[1] : '', p.gd == null ? '' : +(p.gd * 100).toFixed(2), p.gap == null ? '' : +(p.gap * 100).toFixed(2)]));
   }
+  /* ---------- 관광 소비 수요 vs 숙소 노후 매트릭스: 시군구별 방문량 대비 소비액 지수(데이터랩 2203, 최근 12개월 평균)와
+     인허가 20년 이상 숙소의 객실 비중(meta.sido[].rage). 기준선은 전국 시군구 중위값 ---------- */
+  const MX_MIN = 100;  // 객실(추정 포함)이 이보다 적은 시군구는 비중이 불안정해 뺌
+  const MX_Q = [['재생 우선', '소비 수요는 높은데 숙소가 낡음: 리모델링·재생 지원 검토', 'var(--closed)'],
+    ['양호', '소비 수요가 높고 숙소도 비교적 새것', 'var(--ok)'],
+    ['정비·수요 병행', '소비 수요가 낮고 숙소도 낡음: 정비와 수요 확충을 함께', '#e67e22'],
+    ['수요 확충', '숙소는 비교적 새것이지만 소비 수요가 낮음: 체류·소비 콘텐츠 보강', '#2a78d6']];
+  function renderMatrix() {
+    const sec = $('mx-sec'), j = kix ? kix.ix.findIndex(x => x[0] === '2203') : -1;
+    const ok = j >= 0 && S.some(sd => sd.rage);
+    sec.hidden = !ok; if (!ok) return;
+    const all = S.flatMap((sd, si) => sd.sgg.map((g, gi) => {
+      const rg = (sd.rage || [])[gi], x = kixAvg({ si, gi }, '2203');
+      return rg && rg[0] >= MX_MIN && x != null ? { si, gi, name: g, x, y: rg[1] / rg[0], y30: rg[2] / rg[0], rooms: rg[0], old: rg[1] } : null;
+    })).filter(Boolean);
+    if (all.length < 10) { sec.hidden = true; return; }
+    const med = xs => { const v = [...xs].sort((a, b) => a - b), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+    const mx = med(all.map(p => p.x)), my = med(all.map(p => p.y));
+    const quad = p => p.x >= mx ? (p.y >= my ? 0 : 1) : (p.y >= my ? 2 : 3);
+    all.forEach(p => { p.q = quad(p); });
+    const cur = U ? null : curReg(), isSel = p => cur && cur.si === p.si && (cur.gi < 0 ? false : cur.gi === p.gi || (gisOf(cur) || []).includes(p.gi));
+    const inSido = p => cur && cur.si >= 0 && cur.si === p.si;
+    $('mx-sub').textContent = `전국 시군구 ${all.length}곳(객실 ${MX_MIN}실 이상) · 가로: 방문량 대비 소비액 지수(데이터랩, 최근 12개월 평균) · 세로: 인허가 20년 이상 숙소의 객실 비중 · 기준선: 전국 시군구 중위값`;
+    const me = all.find(isSel), cnt = MX_Q.map((_, k) => all.filter(p => p.q === k).length);
+    $('mx-kpis').innerHTML = (me ? [[MX_Q[me.q][0], `${me.name}: ${MX_Q[me.q][1]}`], [me.x.toFixed(1), `방문량 대비 소비액 지수 (전국 중위 ${mx.toFixed(1)})`], [Math.round(me.y * 100) + '%', `20년 이상 숙소 객실 비중 (전국 중위 ${Math.round(my * 100)}%)`]] : [])
+      .concat([[`${fmt(cnt[0])}곳`, `전국 '재생 우선' 시군구${cur && cur.si >= 0 ? ` (${short(S[cur.si].name)} ${fmt(all.filter(p => inSido(p) && p.q === 0).length)}곳)` : ''}`]])
+      .map(k => `<div class="kpi"><b>${esc(k[0])}</b><span>${esc(k[1])}</span></div>`).join('');
+    const q = (xs, f) => { const v = [...xs].sort((a, b) => a - b); return v[Math.min(v.length - 1, Math.max(0, Math.round(f * (v.length - 1))))]; };
+    const xa = q(all.map(p => p.x), .01) * .95, xb = q(all.map(p => p.x), .99) * 1.05, ya = 0, yb = Math.min(1, q(all.map(p => p.y), .99) * 1.08);
+    const W = 900, H = 460, L = 56, R = 16, Tp = 30, B = 40, iw = W - L - R, ih = H - Tp - B;
+    const X = v => L + (Math.min(xb, Math.max(xa, v)) - xa) / (xb - xa) * iw, Y = v => Tp + ih - (Math.min(yb, Math.max(ya, v)) - ya) / (yb - ya) * ih;
+    let g = '';
+    // 4분면 바탕과 이름
+    const qx = X(mx), qy = Y(my), rect = (x0, y0, x1, y1, k) => `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" fill="${MX_Q[k][2]}" opacity=".06"/>`;
+    g += rect(qx, Tp, W - R, qy, 0) + rect(qx, qy, W - R, Tp + ih, 1) + rect(L, Tp, qx, qy, 2) + rect(L, qy, qx, Tp + ih, 3);
+    const lab = (x, y, k, a) => `<text x="${x}" y="${y}" text-anchor="${a}" style="font-size:12.5px;font-weight:700;fill:${MX_Q[k][2]}">${MX_Q[k][0]} (${fmt(cnt[k])})</text>`;
+    g += lab(W - R - 6, Tp + 16, 0, 'end') + lab(W - R - 6, Tp + ih - 8, 1, 'end') + lab(L + 6, Tp + 16, 2, 'start') + lab(L + 6, Tp + ih - 8, 3, 'start');
+    for (let v = 0; v <= yb + 1e-9; v += .1) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${Math.round(v * 100)}%</text>`;
+    const tx = [5, 10, 20, 25, 50].find(t => (xb - xa) / t <= 8) || 50;
+    for (let v = Math.ceil(xa / tx) * tx; v <= xb; v += tx) g += `<text x="${X(v)}" y="${H - 22}" text-anchor="middle">${v}</text>`;
+    g += `<line x1="${qx}" x2="${qx}" y1="${Tp}" y2="${Tp + ih}" stroke="var(--muted)" stroke-dasharray="4 4"/><line x1="${L}" x2="${W - R}" y1="${qy}" y2="${qy}" stroke="var(--muted)" stroke-dasharray="4 4"/>`;
+    g += `<text x="${L + iw / 2}" y="${H - 4}" text-anchor="middle">방문량 대비 소비액 지수 →</text><text x="${L - 40}" y="12" text-anchor="start">↑ 20년 이상 숙소의 객실 비중</text>`;
+    const dot = (p, i, sel) => `<circle data-i="${i}" cx="${X(p.x)}" cy="${Y(p.y)}" r="${sel ? 6.5 : inSido(p) ? 5 : 3.5}" fill="${sel ? 'var(--fg)' : MX_Q[p.q][2]}" stroke="${sel || inSido(p) ? '#fff' : 'none'}" stroke-width="1.5" opacity="${sel || inSido(p) || !cur || cur.si < 0 ? .85 : .25}"/>`;
+    all.forEach((p, i) => { if (!isSel(p) && !inSido(p)) g += dot(p, i, false); });
+    all.forEach((p, i) => { if (inSido(p) && !isSel(p)) g += dot(p, i, false); });
+    all.forEach((p, i) => { if (isSel(p)) g += dot(p, i, true) + `<text x="${X(p.x) + 9}" y="${Y(p.y) + 4}" style="font-size:12px;font-weight:700;fill:var(--fg)">${esc(p.name)}</text>`; });
+    $('mx-chart').innerHTML = g;
+    const svg = $('mx-chart'), tip = $('mx-tip'), wrap = svg.parentElement;
+    svg.onmousemove = e => { const c = e.target.closest('circle[data-i]'); if (!c) { tip.hidden = true; return; } const p = all[+c.dataset.i];
+      tip.innerHTML = `<b>${esc(regLabel(p))}</b> · ${MX_Q[p.q][0]}<br>방문량 대비 소비액 지수 ${p.x.toFixed(1)}<br>20년 이상 객실 ${Math.round(p.y * 100)}% (30년 이상 ${Math.round(p.y30 * 100)}%)<br>객실 ${fmt(p.rooms)}실`; tip.hidden = false;
+      const b = wrap.getBoundingClientRect(); tip.style.left = Math.min(e.clientX - b.left + 14, b.width - tip.offsetWidth - 4) + wrap.scrollLeft + 'px'; tip.style.top = Math.max(0, Math.min(e.clientY - b.top + 10, b.height - tip.offsetHeight - 4)) + 'px'; };
+    svg.onmouseleave = () => { tip.hidden = true; };
+    svg.onclick = async e => { const c = e.target.closest('circle[data-i]'); if (!c) return; const p = all[+c.dataset.i]; if (state.sido !== p.si) await setSido(p.si); setSgg(p.gi); };
+    // 표: 고른 광역(없으면 전국)의 시군구, 재생 우선 → 정비·수요 병행 → 수요 확충 → 양호, 같은 칸 안에서는 노후 비중 큰 순
+    const order = [0, 2, 3, 1], rows = all.filter(p => !cur || cur.si < 0 || p.si === cur.si).sort((a, b) => order.indexOf(a.q) - order.indexOf(b.q) || b.y - a.y);
+    $('mx-title').textContent = `${cur && cur.si >= 0 ? S[cur.si].name : '전국'} 시군구`;
+    $('mx-table').innerHTML = '<thead><tr><th style="text-align:left">지역</th><th style="text-align:left">유형</th><th>방문량 대비 소비액 지수</th><th>20년 이상 객실 비중</th><th>30년 이상</th><th>객실</th></tr></thead><tbody>'
+      + rows.map(p => `<tr${isSel(p) ? ' class="sum"' : ''}><td style="text-align:left">${esc(regLabel(p))}</td><td style="text-align:left;color:${MX_Q[p.q][2]};font-weight:700">${MX_Q[p.q][0]}</td><td>${p.x.toFixed(1)}</td><td>${Math.round(p.y * 100)}%</td><td>${Math.round(p.y30 * 100)}%</td><td>${fmt(p.rooms)}</td></tr>`).join('') + '</tbody>';
+    csvSet('mx-table', ['지역', '유형', '방문량 대비 소비액 지수(최근 12개월 평균)', '20년 이상 객실 비중(%)', '30년 이상 객실 비중(%)', '객실(추정 포함)', '20년 이상 객실', '기준선: 소비 지수 중위', '기준선: 노후 비중 중위(%)'],
+      rows.map(p => [regLabel(p), MX_Q[p.q][0], +p.x.toFixed(2), +(p.y * 100).toFixed(1), +(p.y30 * 100).toFixed(1), p.rooms, p.old, +mx.toFixed(2), +(my * 100).toFixed(1)]));
+  }
   $('sd-kind').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { sdKind = b.dataset.v; renderSD(); } });
   $('sd-unit').addEventListener('click', e => { const b = e.target.closest('button'); if (b && !b.disabled) { sdUnit = b.dataset.v; renderSD(); } });
 
@@ -1419,6 +1494,16 @@
     }
     ageDraw(p, byTypeRows(by), '업종', `${name} 반경 ${kmLabel(km)} 업종별 객실과 노후도`, ['장소', '반경(km)'], [name, km]);
   }
+  // 고른 지역(D·inDetail)의 영업 숙소(선택 업종)를 key(행)로 묶은 Map(key → 집계). 종합 카드와 리포트가 씀
+  function regAgeGroup(key) {
+    const by = new Map();
+    if (D) for (const x of D.rows) {
+      if (!inDetail(x) || x[6] !== 0 || !state.types.has(x[2])) continue;
+      const k = key(x);
+      ageAdd(by.get(k) || by.set(k, ageAcc()).get(k), x);
+    }
+    return by;
+  }
   // 지역 카드(종합): 고른 지역 전체를 업종별로, 또는 산하 지역(광역 → 기초, 기초 → 읍·면·동, 읍·면·동 → 리)별로
   function renderRegAge() {
     const p = 'sum', c = ageCards[p];
@@ -1433,12 +1518,7 @@
     if (c.km !== 'child' || !canChild) c.km = 'type';
     $(`${p}-age-r`).innerHTML = `<button data-km="type" aria-pressed="${c.km === 'type'}">전체 · 업종별</button>`
       + (canChild ? `<button data-km="child" aria-pressed="${c.km === 'child'}">${esc(lab)}별</button>` : '');
-    const by = new Map();
-    for (const x of D.rows) {
-      if (!inDetail(x) || x[6] !== 0 || !state.types.has(x[2])) continue;
-      const k = c.km === 'type' ? x[2] : childOfRow(x);
-      ageAdd(by.get(k) || by.set(k, ageAcc()).get(k), x);
-    }
+    const by = regAgeGroup(c.km === 'type' ? x => x[2] : childOfRow);
     const rn = regionName();
     if (c.km === 'type') { ageDraw(p, byTypeRows(by), '업종', `${rn} 업종별 객실과 노후도`, ['지역'], [rn]); return; }
     const nm = k => k == null || k < 0 || names[k] == null ? '미상' : names[k];
@@ -2345,7 +2425,7 @@
     const xs = v && j >= 0 ? v[j].slice(-12).filter(x => x != null) : [];
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   }
-  getJSON('data/kto_index.json', null).then(d => { kix = d; renderKix(); renderLodem(); renderFoodDem(); renderFood(); renderCompare(); renderOverview(); });
+  getJSON('data/kto_index.json', null).then(d => { kix = d; renderMatrix(); renderKix(); renderLodem(); renderFoodDem(); renderFood(); renderCompare(); renderOverview(); });
 
   /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
   let icn = null, icnPer = 'm';
@@ -2765,8 +2845,67 @@
       ['그중 주거지역 입지 비율', f.mbRes == null ? '·' : `${PCT(f.mbRes)} (${fmt(f.mbz)}곳 중)`, PCT(nf.mbRes), '인허가 원자료 용도지역(미상 제외)'],
     ];
   }
+  /* ---------- 노후 숙박 재생 후보: 고른 지역의 오래된 여관·여인숙을 시설 단위로 점수화 (업종 선택과 무관) ----------
+     점수(0~100) = 업력 35 × min(1, (업력−20)/30) + 입지 30 × (상업지역 1, 준주거·준공업 0.5, 그 밖·미확인 0)
+                 + 관광 소비 수요 20 × 시군구 외지인 소비액 지수(최근 12개월 평균)의 전국 시군구 백분위 + 규모 15 × min(1, 객실/40) */
+  let regenMin = 30, regenAll = false, regenDem = null;
+  const REGEN_T = T.map((t, i) => i).filter(i => ['여관업', '여인숙업'].includes(T[i].name));
+  function regenDemand() {  // 'si:gi' → 0~1 백분위 (kix 2201). kix가 바뀌면 다시
+    if (regenDem && regenDem.kix === kix) return regenDem.p;
+    const p = {};
+    if (kix) {
+      const j = kix.ix.findIndex(x => x[0] === '2201');
+      const vals = j < 0 ? [] : Object.entries(kix.v).filter(([k]) => k.includes(':')).map(([k, v]) => { const xs = v[j].slice(-12).filter(x => x != null); return [k, xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null]; }).filter(x => x[1] != null);
+      const sorted = vals.map(x => x[1]).sort((a, b) => a - b);
+      for (const [k, v] of vals) { const lo = sorted.filter(x => x < v).length, eq = sorted.filter(x => x === v).length; p[k] = (lo + eq / 2) / sorted.length; }
+    }
+    regenDem = { kix, p };
+    return p;
+  }
+  function renderRegen() {
+    const head = $('regen-sub');
+    $('regen-seg').innerHTML = [30, 20].map(y => `<button data-y="${y}" aria-pressed="${y === regenMin}">인허가 ${y}년 이상</button>`).join('');
+    if (!D) { head.textContent = '광역이나 기초 지자체를 고르면 그 지역의 오래된 여관·여인숙을 재생 우선순위로 보여 줍니다.'; $('regen-kpis').innerHTML = ''; $('regen-table').innerHTML = ''; csvSet('regen-table', [], []); return; }
+    const VZ = meta.vzones || [], dem = regenDemand();
+    const sggKey = x => U ? `${U.regs[x[3]].si}:${U.regs[x[3]].gi}` : `${state.sido}:${x[3]}`;
+    const sggName = x => U ? U.names[x[3]] : S[state.sido].sgg[x[3]] || '';
+    const zoneS = z => z == null ? 0 : z.includes('상업') ? 1 : /준주거|준공업/.test(z) ? .5 : 0;
+    const list = [];
+    for (const x of D.rows) {
+      if (!inDetail(x) || x[6] !== 0 || !REGEN_T.includes(x[2]) || !(x[7] > 0)) continue;
+      const age = yNow - x[7];
+      if (age < regenMin) continue;
+      const zone = x[17] != null && x[17] >= 0 ? VZ[x[17]] : null, rooms = evRooms(x), d = dem[sggKey(x)];
+      const sc = 35 * Math.min(1, Math.max(0, (age - 20) / 30)) + 30 * zoneS(zone) + 20 * (d ?? 0) + 15 * Math.min(1, rooms / 40);
+      list.push({ x, age, zone, jiga: x[18] || null, rooms, rep: x[16] > 0, d, sc, sgg: sggName(x), dong: x[4] >= 0 && !U ? ((D.dongs[x[3]] || [])[x[4]] || '') : '' });
+    }
+    list.sort((a, b) => b.sc - a.sc || b.age - a.age);
+    const comm = list.filter(c => c.zone && c.zone.includes('상업')), known = list.filter(c => c.zone).length, jigas = list.map(c => c.jiga).filter(Boolean).sort((a, b) => a - b);
+    head.textContent = `${regionName()} · 영업 중인 여관·여인숙 가운데 인허가 ${regenMin}년 이상 · 점수가 높은 순`;
+    $('regen-kpis').innerHTML = [
+      [fmt(list.length) + '곳', `후보 (객실 ${fmt(Math.round(list.reduce((a, c) => a + c.rooms, 0)))}실)`],
+      [fmt(comm.length) + '곳', `상업지역 (용도지역 확인 ${fmt(known)}곳 중 ${known ? Math.round(comm.length / known * 100) : 0}%)`],
+      [jigas.length ? fmt(jigas[jigas.length >> 1]) + '원' : '-', '개별공시지가 중위 (원/㎡)'],
+      [list.length ? (list.reduce((a, c) => a + c.age, 0) / list.length).toFixed(1) + '년' : '-', '평균 업력'],
+    ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${esc(k[1])}</span></div>`).join('');
+    const show = regenAll ? list : list.slice(0, 30);
+    const multi = !U ? state.sgg < 0 : true;
+    $('regen-table').innerHTML = !list.length ? '<tbody><tr><td>조건에 맞는 숙소가 없습니다.</td></tr></tbody>'
+      : `<thead><tr><th>순위</th><th style="text-align:left">숙소</th><th style="text-align:left">${multi ? '시군구 · ' : ''}읍·면·동</th><th>업종</th><th>업력</th><th>객실</th><th>용도지역</th><th>공시지가(원/㎡)</th><th>소비 수요</th><th>점수</th></tr></thead><tbody>`
+      + show.map((c, i) => `<tr data-i="${i}"${c.x[0] != null ? ' style="cursor:pointer" title="지도에서 보기"' : ''}><td>${i + 1}</td><td style="text-align:left">${esc(c.x[9])}</td><td style="text-align:left">${esc([multi ? c.sgg : '', c.dong].filter(Boolean).join(' '))}</td><td>${esc(T[c.x[2]].name.replace('업', ''))}</td>`
+        + `<td>${c.age}년</td><td>${fmt(Math.round(c.rooms))}${c.rep ? '' : '*'}</td><td>${esc(c.zone || '미확인')}</td><td>${c.jiga ? fmt(c.jiga) : '-'}</td><td>${c.d == null ? '-' : '상위 ' + Math.max(1, Math.round((1 - c.d) * 100)) + '%'}</td><td><b>${Math.round(c.sc)}</b></td></tr>`).join('') + '</tbody>';
+    $('regen-more').hidden = list.length <= 30;
+    $('regen-more').textContent = regenAll ? '상위 30곳만 보기' : `전체 ${fmt(list.length)}곳 보기`;
+    $('regen-table').onclick = e => { const tr = e.target.closest('tr[data-i]'); const c = tr && show[+tr.dataset.i]; if (!c || c.x[0] == null || !mapReady) return;
+      $('map-sec').scrollIntoView({ behavior: 'smooth', block: 'center' }); map.flyTo({ center: [c.x[1], c.x[0]], zoom: 16 }); };
+    csvSet('regen-table', ['순위', '숙소', '시군구', '읍·면·동', '주소', '업종', '인허가일', '업력(년)', '객실', '객실 추정 여부', '용도지역(VWorld)', '개별공시지가(원/㎡)', '시군구 외지인 소비액 지수 백분위', '점수'],
+      list.map((c, i) => [i + 1, c.x[9], c.sgg, c.dong, c.x[10], T[c.x[2]].name, c.x[11], c.age, Math.round(c.rooms), c.rep ? '' : '업종 중앙값', c.zone || '', c.jiga || '', c.d == null ? '' : Math.round(c.d * 100), Math.round(c.sc)]));
+  }
+  $('regen-seg').addEventListener('click', e => { const b = e.target.closest('button[data-y]'); if (b) { regenMin = +b.dataset.y; renderRegen(); } });
+  $('regen-more').onclick = () => { regenAll = !regenAll; renderRegen(); };
   function renderPolicy() {
     if (tab !== 'policy') return;  // 비교 대상 전체를 계산하므로 탭을 열었을 때만
+    renderRegen();
     const r = unionOn() ? null : curReg();
     $('pol-rules').innerHTML = '<thead><tr><th style="text-align:left">신호</th><th style="text-align:left">조건</th></tr></thead><tbody>'
       + POL_RULES.map(([nm, cond]) => `<tr><td style="text-align:left">${esc(nm)}</td><td style="text-align:left;white-space:normal">${esc(cond)}</td></tr>`).join('') + '</tbody>';
@@ -2816,6 +2955,23 @@
   }
 
   /* ---------- 지역 진단 리포트: 종합 지표·정책 맥락을 A4 두 쪽으로(인쇄 → PDF 저장) ---------- */
+  // 리포트의 '객실과 노후도': 고른 지역(D)의 업종별 객실·노후, 노후 비중이 높은 산하 지역 5곳(업력을 아는 숙소 5곳 이상)
+  function repAgeHTML(r) {
+    if (r.si < 0 || !D) return '';
+    const byT = regAgeGroup(x => x[2]), tot = ageSum([...byT.values()]);
+    if (!tot.n) return '';
+    const P = agePct, names = childNames(), lab = childLabel();
+    const bar = a => `<span class="rp-agebar">${a.ageN ? a.band.map((v, i) => v ? `<i style="width:${v / a.ageN * 100}%;background:${AGE_BANDS[i][3]}"></i>` : '').join('') : ''}</span>`;
+    const typ = byTypeRows(byT).slice(0, 5).map(([, nm, a]) => `<tr><td>${esc(nm)}</td><td class="n">${fmt(a.n)}</td><td class="n">${a.rn ? fmt(Math.round(a.rooms)) + (a.rep < a.rn ? '*' : '') : '—'}</td><td class="n">${bar(a)} ${P(ageOld(a))}</td></tr>`).join('');
+    const byC = names.length ? regAgeGroup(childOfRow) : new Map();
+    const olds = [...byC].filter(([k, a]) => k != null && k >= 0 && names[k] != null && a.ageN >= 5).sort((x, y) => ageOld(y[1]) - ageOld(x[1]) || y[1].n - x[1].n).slice(0, 5);
+    const est = tot.rn - tot.rep;
+    return `<h2>객실과 노후도</h2>
+      <p>객실 <b>${fmt(Math.round(tot.rooms))}실</b>${est ? ` (숙소 ${fmt(est)}곳은 객실 수가 비어 업종 중앙값으로 추정, *)` : ''} · 숙소당 ${tot.rn ? (tot.rooms / tot.rn).toFixed(1) : '-'}실 · 평균 업력 ${tot.ageN ? (tot.ageSum / tot.ageN).toFixed(1) : '-'}년 · 인허가 20년 이상 <b>${P(ageOld(tot))}</b> (30년 이상 ${P(tot.ageN ? tot.band[3] / tot.ageN : null)})</p>
+      <div class="rp-two"><div><table><thead><tr><th>업종 (객실 많은 순)</th><th>숙소</th><th>객실</th><th>업력 분포 · 20년+</th></tr></thead><tbody>${typ}</tbody></table></div>
+      <div>${olds.length ? `<table><thead><tr><th>노후 비중이 높은 ${esc(lab)}</th><th>숙소</th><th>20년+</th><th>30년+</th></tr></thead><tbody>${olds.map(([k, a]) => `<tr><td>${esc(names[k])}</td><td class="n">${fmt(a.n)}</td><td class="n">${P(ageOld(a))}</td><td class="n">${P(a.band[3] / a.ageN)}</td></tr>`).join('')}</tbody></table>` : `<p class="m">${esc(lab || '산하 지역')}별로 나눌 만큼 숙소가 많지 않습니다.</p>`}</div></div>
+      <p class="m">막대: ${AGE_BANDS.map(b => b[2]).join(' · ')}. 업력은 인허가 후 지난 햇수(건물 연식 아님). 산하 지역은 숙소 5곳 이상. 펜션·야영장은 객실 칸이 없어 객실에서 뺌.</p>`;
+  }
   function reportHTML(r) {
     const { me, P, median, natP, peerName, peerLevel } = ovFor(r, peerMode);
     const F = Object.fromEntries(OV.map(o => [o[0], o[2]])), f = polFacts(r);
@@ -2849,6 +3005,7 @@
       <h2>규제·지정 현황과 노후 숙박</h2><table><thead><tr><th>항목</th><th>이 지역</th><th>전국</th><th>출처·기준</th></tr></thead><tbody>${pol}</tbody></table>
       <div class="rp-break"></div>
       <h2>영역별 지표</h2><table><thead><tr><th>영역</th><th>지표</th><th>신뢰</th><th>값</th><th>백분위</th><th>${esc(peerLevel ? peerName : '')} 중위</th><th>전국</th></tr></thead><tbody>${ind}</tbody></table>
+      ${repAgeHTML(r)}
       <div class="rp-foot"><p><b>신뢰 수준</b> ${Object.entries(IND.tiers).map(([k, v]) => `${k} = ${esc(v)}`).join(' · ')}</p>
         <p><b>자료</b> 행정안전부 숙박 인허가(매일), 한국관광공사 한국관광데이터랩(방문자·관광수요지수), 행정안전부 주민등록 인구, 국토교통부 도시계획현황·버스정류장, OpenStreetMap, 한국부동산원, VWorld. 지표별 산식은 대시보드 '지역 진단 → 종합 → 지표 정의와 근거'와 코드북에 있습니다.</p>
         <p><b>한계</b> 인허가 신고 기준이라 미신고·공유숙박 플랫폼 전용 숙소는 없습니다. 방문자는 이동통신 기반 연인원이라 숙박객 수가 아니며, 가동률·가격 자료는 없습니다. 거리는 직선거리입니다. 국가승인통계가 아니라 행정자료를 가공한 분석 결과입니다.</p>

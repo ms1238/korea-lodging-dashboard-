@@ -260,6 +260,8 @@ body.rep-open{overflow:hidden}
 .rep-page td.n{text-align:right;white-space:nowrap}.rep-page td.c{text-align:center}
 .rp-foot{margin-top:12px;padding-top:8px;border-top:1px solid #d9dee6;font-size:10.5px;color:#3a4656}
 .rp-break{height:1px}
+.rp-agebar{display:inline-flex;width:70px;height:8px;border-radius:2px;overflow:hidden;background:#eef1f5;vertical-align:middle;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.rp-agebar i{display:block;height:100%}
 @media (max-width:700px){.rep-page{padding:16px 14px}.rp-tiles{grid-template-columns:1fr 1fr}.rp-two{grid-template-columns:1fr}.rep-page table{display:block;overflow-x:auto}}
 @media print{
   @page{size:A4;margin:12mm}
@@ -270,6 +272,8 @@ body.rep-open{overflow:hidden}
   body.rep-open .rep-page{max-width:none;padding:0;border-radius:0}
   .rp-break{break-before:page}
   .rep-page tr,.rp-tiles .rt{break-inside:avoid}
+  .rep-page th,.rep-page td{padding:2px 5px}
+  .rep-page h2{margin:12px 0 5px}
 }
 .festinfo{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;font-size:13.5px;line-height:1.6}
 .festinfo:empty{display:none}

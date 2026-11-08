@@ -58,6 +58,8 @@ Steps
     "near" [7]: within 1 km of a station or 0.5 km of a bus stop (UN SDG 11.2.1 distances).
 35. meta.json "valid": 문화체육관광부 전국 관광숙박시설 현황 per 시도 next to the permit records' 관광숙박업 on the same date.
 36. meta.json "typology" / sido[]["typ"] / ["typz"]: 시군구 유형 (k-means on structural indicators, add_typology).
+37. meta.json sido[]["rage"] / ["rage_sido"]: 객실 and those in facilities licensed 20+ / 30+ years ago (add_room_age).
+38. pts/<sido>.json rows [17] / [18] and meta.json "vzones": VWorld 용도지역 (index) and 개별공시지가 of open 여관·여인숙.
 """
 import calendar
 import csv
@@ -1687,6 +1689,29 @@ def room_rule(rows, tidx):
     return med, cap, cov
 
 
+def add_room_age(rows, sidos, sido_meta, tidx):
+    """meta.sido[]["rage"] per 시군구 and ["rage_sido"]: [객실, of them in facilities licensed 20+ years ago, 30+ years ago]
+    over the operating facilities whose 업종 has a 객실 column and whose permit year is known (객실 by room_rule; age =
+    this year − permit year, as the page counts it), for the demand vs ageing-supply matrix."""
+    year = datetime.now(KST).year
+    med, cap, _ = room_rule(rows, tidx)
+    for s, sm in zip(sidos, sido_meta):
+        gi_of = {g: i for i, g in enumerate(sm["sgg"])}
+        acc = [[0.0, 0.0, 0.0] for _ in sm["sgg"]]
+        for r in rows:
+            t = tidx[(r["cat"], r["type"])]
+            if r["sido"] != s or r["status"] != 0 or t not in med or r["sgg"] not in gi_of or not r["date"][:4].isdigit():
+                continue
+            rooms = min(r["rooms"], cap.get(t, r["rooms"])) if r["rooms"] else med[t]
+            age = year - int(r["date"][:4])
+            a = acc[gi_of[r["sgg"]]]
+            a[0] += rooms
+            a[1] += rooms if age >= 20 else 0
+            a[2] += rooms if age >= 30 else 0
+        sm["rage"] = [[round(x) for x in a] for a in acc]
+        sm["rage_sido"] = [round(sum(a[k] for a in acc)) for k in range(3)]
+
+
 def add_change_old(rows, sidos, sido_meta, tidx, land):
     """Per 시군구 in meta.sido[]: "r12" = [[업종, new permits, closings, operating or paused now], …] over the last
     365 days (only 업종 with any), for the map's net-change colouring; "old" = [operating 여관·여인숙, of them licensed
@@ -2001,6 +2026,11 @@ def main():
     dpop_key, dpop_name, dpop_year = load_dong_pop(merged)
     dpop_hit = dpop_all = 0
     sido_meta = []
+    # VWorld 용도지역·개별공시지가 of open 여관·여인숙 (scripts/static/vworld_land.csv): pts rows of those facilities get
+    # [17] = index into meta "vzones" (-1 = 용도지역 unknown) and [18] = 공시지가 원/㎡ (0 = unknown), for the 노후 숙박 재생 후보 list
+    vland = load_vworld_land()
+    vzones = sorted({v[2] for v in vland.values() if v[2]})
+    vzi = {z: i for i, z in enumerate(vzones)}
     for si, s in enumerate(sidos):
         sggs = sgg_of[s]
         gi = {g: i for i, g in enumerate(sggs)}
@@ -2033,6 +2063,9 @@ def main():
             out.append([lat, lon, tidx[(r["cat"], r["type"])], g, d, q, r["status"], y, cy,
                         r["name"], re.sub(r"^\S+\s", "", r["road"] or r["lot"]), r["date"], r["closed"], r.get("approx", 0),
                         r["zone"], r["bldg"], r["rooms"] or 0])
+            if r["id"] in vland:
+                jiga, _, zone = vland[r["id"]]
+                out[-1] += [vzi.get(zone, -1), jiga or 0]
             if r["ll"]:
                 cen[r["sgg"]].append(r["ll"])
         # 읍·면·동 주민 수(생활계 인구현황): 같은 시군구의 같은 이름, 없으면 시도 안에서 이름이 하나뿐인 동
@@ -2124,8 +2157,8 @@ def main():
     visitors, visits = add_visitors(sidos, sgg_of, sido_meta)
     pop_ym = add_population(sidos, sgg_of, sido_meta)
     decl_date = add_decline(sidos, sgg_of, sido_meta, merged)
-    vland = load_vworld_land()
     stock_years, room_cov = add_change_old(rows, sidos, sido_meta, tidx, vland)
+    add_room_age(rows, sidos, sido_meta, tidx)
     land_year = add_land_price(sidos, sgg_of, sido_meta)
     urban_year = add_urban(sidos, sgg_of, sido_meta, merged)
     typology = add_typology(sido_meta, [(*k, v) for k, v in cube.items()], types, visits)
@@ -2182,7 +2215,7 @@ def main():
         "typology": typology,
         "transit": (lambda t: {"route_days": t.get("route_days", [])})(json.load(open(os.path.join(RAW, "transit_stops.json"), encoding="utf-8")))
         if os.path.exists(os.path.join(RAW, "transit_stops.json")) else None,
-        "vworld_year": Counter(v[1] for v in vland.values() if v[1]).most_common(1)[0][0] if vland else None,
+        "vzones": vzones, "vworld_year": Counter(v[1] for v in vland.values() if v[1]).most_common(1)[0][0] if vland else None,
     }
     with open(os.path.join(OUT, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))

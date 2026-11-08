@@ -104,6 +104,8 @@
         <div class="railhead"><h3>지도 보기 <small style="font-weight:400">여러 개 선택 가능</small></h3></div>
         <div class="seg" id="map-preset" role="group" aria-label="지도 보기 프리셋" style="margin-bottom:14px"><button data-v="base" aria-pressed="true" title="숙소와 관광지(광역을 고른 경우)만">기본</button><button data-v="transit" aria-pressed="false">교통 접근성</button><button data-v="tour" aria-pressed="false">관광·맛집</button><button data-v="decl" aria-pressed="false">인구감소지역</button></div>
         <div class="railhead"><h3>업종 <small style="font-weight:400">▸ 소분류</small></h3><span><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">해제</button></span></div>
+        <div class="seg" id="pt-color" role="group" aria-label="점 색" style="margin-bottom:8px"><button data-v="type" aria-pressed="true">점 색: 업종</button><button data-v="age" aria-pressed="false">점 색: 업력</button></div>
+        <div class="legend" id="pt-age-legend" hidden style="margin-bottom:8px"><span><i style="background:#a1d99b;border-radius:2px"></i>10년 미만</span><span><i style="background:#fdd49e;border-radius:2px"></i>10~19년</span><span><i style="background:#fc8d59;border-radius:2px"></i>20~29년</span><span><i style="background:#d7301f;border-radius:2px"></i>30년 이상</span><span><i style="background:#b0b7c0;border-radius:2px"></i>미상</span><small style="flex-basis:100%">인허가 후 지난 햇수. 광역을 고르면 시설 점에 적용됩니다.</small></div>
         <div id="typelist"></div>
         <div class="railhead" style="margin-top:16px"><h3>관광 (TourAPI)</h3></div>
         <div id="tourlist"></div>
@@ -374,6 +376,15 @@
       <p class="note">출처: 한국관광공사 한국관광데이터랩 관광수요지수의 세부 지표(신용카드·이동통신·내비게이션 빅데이터). 값은 실제 인원·일수가 아니라 지수(상대값)라서 지역·시기를 비교하는 데 쓰세요. 1·2·3박 방문자도 명수가 아닌 지수이고, 외지인 소비액·방문량 대비 소비액도 원 단위 금액이 아니라 신용카드 결제 기반 지수입니다(현금 등은 빠짐). 방문량 대비 소비액은 방문자 한 명당 소비 수준을 지역끼리 견주는 값이지 “1인당 ○원”이 아닙니다. 칸 색은 열마다 상대적인 높낮이입니다.</p></div>
   </section>
 
+  <section data-tab="balance" id="mx-sec" hidden>
+    <div class="sechead"><h2>관광 소비 수요 vs 숙소 노후</h2><p class="sub" id="mx-sub"></p></div>
+    <div class="kpis" id="mx-kpis"></div>
+    <div class="card"><h3 style="margin-bottom:6px">시군구별 방문량 대비 소비액과 노후 숙소 비중</h3>
+      <div class="chartwrap"><svg id="mx-chart" viewBox="0 0 900 460" role="img" aria-label="시군구별 방문량 대비 소비액 지수와 20년 이상 숙소 객실 비중 산점도"></svg><div class="tip" id="mx-tip" hidden></div></div>
+      <p class="note">점 하나가 시군구 하나입니다(객실 100실 미만 제외). 점을 누르면 그 시군구로 이동합니다. 방문량 대비 소비액은 데이터랩 관광수요지수의 세부 지표로, 원 단위 금액이 아니라 신용카드 결제 기반 지수입니다(지역끼리 비교용). 노후 비중은 영업 숙소의 객실(신고값, 빈 칸은 업종 중앙값) 가운데 인허가 20년 이상 숙소의 몫이며 관광펜션업·야영장은 객실 칸이 없어 뺐습니다. 업력은 인허가 기준이라 건물 연식과 다릅니다. 4분면은 전국 시군구 중위값으로 나눈 상대 위치일 뿐 정책 결론이 아닙니다.</p></div>
+    <div class="card"><button class="btn csv" data-csv="mx-table" data-name="소비수요_노후_매트릭스">CSV</button><h3 style="margin-bottom:10px" id="mx-title"></h3>
+      <div class="tablewrap" style="max-height:480px;overflow:auto"><table id="mx-table"></table></div></div>
+  </section>
   <section data-tab="balance">
     <div class="sechead"><h2>관광 수요 대비 숙소</h2><p class="sub" id="sup-sub"></p></div>
     <div class="kpis" id="sup-kpis"></div>
@@ -463,6 +474,12 @@
     <div class="card"><button class="btn csv" data-csv="pol-table" data-name="정책_맥락">CSV</button><h3 style="margin-bottom:10px">규제·지정 현황과 노후 숙박</h3>
       <div class="tablewrap"><table id="pol-table"></table></div>
       <p class="note" id="pol-note"></p></div>
+    <div class="card"><button class="btn csv" data-csv="regen-table" data-name="노후숙박_재생후보">CSV</button><h3 style="margin-bottom:4px">노후 숙박 재생 후보</h3><p class="sub" id="regen-sub" style="margin-bottom:10px"></p>
+      <div class="seg" id="regen-seg" role="group" aria-label="업력 기준" style="margin-bottom:12px"></div>
+      <div class="kpis" id="regen-kpis"></div>
+      <div class="tablewrap" style="margin-top:12px"><table id="regen-table"></table></div>
+      <button class="btn more" id="regen-more" type="button" hidden></button>
+      <p class="note">영업 중인 여관업·여인숙업만(업종 선택과 무관). 점수(0~100) = 업력 35점(인허가 20년 0점 → 50년 이상 만점) + 입지 30점(VWorld 용도지역: 상업지역 만점, 준주거·준공업 절반, 그 밖이나 미확인 0점) + 관광 소비 수요 20점(시군구 외지인 소비액 지수 최근 12개월 평균의 전국 시군구 백분위, 데이터랩 카드 결제 기반) + 규모 15점(객실 40실 이상 만점, * = 객실 수가 비어 업종 중앙값으로 추정). 가중치는 이 대시보드가 정한 값이며, 리모델링·용도 전환 대상 검토의 출발점일 뿐 사업성이나 건물 상태를 판정하지 않습니다. 업력은 인허가 기준이라 건물 연식과 다르고, 용도지역·공시지가는 VWorld를 PC에서 받아 둔 값이라 최신이 아닐 수 있습니다. 행을 누르면 지도에서 위치를 보여 줍니다.</p></div>
     <details class="card"><summary><h3>정책 검토 신호의 조건</h3></summary><div class="tablewrap" style="margin-top:10px"><table id="pol-rules"></table></div></details>
   </section>
 
