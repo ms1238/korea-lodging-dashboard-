@@ -1,0 +1,75 @@
+/* 데이터랩풍 화면 테마(한국관광 데이터랩 메인 화면의 배치·색감을 참고해 새로 쓴 스타일, 원본 코드·이미지는 쓰지 않음).
+   style.css 위에 덧씌우기만 함: index.html의 <link id="theme-dl">를 끄면(화면 위 '기존 디자인' 단추, 또는 이 파일 연결을 지우면) 그대로 원래 화면.
+   흰 머리띠, 굵은 검은 글자 대메뉴(선택 = 파란 밑줄), 회색 통 안의 둥근 흰 알약 세부 탭(선택 = 주황), 둥근 흰 카드, 연한 살구색 바탕. */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
+
+:root{
+  --dl-blue:#0075be; --dl-navy:#01559c; --dl-orange:#f7b84b; --dl-orange-ink:#ffffff; --dl-band:#fdf1dc; --dl-pillbox:#f1f1f1;
+  --f-body:'Noto Sans KR',-apple-system,'Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  --f-head:var(--f-body);
+  --r:16px;
+}
+@media (prefers-color-scheme: light){:root{
+  --bg:#ffffff; --panel:#ffffff; --fg:#1a1a1a; --muted:#666e78; --line:#e3e5e8; --accent:#1a1a1a; --brand:var(--dl-blue);
+  --sh:0 3px 8px rgba(0,0,0,.08);
+}}
+@media (prefers-color-scheme: dark){:root{ --dl-band:#1a2233; --dl-pillbox:#1f2a3d; --dl-orange-ink:#14202b }}
+
+/* 머리띠: 남색 그라데이션 대신 흰 바탕 + 아래 가는 줄 */
+header{background:var(--panel);color:var(--fg);border-bottom:1px solid var(--line);padding-top:26px;padding-bottom:22px}
+header h1{font-size:clamp(24px,3.2vw,32px);color:var(--fg)}
+.eyebrow{color:var(--dl-blue);letter-spacing:.12em}
+header .sub,header .fresh > summary,header .dl,header .note{color:var(--muted)}
+header .dl a,header .fresh table{color:var(--fg)}
+header .fresh td,header .fresh th{border-bottom-color:var(--line)}
+.intro{background:var(--dl-band);border:0;color:var(--fg);border-radius:20px}
+.intro .ex,.intro .hint,.intro .x{color:var(--muted)}
+.intro .ex .btn{background:var(--panel);border:0;color:var(--fg);box-shadow:var(--sh);font-weight:700}
+.roles dt{color:var(--dl-blue)}
+.roles .q{background:var(--panel);border:0;color:var(--fg);box-shadow:0 2px 4px rgba(0,0,0,.08)}
+.roles .q:hover{background:var(--panel);color:var(--dl-blue)}
+
+/* 필터·대메뉴 띠: 카드처럼 띄우지 않고 페이지 폭 전체의 흰 띠, 대메뉴는 굵은 검은 글자 + 선택 시 파란 밑줄 */
+.controls{border-radius:0;box-shadow:0 1px 0 var(--line);margin:0 calc(50% - 50vw);padding:12px max(16px,calc(50vw - 600px)) 0}
+.tabbar{margin:0;padding:0;flex-basis:100%;border-top:1px solid var(--line)}
+.tabs{gap:0}
+.tabs button{border-radius:0;font-size:16px;font-weight:700;color:var(--fg);padding:14px 18px 12px;border-bottom:3px solid transparent}
+.tabs button[aria-selected="true"]{background:none;color:var(--dl-blue);border-bottom-color:var(--dl-blue)}
+.tabs button:hover:not([aria-selected="true"]){background:none;color:var(--dl-blue)}
+.tabs button::after{content:' ⌄';font-weight:400;opacity:.5;font-size:13px}
+.tabs button[aria-selected="true"]::after{opacity:.9}
+
+/* 세부 탭: 회색 통 안의 둥근 흰 알약, 선택은 주황 */
+.subtabs{background:var(--dl-band);flex-basis:calc(100% + 2 * max(16px,calc(50vw - 600px)));margin:0 calc(-1 * max(16px,calc(50vw - 600px)));padding:14px max(16px,calc(50vw - 600px));gap:0;justify-content:center;flex-wrap:wrap}
+.subtabs:not([hidden]){display:flex}
+.subtabs::before{content:none}
+.subtabs button{border:0;background:var(--panel);color:var(--fg);font-weight:700;font-size:14px;padding:10px 22px;margin:4px;border-radius:23px;box-shadow:0 3px 5px rgba(0,0,0,.12)}
+.subtabs button[aria-selected="true"]{background:var(--dl-orange);color:var(--dl-orange-ink)}
+
+/* 안쪽 전환 단추(seg)도 같은 알약 모양 */
+.seg{background:var(--dl-pillbox);border-radius:32px;padding:5px;gap:4px;box-shadow:0 3px 5px rgba(0,0,0,.12)}
+.seg button{border-radius:23px;font-weight:700;color:var(--fg);padding:7px 16px}
+.seg button[aria-pressed="true"]{background:var(--dl-orange);color:var(--dl-orange-ink);box-shadow:none}
+
+/* 카드·지표 카드: 둥근 흰 카드, 큰 숫자 */
+.card,.kpi{border-radius:20px;border:1px solid var(--line);box-shadow:0 3px 8px rgba(0,0,0,.05)}
+.kpi{padding:20px 22px}
+.kpi b{font-size:28px;font-weight:800;color:var(--fg)}
+.kpi span{font-size:13px}
+h2{font-weight:800}
+h3{color:var(--fg);font-size:14px;letter-spacing:0;font-weight:700}
+.btn{border-radius:8px}
+.btn.rep-btn{background:var(--dl-blue);border-color:var(--dl-blue);color:#fff;padding:7px 16px;font-size:13px;align-self:flex-start;margin-left:0}
+select,input[type=search]{background:#f1f2f4;border-radius:8px}
+@media (prefers-color-scheme: dark){select,input[type=search]{background:var(--bg)}}
+
+/* 지표 카드 줄이 있는 첫 화면은 살구색 띠 위에 */
+#kpis{background:var(--dl-band);margin:0 calc(50% - 50vw);padding:20px max(16px,calc(50vw - 600px))}
+
+/* 디자인 전환 단추 */
+.theme-sw{margin-left:auto}
+@media (max-width:520px){
+  .tabs button{padding:12px 12px 10px;font-size:15px}
+  .tabs button::after{content:none}
+  .subtabs{justify-content:flex-start;flex-wrap:nowrap}
+}
