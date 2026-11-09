@@ -77,7 +77,8 @@ KTO_RES = [
 ]
 KTO_INDEX_AREAS = ("11", "26", "27", "28", "29", "30", "31", "36", "41", "43", "44", "46", "47", "48", "50", "51", "52", "12")  # DataLab 시도 codes
 KTO_MONTHS = 26  # 관광수요지수 months kept (two years and the latest two)
-KTO_INDEX_BUDGET = 800  # requests per service and run (the development quota is 1,000 a day); the rest waits for the next run
+KTO_INDEX_BUDGET = 400  # requests per service and run; the rest waits for the next run (800 made the daily run too long)
+FETCH_MINUTES = 65  # after this, sources that already have a copy from an earlier run are not fetched again, so the run ends within the workflow time limit
 POPULATION = "https://apis.data.go.kr/1741000/admmPpltnHhStus/selectAdmmPpltnHhStus"  # 행정동별 주민등록 인구 및 세대현황 (monthly)
 KORAIL_MAIN = "https://apis.data.go.kr/B551457/issueStatistics/mainLineStationPer"  # 코레일 간선열차 역별 승하차 (daily, about a year)
 METRO_STD = "https://www.data.go.kr/data/15013205/standard.do"  # 전국도시철도역사정보표준데이터 (국가철도공단, yearly file)
@@ -305,10 +306,15 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
+    T0 = time.time()
     for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "festival_intro", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep not in ("food_coords", "festival_intro"):  # these fill over several runs, so they also run on pushes
+            continue
+        if have and time.time() - T0 > FETCH_MINUTES * 60:
+            print(f"{ep}: skipped, {FETCH_MINUTES} minutes used; keeping the copy from the last run", flush=True)
+            failed.append(ep)
             continue
         try:
             {"datalab": fetch_datalab, "arrivals": fetch_arrivals, "subway": fetch_subway,

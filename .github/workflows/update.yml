@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120  # fetch.py stops refetching after 65 minutes; this leaves room for the build and deploy
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
