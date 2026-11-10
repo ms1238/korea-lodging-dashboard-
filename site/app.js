@@ -2421,7 +2421,7 @@
     const M = kix.months, n = M.length, ym = k => `${k.slice(0, 4)}.${k.slice(4)}`, J = LD.map(ixi);
     const keyOf = r => r.si < 0 ? null : r.gi >= 0 ? `${r.si}:${r.gi}` : String(r.si);
     const cur = U ? null : curReg(), ck = cur && cur.grp == null ? keyOf(cur) : null, row = k => k && kix.v[k];
-    let li = n - 1; const vr = row(ck);
+    let li = n - 1; const vr0 = row(ck), vr = vr0 && [J[0], J[1]].some(j => vr0[j] && vr0[j].some(x => x != null)) ? vr0 : null;  // 월별 값이 하나도 없으면(예: 통합 전 달만 있는 전남광주 광역) 없는 것으로
     if (vr) while (li > 0 && vr[J[0]][li] == null) li--;
     const yo = M.indexOf(String(+M[li] - 100));
     const yoy = (v, i) => v && v[i] != null && yo >= 0 && v[yo] != null && v[yo] ? (v[i] / v[yo] - 1) * 100 : null;
@@ -2430,6 +2430,7 @@
     $('lodem-kpis').innerHTML = vr ? J.map(j => { const v = vr[j], d = yoy(v, li);
       return `<div class="kpi"><b>${v[li] == null ? '-' : v[li].toFixed(1)}</b><span>${esc(kix.ix[j][1])}${d == null ? '' : ` (전년 동월 ${pc(d)})`}</span></div>`; }).join('') : '';
     $('lodem-sub').textContent = vr ? `${regionName()} · ${ym(M[li])} 기준. 숙소 수(공급)와 함께 보면 수요에 비해 숙소가 많은지 적은지 가늠할 수 있습니다.`
+      : vr0 ? `이 지역은 숙박업 소비액·숙박 검색량의 월별 값이 아직 없습니다${!U && cur && cur.gi < 0 && S[cur.si].name === '전남광주통합특별시' ? '(통합 전 달은 광주·전남이 따로 집계돼 광역 값으로 합칠 수 없음, 시군구를 고르면 나옵니다)' : ''}. 아래 표는 지역별 최근 달 값입니다.`
       : '광역이나 기초를 고르면 그 지역의 월별 추이가 나옵니다. 아래 표는 광역별 최근 달 값입니다.';
     // 월별 추이: 숙박업 소비액(파랑)·숙박 검색량(주황)
     $('lodem-chart-card').hidden = !vr;
