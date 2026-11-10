@@ -20,7 +20,7 @@
   // 배포마다 바뀌는 버전(app.js?v=…)을 데이터 요청에도 붙여 브라우저가 지난 데이터를 쓰지 않게 함
   const V = document.currentScript?.src.match(/[?&]v=([^&]+)/)?.[1];
   // 자료 파일을 못 받으면(네트워크·서버 오류, 깨진 파일) 상단에 알림. 404는 '아직 만들어지지 않은 자료'라 알리지 않음
-  const FILE_LABEL = { meta: '기본 정보', cube: '숙박 집계', close: '숙박 집계', cubeq: '분기 집계', closeq: '분기 집계', minbak: '도시민박', visits: '누적 방문자',
+  const FILE_LABEL = { meta: '기본 정보', cube: '숙박 집계', close: '숙박 집계', cubeq: '분기 집계', closeq: '분기 집계', minbak: '도시민박', visits: '방문자 연인원',
     arrivals: '외래객 입국', bus: '버스터미널', pts: '시설 목록', tour: '관광지', park_areas: '국립공원 경계', subway: '철도 노선', admin: '행정경계',
     food: '맛집', survival: '생존 분석', stations: '역세권', festivals: '축제', park_lodging: '국립공원 숙소', kto_index: '관광수요지수', icn: '인천공항', kac: '공항 여객', trrsrt: '법정 관광지' };
   const loadFail = new Set();
@@ -593,6 +593,21 @@
     for (let i = 0; i < n; i++) { acc += diff[i]; openY.push(acc); }
     return { newY, openY };
   }
+  // 업종 옆 숫자: 타임라인을 켜면 지도와 같은 기준(그 해 신규 인허가 또는 그 해 말 운영 중)으로 셈
+  function drawTypeCounts(a) {
+    const { mode, year: Y } = state.tl;
+    let c = a && a.allType;
+    if (mode !== 'off') {
+      c = T.map(() => 0);
+      if (!D) {
+        for (const r of cube) if (mode === 'new' ? r[4] === Y : r[3] < 2 && r[4] > 0 && r[4] <= Y) c[r[2]] += r[5];
+        if (mode === 'open') for (const r of close) if (r[4] > 0 && r[4] <= Y && r[3] > Y) c[r[2]] += r[5];
+      } else for (const r of D.rows) if (inDetail(r) && tlRowOK(r)) c[r[2]]++;
+    }
+    T.forEach((_, i) => { $('tn' + i).textContent = fmt(c[i]); });
+    catTypes.forEach((items, ci) => { if ($('cn' + ci)) $('cn' + ci).textContent = fmt(items.reduce((p, i) => p + c[i], 0)); });
+    $('type-basis').textContent = mode === 'off' ? '' : ` · 숫자는 ${Y}년 ${mode === 'new' ? '신규 인허가' : '말 운영 중'}`;
+  }
   let tlCache = null;
   function drawTimeline() {
     const { newY, openY } = tlCache = tlSeries(), { mode, year } = state.tl, i0 = year - TL0;
@@ -621,7 +636,7 @@
     $('f-status').disabled = on;
     $('map-sub').textContent = on ? '타임라인을 쓰는 동안 지도는 영업 상태 필터 대신 고른 연도 기준으로 보여줍니다.' : '전국 보기에서는 시군구별 원 크기가 시설 수입니다. 광역을 고르면 시설 하나하나가 점으로 나옵니다.';
     if (!on) stopPlay();
-    drawTimeline(); drawMap(false);
+    drawTimeline(); drawMap(false); drawTypeCounts(on ? null : agg());
   }
   let timer = null;
   const stopPlay = () => { clearInterval(timer); timer = null; $('tl-play').textContent = '▶ 재생'; };
@@ -707,8 +722,7 @@
   function update(fly) {
     const a = agg(), [nb, nn] = natType(), names = childNames();
     const stLabel = state.status < 0 ? '전체 상태' : ST[state.status];
-    T.forEach((_, i) => { $('tn' + i).textContent = fmt(a.allType[i]); });
-    catTypes.forEach((items, ci) => { if ($('cn' + ci)) $('cn' + ci).textContent = fmt(items.reduce((p, i) => p + a.allType[i], 0)); });
+    drawTypeCounts(a);
 
     const topT = a.byType.map((v, i) => [v, i]).sort((x, y) => y[0] - x[0])[0];
     const recent = [yNow - 2, yNow - 1, yNow].reduce((s, y) => s + (a.byYear[y] ? a.byYear[y].reduce((p, q) => p + q, 0) : 0), 0);
@@ -998,9 +1012,9 @@
       const series = R.map((r, i) => { const v = visOf(r); return { name: regLabel(r), color: cols[i], vals: v ? visValues(v, P) : P.keys.map(() => null) }; });
       $('vt-legend').innerHTML = legend;
       lineChart($('vt'), $('vt-tip'), P.keys.map(k => state.vt.per === 'y' ? k : `${k.slice(2, 4)}.${k.slice(5)}Q`), series,
-        { partial: P.partial, div: 1e4, unit: v => !v ? '0' : v >= 1e8 ? (v / 1e8).toFixed(v % 1e8 ? 1 : 0) + '억' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(Math.round(v / 1e4)) + '만 명(누적)' });
+        { partial: P.partial, div: 1e4, unit: v => !v ? '0' : v >= 1e8 ? (v / 1e8).toFixed(v % 1e8 ? 1 : 0) + '억' : fmt(Math.round(v / 1e4)) + '만', tip: v => fmt(Math.round(v / 1e4)) + '만 명(연인원)' });
       const L = visits.last;
-      $('vt-note').textContent = `한국관광공사 데이터랩 휴대폰 기반 누적 방문자(일별 방문자 합산), ${L.slice(0, 4)}.${L.slice(4, 6)}.${L.slice(6)}까지. *·점선은 아직 다 모이지 않은 기간입니다. 외국인은 기초 2019년, 광역 2020년부터 있어 합계는 그 이후만 그립니다.`
+      $('vt-note').textContent = `한국관광공사 데이터랩 휴대폰 기반 방문자 연인원(그 기간 날마다 센 방문자를 더한 값), ${L.slice(0, 4)}.${L.slice(4, 6)}.${L.slice(6)}까지. *·점선은 아직 다 모이지 않은 기간입니다. 외국인은 기초 2019년, 광역 2020년부터 있어 합계는 그 이후만 그립니다.`
         + (R.some(r => r.si === S.findIndex(s => s.name === '인천광역시') && r.gi >= 0) ? ' 인천 신설 구는 2026년부터만 있습니다.' : '');
     } else { $('vt').innerHTML = ''; $('vt-note').textContent = '방문자 자료가 없습니다.'; }
     // 지표 표
@@ -1009,13 +1023,13 @@
     // 체류 지수(한국관광데이터랩): 계절 차이를 줄이려고 최근 12개월 평균. 묶음·전국은 자료 없음
     const KX = [['21', '체류 강도'], ['2102', '숙박 비중']], kv = R.map(r => KX.map(([c]) => kixAvg(r, c)));
     const kf = v => v == null ? '-' : v.toFixed(1);
-    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 누적 방문자 100만 명당 숙소</th><th>외국인 누적 방문자 100만 명당 숙소</th>${KX.map(k => `<th>${k[1]} 지수</th>`).join('')}<th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th><th>법정 도시지역 면적</th><th>도시지역 거주 인구</th></tr></thead><tbody>`
+    $('cmp-table').innerHTML = `<thead><tr><th>지역</th><th>영업 숙소</th><th>연간 외지인</th><th>연간 외국인</th><th>외지인 방문자 연인원 100만 명당 숙소</th><th>외국인 방문자 연인원 100만 명당 숙소</th>${KX.map(k => `<th>${k[1]} 지수</th>`).join('')}<th>${Y3 + 1}~${yNow} 증가율</th><th>누적 폐업률</th><th>영업 도시민박</th><th>법정 도시지역 면적</th><th>도시지역 거주 인구</th></tr></thead><tbody>`
       + R.map((r, i) => { const x = stats[i];
         return `<tr><td><span class="sw" style="background:${cols[i]}"></span>${esc(regLabel(r))}</td><td>${fmt(x.st[0])}</td>${[0, 1].map(j => `<td>${x.v && x.v[j] ? fmt(Math.round(x.v[j] / 1e4)) + '만' : '-'}</td>`).join('')}${[0, 1].map(j => `<td>${x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(1) : '-'}</td>`).join('')}${kv[i].map(v => `<td>${kf(v)}${v != null && kixApprox(r) ? '*' : ''}</td>`).join('')}<td>${pctS(x.tr.nw - x.tr.cl, x.tr.base)}</td><td>${pct(x.st[2], x.st[0] + x.st[2])}</td><td>${fmt(x.mb)}</td>${(u => u ? `<td>${pct(u[1], u[0])}</td><td>${pct(u[3], u[2])}</td>` : '<td>-</td><td>-</td>')(urbanOf(r))}</tr>`; }).join('') + '</tbody>';
     $('cmp-kix-note').hidden = !kix;
     if (kix && !$('cmp-kix-note').dataset.base) $('cmp-kix-note').dataset.base = $('cmp-kix-note').textContent;
     if (kix) $('cmp-kix-note').textContent = $('cmp-kix-note').dataset.base + (R.some(kixApprox) ? ' *는 관광수요지수가 일반구별로만 제공되는 시라서 일반구 값의 단순 평균(근사)입니다.' : '');
-    csvSet('cmp-table', ['지역', '영업 숙소', '연간 외지인', '연간 외국인', '외지인 누적 방문자 100만 명당 숙소', '외국인 누적 방문자 100만 명당 숙소', ...KX.map(k => `${k[1]} 지수(12개월 평균)`), `${Y3 + 1}~${yNow} 증가율(%)`, '누적 폐업률(%)', '영업 도시민박', '법정 도시지역 면적 비율(%)', '도시지역 거주 인구 비율(%)'],
+    csvSet('cmp-table', ['지역', '영업 숙소', '연간 외지인', '연간 외국인', '외지인 방문자 연인원 100만 명당 숙소', '외국인 방문자 연인원 100만 명당 숙소', ...KX.map(k => `${k[1]} 지수(12개월 평균)`), `${Y3 + 1}~${yNow} 증가율(%)`, '누적 폐업률(%)', '영업 도시민박', '법정 도시지역 면적 비율(%)', '도시지역 거주 인구 비율(%)'],
       R.map((r, i) => { const x = stats[i], u = urbanOf(r);
         return [regLabel(r), x.st[0], x.v ? x.v[0] : '', x.v ? x.v[1] : '', ...[0, 1].map(j => x.v && x.v[j] ? (x.st[0] / (x.v[j] / 1e6)).toFixed(2) : ''),
           ...kv[i].map(v => v == null ? '' : v.toFixed(2)),
@@ -1082,7 +1096,7 @@
       : isNat ? nat.v : level() <= 2 ? vOf({ si: state.sido, gi: state.sgg }) : null;
     if (VIS && vp && vp[0] && vp[1]) {
       const per = (n, v) => n / (v / 1e6), npo = per(nat.st[0], nat.v[0]), npf = per(nat.st[0], nat.v[1]);
-      lines.push(`연간 외지인 ${big(vp[0])}·외국인 ${big(vp[1])} 명(누적 방문자). 숙소는 외지인 누적 방문자 100만 명당 ${per(N, vp[0]).toFixed(1)}곳, 외국인 누적 방문자 100만 명당 ${per(N, vp[1]).toFixed(1)}곳`
+      lines.push(`연간 외지인 ${big(vp[0])}·외국인 ${big(vp[1])} 명(방문자 연인원). 숙소는 외지인 방문자 연인원 100만 명당 ${per(N, vp[0]).toFixed(1)}곳, 외국인 방문자 연인원 100만 명당 ${per(N, vp[1]).toFixed(1)}곳`
         + (isNat ? '입니다.' : `입니다. 외지인 기준으로 전국(${npo.toFixed(1)}곳)${word(per(N, vp[0]), npo)}.`));
     }
     $('summary-title').innerHTML = `한눈에 보기 · ${esc(regionName())}${U ? '' : declBadge(curReg())}`;
@@ -1176,7 +1190,7 @@
       rows.map(([nm, , a, nr, , lv, ol]) => [nm, a.live, a.nw, a.cl, a.nw - a.cl, nr == null ? '' : +(nr * 100).toFixed(2), a.n, a.o, a.o3, ...(VY ? ol || ['', '', '', ''] : []), ...(LY ? [lv ?? ''] : [])]));
   }
 
-  /* ---------- 공급 vs 수요 증가율: 시군구별 연말 재고(build.py → meta.sido[].stk) × 데이터랩 누적 방문자(visits.json) ---------- */
+  /* ---------- 공급 vs 수요 증가율: 시군구별 연말 재고(build.py → meta.sido[].stk) × 데이터랩 방문자 연인원(visits.json) ---------- */
   let sdKind = 't', sdUnit = 'n';  // sdKind: 't' = 외지인 + 외국인, '1' = 외국인만 / sdUnit: 'n' = 시설 수, 'r' = 객실 수
   const SD_MIN = 30;  // 시작 연도 재고가 이보다 적으면 증가율이 크게 튀어 차트에서 빼고 표에서는 비움
   function renderSD() {
@@ -1804,7 +1818,7 @@
   function renderFestVis(f) {
     const ser = visits && visits.msgg ? (f[4] >= 0 ? visits.msgg[f[3]][f[4]] : visits.msido[f[3]]) : null;
     $('fest-vis-title').textContent = `${festPlace(f)} 월별 외지인 방문자와 축제 달`;
-    if (!ser) { $('fest-vis').innerHTML = ''; $('fest-vis-note').textContent = '이 지역의 월별 방문자 자료가 없습니다.'; csvSet('fest-vis', ['월', '외지인 누적 방문자'], []); return; }
+    if (!ser) { $('fest-vis').innerHTML = ''; $('fest-vis-note').textContent = '이 지역의 월별 방문자 자료가 없습니다.'; csvSet('fest-vis', ['월', '외지인 방문자 연인원'], []); return; }
     const M = visits.m, fm = festMonths(f, M), n = M.length;
     const W = 900, H = 260, L = 56, Rt = 12, Tp = 14, B = 26, iw = W - L - Rt, ih = H - Tp - B, bw = iw / n;
     const mx = Math.max(1, ...ser.filter(v => v != null)), step = niceStep(mx / 1e4) * 1e4, top = Math.ceil(mx / step) * step;
@@ -1819,14 +1833,14 @@
       svg += `<rect data-i="${i}" x="${L + i * bw}" y="${Tp}" width="${bw}" height="${ih}" fill="transparent"/>`;
     });
     $('fest-vis').innerHTML = svg;
-    csvSet('fest-vis', ['월', '외지인 누적 방문자', '축제 달', '진행 중'], M.map((m, i) => [`${m.slice(0, 4)}-${m.slice(4)}`, ser[i] ?? '', fm.has(m) ? (fm.get(m) ? '추정(예년 일정)' : 'Y') : '', visits.mfull[i] ? '' : 'Y']));
-    attachTip($('fest-vis'), $('fest-vis-tip'), i => `<b>${M[i].slice(0, 4)}.${M[i].slice(4)}${visits.mfull[i] ? '' : ' (진행 중)'}</b><br>외지인 ${ser[i] == null ? '자료 없음' : fmt(Math.round(ser[i] / 1e4)) + '만 명(누적)'}${fm.has(M[i]) ? `<br>${fm.get(M[i]) ? '축제 달(예년 일정으로 추정)' : '축제 달'}` : ''}`);
+    csvSet('fest-vis', ['월', '외지인 방문자 연인원', '축제 달', '진행 중'], M.map((m, i) => [`${m.slice(0, 4)}-${m.slice(4)}`, ser[i] ?? '', fm.has(m) ? (fm.get(m) ? '추정(예년 일정)' : 'Y') : '', visits.mfull[i] ? '' : 'Y']));
+    attachTip($('fest-vis'), $('fest-vis-tip'), i => `<b>${M[i].slice(0, 4)}.${M[i].slice(4)}${visits.mfull[i] ? '' : ' (진행 중)'}</b><br>외지인 ${ser[i] == null ? '자료 없음' : fmt(Math.round(ser[i] / 1e4)) + '만 명(연인원)'}${fm.has(M[i]) ? `<br>${fm.get(M[i]) ? '축제 달(예년 일정으로 추정)' : '축제 달'}` : ''}`);
     // 참고: 축제 달 외지인이 같은 기간 나머지 달 평균보다 얼마나 많은지 (다 찬 달만)
     const full = M.map((_, i) => i).filter(i => visits.mfull[i] && ser[i] != null), on = full.filter(i => fm.has(M[i])), off = full.filter(i => !fm.has(M[i]));
     const avg = xs => xs.reduce((a, i) => a + ser[i], 0) / xs.length;
     const up = on.length && off.length ? (avg(on) / avg(off) - 1) * 100 : null;
     $('fest-vis-note').textContent = (up != null ? `참고: 최근 ${n}개월 중 축제 달(${on.length}개월) 외지인은 나머지 달 평균보다 ${up >= 0 ? '+' : ''}${up.toFixed(1)}%. 계절 요인·다른 행사도 함께 반영된 값이라 축제만의 효과로 읽으면 안 됩니다. ` : '')
-      + `방문자는 ${f[4] >= 0 ? '시군구' : '광역'} 전체 외지인 누적 방문자(한국관광공사 데이터랩, 일별 방문자 합산)입니다. 흐린 주황은 이 사이트가 그 해 일정을 모으기 전이라 가장 최근 회차와 같은 날짜로 추정한 달이고, *는 아직 다 모이지 않은 달입니다.`;
+      + `방문자는 ${f[4] >= 0 ? '시군구' : '광역'} 전체 외지인 방문자 연인원(한국관광공사 데이터랩)입니다. 막대 하나는 그 달 하루하루 센 방문자를 더한 값으로, 1월부터 쌓아 올린 값이 아니며 같은 사람이 사흘 머물면 3명으로 셉니다. 흐린 주황은 이 사이트가 그 해 일정을 모으기 전이라 가장 최근 회차와 같은 날짜로 추정한 달이고, *는 아직 다 모이지 않은 달입니다.`;
   }
   $('fest-sel').onchange = e => { fSel = +e.target.value; renderFestOne(); drawRings(FEST.f[fSel], true, 'festival'); };
   $('fest-list').addEventListener('click', e => { const tr = e.target.closest('tr[data-i]'); if (tr) { fSel = +tr.dataset.i; $('fest-sel').value = String(fSel); renderFestOne(); drawRings(FEST.f[fSel], true, 'festival'); } });
@@ -2260,7 +2274,7 @@
     // 영업 숙소 카드의 추세선: 타임라인과 같은 '그 해 말 운영 중(휴업 포함)' 최근 11개 연말(읍·면·동을 고르면 시군구와 맞지 않아 생략)
     const tl = state.dong < 0 ? tlSeries().openY.slice(-11) : null, tl0 = tl && tl[0];
     const trend = tl && tl0 ? `<div class="trend">${spark(tl)}<small>${yNow - 10}년 말 대비 <b>${(tl[10] >= tl0 ? '+' : '−') + Math.abs((tl[10] / tl0 - 1) * 100).toFixed(0)}%</b></small></div>` : '';
-    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소${tip(OV_EASY.n)}</h4><b>${fmt(me.n)}곳</b>${trend}<small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명(누적 방문자)</small>${refLine('n', v => fmt(Math.round(v)) + '곳')}</div>`]
+    $('sum-grid').innerHTML = [`<div class="sumcard"><h4>영업 숙소${tip(OV_EASY.n)}</h4><b>${fmt(me.n)}곳</b>${trend}<small>연간 외지인 ${me.v0 != null ? fmt(Math.round(me.v0 / 1e4)) + '만' : '-'} · 외국인 ${me.v1 != null ? fmt(Math.round(me.v1 / 1e4)) + '만'  : '-'} 명(방문자 연인원)</small>${refLine('n', v => fmt(Math.round(v)) + '곳')}</div>`]
       .concat(OV.filter(([k]) => me[k] != null).map(([k, nm, f]) => { const v = me[k], p = P[k];
         const why = v != null ? '' : '자료 없음';
         const approx = /^k(21|1107)/.test(k) && kixApprox(r) ? '<small>일반구 값의 단순 평균(근사)</small>' : '';
@@ -2282,7 +2296,7 @@
     // 한눈에 보기 문장
     const F = Object.fromEntries(OV.map(o => [o[0], o[2]]));
     const hiP = k => P[k] != null && P[k] >= .8, loP = k => P[k] != null && P[k] <= .2, top = k => `${peerName} 상위 ${Math.max(1, Math.round((1 - P[k]) * 100))}%`;
-    const L = [`영업 숙소 ${fmt(me.n)}곳${me.dens != null ? `, 외지인 누적 방문자 100만 명당 ${me.dens.toFixed(1)}곳${P.dens != null ? `(${top('dens')})` : ''}` : ''}.`];
+    const L = [`영업 숙소 ${fmt(me.n)}곳${me.dens != null ? `, 외지인 방문자 연인원 100만 명당 ${me.dens.toFixed(1)}곳${P.dens != null ? `(${top('dens')})` : ''}` : ''}.`];
     if (spec.length) L.push(`${spec.map(([q, i]) => `${T[i].name}(${q.toFixed(1)}배)`).join(', ')} 비중이 전국보다 높아 이 업종에 특화돼 있습니다.`);
     if (hiP('growth')) L.push(`최근 3년 숙소가 빠르게 늘었습니다(순증 ${F.growth(me.growth)}, ${top('growth')}).`);
     else if (loP('growth')) L.push(`최근 3년 숙소 증가가 더딘 편입니다(순증 ${F.growth(me.growth)}).`);
@@ -2313,16 +2327,16 @@
       // 전국: 노후 숙소(영업 1천 곳 이상 업종 가운데 인허가 20년 넘은 비중이 가장 큰 곳)
       const old = meta.brief.age.map((a, i) => [a[0] ? a[1] / a[0] : 0, i, a[0]]).filter(x => x[2] >= 1000 && state.types.has(x[1])).sort((a, b) => b[0] - a[0])[0];
       if (old && old[0] >= .5) L.push(`영업 중인 ${T[old[1]].name}의 ${(old[0] * 100).toFixed(0)}%가 인허가 20년 이상입니다(${fmt(old[2])}곳 중). 노후 숙박 리모델링·전환 정책의 대상입니다.`);
-      // 전국: 인구감소지역(관심지역 포함)에 있는 영업 숙소 비중과 외지인 누적 방문자 100만 명당 숙소
+      // 전국: 인구감소지역(관심지역 포함)에 있는 영업 숙소 비중과 외지인 방문자 연인원 100만 명당 숙소
       const at = areaTable(), dv = [[0, 0], [0, 0]]; let all = 0;
       S.forEach((sd, si) => sd.sgg.forEach((_, gi) => { const x = at[si + ':' + gi]; if (!x) return; const n = x.a.reduce((p, q) => p + q, 0), d = (sd.decl || [])[gi] ? 1 : 0, v = (sd.visg || [])[gi];
         all += n; dv[d][0] += n; if (v && v[0]) dv[d][1] += v[0]; }));
       if (all && dv[1][1] && dv[0][1]) { const a = dv[1][0] / (dv[1][1] / 1e6), b = dv[0][0] / (dv[0][1] / 1e6);
-        L.push(`영업 숙소의 ${(dv[1][0] / all * 100).toFixed(0)}%가 인구감소·관심지역에 있고, 외지인 누적 방문자 100만 명당 숙소는 ${a.toFixed(1)}곳으로 그 밖 지역(${b.toFixed(1)}곳)의 ${(a / b).toFixed(1)}배입니다.`); }
+        L.push(`영업 숙소의 ${(dv[1][0] / all * 100).toFixed(0)}%가 인구감소·관심지역에 있고, 외지인 방문자 연인원 100만 명당 숙소는 ${a.toFixed(1)}곳으로 그 밖 지역(${b.toFixed(1)}곳)의 ${(a / b).toFixed(1)}배입니다.`); }
     }
     if (hiP('tpi')) L.push(`주민 1천 명당 하루 외지인 방문자가 ${me.tpi.toFixed(1)}명으로 주민 대비 관광객 부담이 큰 편입니다(${top('tpi')}).`);
     if (hiP('fshare')) L.push(`외국인 방문자 비중이 ${F.fshare(me.fshare)}로 높습니다.`);
-    if (loP('fdens') && me.fshare != null && P.fshare != null && P.fshare >= .5) L.push(`외국인 방문자에 비해 숙소가 적은 편입니다(외국인 누적 방문자 100만 명당 ${F.fdens(me.fdens)}, ${peerName} 하위 ${Math.max(1, Math.round(P.fdens * 100))}%).`);
+    if (loP('fdens') && me.fshare != null && P.fshare != null && P.fshare >= .5) L.push(`외국인 방문자에 비해 숙소가 적은 편입니다(외국인 방문자 연인원 100만 명당 ${F.fdens(me.fdens)}, ${peerName} 하위 ${Math.max(1, Math.round(P.fdens * 100))}%).`);
     $('sum-text').innerHTML = L.map(x => `<li>${esc(x)}</li>`).join('');
     $('sum-table').innerHTML = '<thead><tr><th style="text-align:left">영역</th><th>지표</th><th>신뢰 수준</th><th>값</th><th>' + (peerLevel ? esc(peerName) + ' 중 백분위' : '백분위') + '</th><th>' + (peerLevel ? esc(peerName) + ' 중위' : '중위') + '</th><th>전국 전체</th><th style="text-align:left">무슨 뜻인가요</th><th style="text-align:left">산식</th><th style="text-align:left">근거</th></tr></thead><tbody>'
       + OV.map(([k, nm, f, formula, src]) => `<tr><td style="text-align:left">${esc(OV_META[k].area)}</td><td>${esc(nm)}</td><td title="${esc(IND.tiers[OV_META[k].tier] || '')}">${esc(OV_META[k].tier)}</td><td>${me[k] == null ? '-' : f(me[k])}</td><td>${P[k] == null ? '-' : Math.round(P[k] * 100)}</td><td>${median(k) == null ? '-' : f(median(k))}</td><td>${(natP || me)[k] == null ? '-' : f((natP || me)[k])}</td><td style="text-align:left;white-space:normal;min-width:240px">${esc(OV_EASY[k] || '')}</td><td style="text-align:left;white-space:normal">${esc(formula)}</td><td style="text-align:left;white-space:normal;color:var(--muted)">${esc(src)}</td></tr>`).join('') + '</tbody>';
@@ -2343,7 +2357,7 @@
       p.tfi = pop ? p.n / (pop / 1e3) : null; p.tpi = pop && p.v0 != null ? p.v0 / 365 / (pop / 1e3) : null; p.rtfi = pop && p.rooms != null ? p.rooms / (pop / 1e3) : null;
       return [sd.name, g, ['', '인구감소지역', '인구감소관심지역'][(sd.decl || [])[gi] || 0], p.n, p.v0 ?? '', p.v1 ?? '', pop || '', ...OV.map(([k]) => p[k] == null ? '' : +p[k].toFixed(4))];
     }));
-    const head = ['시도', '시군구', '인구감소지역', '영업 숙소', '연간 외지인 누적 방문자', '연간 외국인 누적 방문자', '주민등록인구', ...OV.map(([, nm]) => nm)];
+    const head = ['시도', '시군구', '인구감소지역', '영업 숙소', '연간 외지인 방문자 연인원', '연간 외국인 방문자 연인원', '주민등록인구', ...OV.map(([, nm]) => nm)];
     const cell = v => { const t = String(v ?? ''); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob(['\ufeff' + [head, ...rows].map(r => r.map(cell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
@@ -2633,11 +2647,11 @@
     });
     $('dv').innerHTML = svg;
     csvSet('dv', ['기간', '외지인', '외국인', '외국인 비중(%)', '진행 중'], P.keys.map((k, i) => [k, b[i] ?? '', c[i] ?? '', b[i] && c[i] ? +(c[i] / (b[i] + c[i]) * 100).toFixed(2) : '', P.partial[i] ? 'Y' : '']));
-    attachTip($('dv'), $('dv-tip'), i => `<b>${esc(labels[i])}${P.partial[i] ? ' (진행 중)' : ''}</b><br><span class="sw" style="background:var(--c0)"></span>외지인 ${b[i] == null ? '자료 없음' : fmt(Math.round(b[i] / 1e4)) + '만 명(누적)'}<br><span class="sw" style="background:var(--c1)"></span>외국인 ${c[i] == null ? '자료 없음' : fmt(Math.round(c[i] / 1e4)) + '만 명(누적)'}${b[i] && c[i] ? `<br>외국인 비중 ${(c[i] / (b[i] + c[i]) * 100).toFixed(2)}%` : ''}`);
+    attachTip($('dv'), $('dv-tip'), i => `<b>${esc(labels[i])}${P.partial[i] ? ' (진행 중)' : ''}</b><br><span class="sw" style="background:var(--c0)"></span>외지인 ${b[i] == null ? '자료 없음' : fmt(Math.round(b[i] / 1e4)) + '만 명(연인원)'}<br><span class="sw" style="background:var(--c1)"></span>외국인 ${c[i] == null ? '자료 없음' : fmt(Math.round(c[i] / 1e4)) + '만 명(연인원)'}${b[i] && c[i] ? `<br>외국인 비중 ${(c[i] / (b[i] + c[i]) * 100).toFixed(2)}%` : ''}`);
     const name = U ? regionName() : regLabel(curReg());
-    $('dv-sub').textContent = `${name}${!U && state.dong >= 0 ? ' (방문자 자료는 시군구 단위)' : ''} · 한국관광공사 데이터랩 휴대폰 기반 누적 방문자(일별 방문자 합산), ${visits.last.slice(0, 4)}.${visits.last.slice(4, 6)}.${visits.last.slice(6)}까지`;
+    $('dv-sub').textContent = `${name}${!U && state.dong >= 0 ? ' (방문자 자료는 시군구 단위)' : ''} · 한국관광공사 데이터랩 휴대폰 기반 방문자 연인원(그 기간 날마다 센 방문자를 더한 값), ${visits.last.slice(0, 4)}.${visits.last.slice(4, 6)}.${visits.last.slice(6)}까지`;
     $('dv-note').textContent = (dvMode === 'line' ? '선 보기는 외지인(왼쪽 축)과 외국인(오른쪽 축)의 눈금이 다릅니다. ' : '')
-      + '외지인은 다른 지역에서 온 내국인입니다. 외국인 자료는 기초 2019년·광역 2020년부터라 그 전에는 외지인만 그립니다. 흐린 막대·점선(*)은 아직 다 모이지 않은 기간입니다.'
+      + `${dvMode === 'bar' ? '막대' : '점'} 하나는 그 ${dvPer === 'y' ? '해' : '분기'} 안에서 날마다 센 방문자를 더한 값(연인원)이고, 앞 기간부터 쌓아 올린 값이 아닙니다. ${dvMode === 'bar' ? '막대는 외지인 위에 외국인을 얹어 그렸습니다. ' : ''}` + '외지인은 다른 지역에서 온 내국인입니다. 외국인 자료는 기초 2019년·광역 2020년부터라 그 전에는 외지인만 그립니다. 흐린 막대·점선(*)은 아직 다 모이지 않은 기간입니다.'
       + (regs.length > 1 ? ' 여러 기초를 합친 값이라 여러 곳을 들른 사람은 중복으로 셉니다.' : '');
   }
   $('dv-per').addEventListener('click', e => { const x = e.target.closest('button'); if (x) { dvPer = x.dataset.v; renderDemandVis(); } });
@@ -2669,11 +2683,11 @@
     const man = v => VIS && v ? fmt(Math.round(v / 1e4)) + '만' : '-';
     $('sup-kpis').innerHTML = [
       [fmt(L), `${regName} 영업 숙소 (선택 업종)`],
-      [man(VO), VIS ? '연간 외지인 누적 방문자' : '방문자 자료 없음'],
-      [man(VF), VIS ? '연간 외국인 누적 방문자' : '방문자 자료 없음'],
+      [man(VO), VIS ? '연간 외지인 방문자 연인원' : '방문자 자료 없음'],
+      [man(VF), VIS ? '연간 외국인 방문자 연인원' : '방문자 자료 없음'],
       mode === 'tour' ? [TT ? perTour(L, TT).toFixed(1) : '-', state.tour.size ? '관광지 1곳당 숙소 (선택 관광 유형)' : '관광 유형을 고르세요']
         : mode === 'pop' ? [perPop(L, PP)?.toFixed(1) ?? '-', '주민 1천 명당 숙소 (주민등록 인구)']
-        : [perVis(L, vj ? VF : VO)?.toFixed(1) ?? '-', `${vName} 누적 방문자 100만 명당 숙소`],
+        : [perVis(L, vj ? VF : VO)?.toFixed(1) ?? '-', `${vName} 방문자 연인원 100만 명당 숙소`],
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
     $('sup-sub').textContent = `${regName} 기준. 숙소가 수요보다 적은 곳과 관광지 주변 숙소 공백을 봅니다.`;
 
@@ -2708,15 +2722,15 @@
       const minD = si < 0 ? 1 : 5;
       const list = kids.filter(c => isVis ? vOf(c) : c.tour && c.tour >= minD).map(c => ({ ...c, r: f(c) })).sort((a, b) => a.r - b.r);
       const avg = isVis ? perVis(L, vj ? VF : VO) : perTour(L, TT);
-      $('sup-ratio-title').textContent = `${childLabel()}별 ${isVis ? vName + ' 누적 방문자 100만 명당' : '관광지 1곳당'} 숙소 · 적은 순`;
+      $('sup-ratio-title').textContent = `${childLabel()}별 ${isVis ? vName + ' 방문자 연인원 100만 명당' : '관광지 1곳당'} 숙소 · 적은 순`;
       $('sup-ratio').innerHTML = rowsHTML(list.map(c => ({ k: c.k, name: c.name, value: c.r, mark: avg, label: c.r.toFixed(1) + '곳',
-        extra: isVis ? fmt(Math.round(vOf(c) / 1e4)) + '만 명(누적)' : '관광지 ' + fmt(c.tour), color: c.r < avg * .5 ? 'var(--closed)' : 'var(--c0)' })), { button: true })
+        extra: isVis ? fmt(Math.round(vOf(c) / 1e4)) + '만 명(연인원)' : '관광지 ' + fmt(c.tour), color: c.r < avg * .5 ? 'var(--closed)' : 'var(--c0)' })), { button: true })
         || '<p class="note">비교할 자료가 없습니다.</p>';
-      csvSet('sup-ratio', [childLabel(), '영업 숙소', isVis ? `연간 ${vName}` : '관광지', isVis ? `${vName} 누적 방문자 100만 명당 숙소` : '관광지 1곳당 숙소'],
+      csvSet('sup-ratio', [childLabel(), '영업 숙소', isVis ? `연간 ${vName}` : '관광지', isVis ? `${vName} 방문자 연인원 100만 명당 숙소` : '관광지 1곳당 숙소'],
         list.map(c => [c.name, c.lod, isVis ? vOf(c) : c.tour, c.r.toFixed(2)]));
       const miss = isVis ? kids.filter(c => !vOf(c)).map(c => c.name) : [];
       $('sup-ratio-note').textContent = (isVis
-        ? `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 누적 방문자는 한국관광공사 데이터랩 ${VIS.from.slice(0, 4)}.${VIS.from.slice(4, 6)}~${VIS.to.slice(0, 4)}.${VIS.to.slice(4, 6)} 기준 일별 방문자 합계를 1년치로 환산했습니다.`
+        ? `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 방문자 연인원은 한국관광공사 데이터랩 ${VIS.from.slice(0, 4)}.${VIS.from.slice(4, 6)}~${VIS.to.slice(0, 4)}.${VIS.to.slice(4, 6)} 기준 일별 방문자 합계를 1년치로 환산했습니다.`
         : `세로선은 ${regName} 평균, 빨간 막대는 평균의 절반 미만입니다. 관광 유형은 지도 옆 체크박스를 따릅니다${si >= 0 ? ' · 관광지 5곳 미만 지역은 뺐습니다' : ''}.`)
         + (miss.length ? ` 방문자 자료 없음: ${miss.join(', ')}.` : '')
         + ((p => p.length && isVis ? ` ${p.join(', ')}는 신설 구라 집계 기간이 짧아 연간으로 환산했습니다.` : '')(si < 0 || !VIS ? [] : VIS.partial.filter(x => x.startsWith(S[si].name + ' ')).map(x => x.slice(S[si].name.length + 1))));
@@ -2811,7 +2825,7 @@
       [fmt(n), `${regionName()} 영업 중 도시민박`],
       [pct(z[0], known), `주거지역 비율 (용도지역 확인된 ${fmt(known)}곳 중)`],
       [pct(z[ZN.length - 1], n), '용도지역 미상'],
-      [VIS && v && level() <= 2 ? (n / (v / 1e6)).toFixed(1) : '-', VIS ? `외국인 누적 방문자 100만 명당 (${esc(vReg)})` : '방문자 자료 없음'],
+      [VIS && v && level() <= 2 ? (n / (v / 1e6)).toFixed(1) : '-', VIS ? `외국인 방문자 연인원 100만 명당 (${esc(vReg)})` : '방문자 자료 없음'],
     ].map(k => `<div class="kpi"><b>${k[0]}</b><span>${k[1]}</span></div>`).join('');
     $('mb-sub').textContent = '도시민박은 주민이 사는 주택에서만 할 수 있어 주거지역 비중이 높은 것은 정상입니다. 볼 것은 특정 동네에 몰리는지입니다.';
     const bars = (vals, labels, cols) => rowsHTML(vals.map((x, i) => ({ name: labels[i], value: x / (n || 1), color: cols[i], label: pct(x, n), extra: fmt(x) + '곳' })), {});
@@ -2913,7 +2927,7 @@
     ['노후 숙박 재생', '영업 여관·여인숙 10곳 이상, 그중 인허가 30년 이상 50% 이상, 용도지역이 확인된 30년 이상 시설(5곳 이상)의 50% 이상이 상업지역',
       (me, P, f) => f.old30 != null && f.old30 >= .5 && f.comm != null && f.comm >= .5,
       (me, P, f) => `영업 여관·여인숙 ${fmt(f.on)}곳 중 ${PCT(f.old30)}가 인허가 30년 이상이고, 용도지역이 확인된 30년 이상 시설의 ${PCT(f.comm)}가 상업지역입니다(공시지가 중위 ${f.jiga ? fmt(f.jiga) + '원/㎡' : '-'}): 노후 숙박 리모델링·용도 전환(도시재생 연계) 검토 신호.`],
-    ['외국인 대응 숙박', '외국인 방문자 비중 백분위 70 이상이면서 외국인 누적 방문자 100만 명당 숙소 백분위 30 이하',
+    ['외국인 대응 숙박', '외국인 방문자 비중 백분위 70 이상이면서 외국인 방문자 연인원 100만 명당 숙소 백분위 30 이하',
       (me, P) => P.fshare >= .7 && P.fdens != null && P.fdens <= .3,
       (me, P) => `외국인 방문자 비중은 높은데(${PCT(me.fshare)}, ${topP(P, 'fshare')}) 외국인 방문 대비 숙소는 적습니다(${lowP(P, 'fdens')}): 외국인 대응 숙박(관광호텔·호스텔·외국인관광 도시민박) 확충이나 입지 규제 검토 신호.`],
     ['관광 교통 연계', '대중교통 편리 접근 숙소 비율(SDG 11.2.1 방식) 백분위 20 이하',
@@ -2922,7 +2936,7 @@
     ['성수기 수용력', '성수기 집중도 백분위 80 이상',
       (me, P) => P.peak >= .8,
       (me, P) => `가장 붐비는 달의 방문자가 월평균의 ${me.peak.toFixed(2)}배입니다(${topP(P, 'peak')}): 성수기 숙박·교통 수용력 관리(임시 숙박, 수요 분산) 검토 신호.`],
-    ['빠른 공급 증가', '최근 3년 순증률 백분위 80 이상이면서 외지인 누적 방문자 100만 명당 숙소 백분위 80 이상',
+    ['빠른 공급 증가', '최근 3년 순증률 백분위 80 이상이면서 외지인 방문자 연인원 100만 명당 숙소 백분위 80 이상',
       (me, P) => P.growth >= .8 && P.dens >= .8,
       (me, P) => `숙소가 빠르게 늘었고(순증 ${(me.growth * 100).toFixed(1)}%, ${topP(P, 'growth')}) 방문자 대비 숙소도 많습니다(${topP(P, 'dens')}): 공급 과잉·가격 경쟁 모니터링 신호.`],
     ['잦은 진입·이탈', '신생률·소멸률 백분위 모두 80 이상',
@@ -2934,7 +2948,7 @@
     ['체류 전환', '숙박 비중 지수 백분위 20 이하이면서 주민 1천 명당 하루 외지인 방문자 백분위 50 이상',
       (me, P) => P.k2102 != null && P.k2102 <= .2 && P.tpi >= .5,
       (me, P) => `방문자는 적지 않은데 숙박 비중 지수가 낮습니다(${lowP(P, 'k2102')}): 당일 방문을 체류로 바꾸는 숙박 연계 상품 검토 신호.`],
-    ['방문 대비 숙소 적음', '외지인 누적 방문자 100만 명당 숙소 백분위 10 이하',
+    ['방문 대비 숙소 적음', '외지인 방문자 연인원 100만 명당 숙소 백분위 10 이하',
       (me, P) => P.dens != null && P.dens <= .1,
       (me, P) => `외지인 방문 대비 숙소가 매우 적습니다(100만 명당 ${me.dens.toFixed(1)}곳, ${lowP(P, 'dens')}): 숙박 공급 부족이거나 인근 지역 숙소에 기대는 구조일 수 있어 인접 지역과 함께 볼 신호.`],
   ];
@@ -3260,7 +3274,7 @@
     effCache = { sig, t };
     return t;
   }
-  const effVis = (si, gi, y) => {  // 그해 외지인 누적 방문자(네 분기가 다 있고 날짜가 다 찬 해만)
+  const effVis = (si, gi, y) => {  // 그해 외지인 방문자 연인원(네 분기가 다 있고 날짜가 다 찬 해만)
     if (!visits || !visits.sgg) return null;
     const ser = (visits.sgg[si] || [])[gi], idx = [1, 2, 3, 4].map(k => visits.q.indexOf(`${y}Q${k}`));
     if (!ser || idx.includes(-1) || idx.reduce((a, i) => a + visits.qdays[i], 0) < 365) return null;
@@ -3312,7 +3326,7 @@
       ['숙소 재고 증가율', growth(treat, base - 1 - span, base - 1), growth(control, base - 1 - span, base - 1), growth(treat, base - 1, base - 1 + post.length), growth(control, base - 1, base - 1 + post.length), 'pct'],
       ['연평균 신생률', rate(treat, 'birth', pre), rate(control, 'birth', pre), rate(treat, 'birth', post), rate(control, 'birth', post), 'rate'],
       ['연평균 소멸률', rate(treat, 'death', pre), rate(control, 'death', pre), rate(treat, 'death', post), rate(control, 'death', post), 'rate'],
-      ['외지인 누적 방문자 증가율', vgrowth(treat, base - 1 - span, base - 1), vgrowth(control, base - 1 - span, base - 1), vgrowth(treat, base - 1, base - 1 + post.length), vgrowth(control, base - 1, base - 1 + post.length), 'pct'],
+      ['외지인 방문자 연인원 증가율', vgrowth(treat, base - 1 - span, base - 1), vgrowth(control, base - 1 - span, base - 1), vgrowth(treat, base - 1, base - 1 + post.length), vgrowth(control, base - 1, base - 1 + post.length), 'pct'],
     ];
     const did = x => [x[1], x[2], x[3], x[4]].some(v => v == null) ? null : (x[3] - x[4]) - (x[1] - x[2]);
     const pp = v => v == null ? '-' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`, ppp = v => v == null ? '-' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%p`;

@@ -113,7 +113,7 @@
       <div class="card rail">
         <div class="railhead"><h3>지도 보기 <small style="font-weight:400">여러 개 선택 가능</small></h3></div>
         <div class="seg" id="map-preset" role="group" aria-label="지도 보기 프리셋" style="margin-bottom:14px"><button data-v="base" aria-pressed="true" title="숙소와 관광지(광역을 고른 경우)만">기본</button><button data-v="transit" aria-pressed="false">교통 접근성</button><button data-v="tour" aria-pressed="false">관광·맛집</button><button data-v="decl" aria-pressed="false">인구감소지역</button></div>
-        <div class="railhead"><h3>업종 <small style="font-weight:400">▸ 소분류</small></h3><span><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">해제</button></span></div>
+        <div class="railhead"><h3>업종 <small style="font-weight:400">▸ 소분류</small><small id="type-basis" style="font-weight:400;color:var(--brand)"></small></h3><span><button class="btn" id="t-all">모두</button><button class="btn" id="t-none">해제</button></span></div>
         <div class="seg" id="pt-color" role="group" aria-label="점 색" style="margin-bottom:8px"><button data-v="type" aria-pressed="true">점 색: 업종</button><button data-v="age" aria-pressed="false">점 색: 업력</button></div>
         <div class="legend" id="pt-age-legend" hidden style="margin-bottom:8px"><span><i style="background:#a1d99b;border-radius:2px"></i>10년 미만</span><span><i style="background:#fdd49e;border-radius:2px"></i>10~19년</span><span><i style="background:#fc8d59;border-radius:2px"></i>20~29년</span><span><i style="background:#d7301f;border-radius:2px"></i>30년 이상</span><span><i style="background:#b0b7c0;border-radius:2px"></i>미상</span><small style="flex-basis:100%">인허가 후 지난 햇수. 광역을 고르면 시설 점에 적용됩니다.</small></div>
         <div id="typelist"></div>
@@ -196,7 +196,7 @@
       <p class="note">점 하나가 시군구 하나입니다(시작 연도 숙소 30곳 미만은 제외). 4분면을 평균으로 나누지 않고, 0%선과 '두 증가율이 같은' 점선을 기준으로 봅니다. ◆는 전국 전체 값입니다. 점선은 두 증가율이 같은 선이고, 그 아래(붉은 영역)는 숙소가 방문자보다 빨리 늘어난 곳, 위는 방문자가 숙소보다 빨리 늘어난 곳입니다. 가로·세로 눈금 간격이 달라 점선이 45도가 아닙니다. 값이 아주 큰 몇 곳은 가장자리에 빈 원으로 표시합니다. 점을 누르면 그 지역으로 갑니다.</p></div>
     <div class="card"><button class="btn csv" data-csv="sd-table" data-name="숙소_방문_증가율">CSV</button><h3 style="margin-bottom:10px" id="sd-title"></h3>
       <div class="tablewrap" style="max-height:480px;overflow:auto"><table id="sd-table"></table></div>
-      <p class="note">공급 과잉을 단정하는 지표가 아니라 신호입니다. 숙소는 그해 12월 31일에 영업·휴업 중인 시설 수 또는 그 객실 수 합계(인허가 기록의 한실·양실·객실 수, 빈 칸은 업종 중앙값)로, 지금 인허가 기록의 인허가일·폐업일로 거꾸로 계산해 폐업일이 빠진 오래된 기록은 들어가지 않습니다. 방문자는 한국관광데이터랩의 이동통신 기반 누적 방문자(날마다 센 방문자의 연간 합계, 같은 사람이 사흘 머물면 3명)입니다. 차이가 +10%p 넘으면 붉게, −10%p 아래면 초록으로 표시합니다. 2026년에 새로 생긴 인천 구(제물포·영종·서해·검단)는 방문자 자료가 옛 구 기준이라 구별로는 비우고, 네 구를 합친 '옛 중구·동구·서구' 묶음을 점 하나로 보여 줍니다.</p></div>
+      <p class="note">공급 과잉을 단정하는 지표가 아니라 신호입니다. 숙소는 그해 12월 31일에 영업·휴업 중인 시설 수 또는 그 객실 수 합계(인허가 기록의 한실·양실·객실 수, 빈 칸은 업종 중앙값)로, 지금 인허가 기록의 인허가일·폐업일로 거꾸로 계산해 폐업일이 빠진 오래된 기록은 들어가지 않습니다. 방문자는 한국관광데이터랩의 이동통신 기반 방문자 연인원(날마다 센 방문자의 연간 합계, 같은 사람이 사흘 머물면 3명)입니다. 차이가 +10%p 넘으면 붉게, −10%p 아래면 초록으로 표시합니다. 2026년에 새로 생긴 인천 구(제물포·영종·서해·검단)는 방문자 자료가 옛 구 기준이라 구별로는 비우고, 네 구를 합친 '옛 중구·동구·서구' 묶음을 점 하나로 보여 줍니다.</p></div>
   </section>
 
   <section data-tab="trend" id="recent-sec">
@@ -296,7 +296,7 @@
       <div class="kpis" id="frisk-kpis"></div>
       <div class="tablewrap" style="margin-top:12px"><table id="frisk-table"></table></div>
       <button class="btn more" id="frisk-more" type="button" hidden></button>
-      <p class="note">요금을 예측하는 것이 아니라, 요금이 오르기 쉬운 조건(짧은 기간 수요 집중 대비 주변 객실 부족)을 비교하는 지표입니다. 축제 달 하루 외지인 = 축제가 열리는 시군구의 작년 같은 달(회차 날짜가 가장 많이 걸친 달) 외지인 누적 방문자 ÷ 그 달 일수(데이터랩, 당일 방문 포함), 평소 대비 = 그 달 ÷ 최근 12개월 월평균, 객실 = 축제 위치에서 직선 10km 안 영업 숙소 객실(신고값, 빈 칸은 업종 중앙값, 펜션·야영장 제외). 점수 = 0.6 × 객실 1실당 하루 외지인의 전국 축제 백분위 + 0.4 × 평소 대비 배율의 백분위(×100). 80점 이상 '높음', 60점 이상 '주의'. 한 달(31일)을 넘게 이어지는 전시·행사와 광역 단위로만 등록된 축제는 뺍니다. 가중치와 기준은 이 대시보드가 정한 값이며, 실제 요금·예약률·미신고 숙소·인근 시군 숙박은 반영되지 않습니다. 점검·안내 우선순위를 정하는 참고자료로만 쓰세요. 행을 누르면 그 축제의 주변 숙소를 보여 줍니다.</p></div>
+      <p class="note">요금을 예측하는 것이 아니라, 요금이 오르기 쉬운 조건(짧은 기간 수요 집중 대비 주변 객실 부족)을 비교하는 지표입니다. 축제 달 하루 외지인 = 축제가 열리는 시군구의 작년 같은 달(회차 날짜가 가장 많이 걸친 달) 외지인 방문자 연인원 ÷ 그 달 일수(데이터랩, 당일 방문 포함), 평소 대비 = 그 달 ÷ 최근 12개월 월평균, 객실 = 축제 위치에서 직선 10km 안 영업 숙소 객실(신고값, 빈 칸은 업종 중앙값, 펜션·야영장 제외). 점수 = 0.6 × 객실 1실당 하루 외지인의 전국 축제 백분위 + 0.4 × 평소 대비 배율의 백분위(×100). 80점 이상 '높음', 60점 이상 '주의'. 한 달(31일)을 넘게 이어지는 전시·행사와 광역 단위로만 등록된 축제는 뺍니다. 가중치와 기준은 이 대시보드가 정한 값이며, 실제 요금·예약률·미신고 숙소·인근 시군 숙박은 반영되지 않습니다. 점검·안내 우선순위를 정하는 참고자료로만 쓰세요. 행을 누르면 그 축제의 주변 숙소를 보여 줍니다.</p></div>
     <div class="card">
       <div class="tlrow" style="margin-bottom:10px"><label for="fest-q" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)">축제<span class="suggwrap"><input type="search" id="fest-q" placeholder="축제 이름·장소 검색" autocomplete="off" role="combobox" aria-controls="fest-sugg"><span class="sugg" id="fest-sugg" role="listbox" hidden></span></span></label><select id="fest-sel" aria-label="축제 선택"></select></div>
       <div class="festinfo" id="fest-info"></div>
@@ -356,7 +356,7 @@
 
   <section data-tab="demand" id="dv-sec">
     <div class="sechead"><h2>외지인·외국인 방문자 추이</h2><p class="sub" id="dv-sub"></p></div>
-    <div class="card"><button class="btn csv" data-csv="dv" data-name="외지인_외국인_누적방문자">CSV</button>
+    <div class="card"><button class="btn csv" data-csv="dv" data-name="외지인_외국인_방문자연인원">CSV</button>
       <div class="tlrow" style="margin-bottom:10px"><div class="seg" id="dv-per" role="group" aria-label="기간"><button data-v="y" aria-pressed="true">연도별</button><button data-v="q" aria-pressed="false">분기별</button></div>
         <div class="seg" id="dv-mode" role="group" aria-label="그래프 모양"><button data-v="bar" aria-pressed="true">막대</button><button data-v="line" aria-pressed="false">선</button></div>
         <div class="legend" style="margin:0"><span><i style="background:var(--c0)"></i>외지인(내국인)</span><span><i style="background:var(--c1)"></i>외국인</span><span id="dv-hint">막대 위 숫자 = 외국인 비중</span></div></div>
@@ -508,7 +508,7 @@
       <p class="note">모두 오늘 빌드 기준입니다. 위치근사 시설은 반경 분석(역·정류장·축제·관광지·국립공원)에서 빠집니다.</p></div>
     <div class="card"><h3 style="margin-bottom:10px">내려받기</h3><ul class="sumlist">
       <li><a href="data/download/lodging.csv.gz" download>전체 시설 CSV</a> (gzip): 시설 하나가 한 행, 영업·휴업·폐업 모두. 가까운 버스 정류장 거리·노선 수 포함</li>
-      <li><a href="data/download/panel_sgg.csv" download>시군구 연도별 패널 CSV</a>: 2010년~지난해, 연말 재고·객실, 신규·폐업, 신생률·소멸률, 누적 방문자</li>
+      <li><a href="data/download/panel_sgg.csv" download>시군구 연도별 패널 CSV</a>: 2010년~지난해, 연말 재고·객실, 신규·폐업, 신생률·소멸률, 방문자 연인원</li>
       <li>종합 지표 전체 시군구 CSV: 지역 진단 → 종합 → '지표 정의와 근거' 안의 '전체 시군구 CSV'(고른 업종 기준)</li>
       <li><a href="indicators.json">지표 정의 파일(indicators.json)</a>: 종합 지표의 영역·신뢰 수준·산식·근거</li>
       <li><a href="codebook.html">코드북</a>: 열 정의, 가공 규칙, 행정구역 처리, 한계</li>
@@ -519,7 +519,7 @@
     <div class="card"><h3 style="margin-bottom:10px">한계</h3><ul class="sumlist">
       <li>인허가 신고 기준입니다. 미신고 숙소와 공유숙박 플랫폼에만 있는 숙소는 없어, 특히 외국인 수요가 큰 도심에서 숙박 수용력이 실제보다 낮게 잡힐 수 있습니다.</li>
       <li>가동률·객실 단가·실제 숙박객 수는 없습니다. 수급은 시설·객실 수와 방문자 수로만 봅니다(숙박업 소비액 지수는 금액이 아닌 지수).</li>
-      <li>'누적 방문자'는 이동통신 기반 추정을 날마다 더한 연인원이라 실제 사람 수나 숙박객 수가 아닙니다.</li>
+      <li>'방문자 연인원'은 이동통신 기반 추정을 날마다 더한 연인원이라 실제 사람 수나 숙박객 수가 아닙니다.</li>
       <li>거리는 모두 직선거리입니다. 보행 경로·지형·출입구를 반영하면 접근성은 더 낮아집니다.</li>
       <li>행정구역은 현재 주소 기준입니다. 2026년 인천 신설 구와 전남광주통합특별시는 옛 통계와 맞지 않는 값을 비웁니다.</li>
       <li>정책 검토 신호와 신뢰 수준은 이 대시보드의 분류이며 공식 판정이 아닙니다.</li></ul></div>
