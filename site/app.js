@@ -775,7 +775,7 @@
     renderRegAge();
     renderMinbak(names);
     renderStations(); renderTerminals(); renderTrr();
-    renderRecent(); renderYTD(); renderChange(); renderSD(); renderMatrix(); if ($('choro-mode').value === 'net') renderChoro();
+    renderRecent(); renderYTD(); renderChange(); renderSD(); renderHotel(); renderMatrix(); if ($('choro-mode').value === 'net') renderChoro();
     renderSurv();
     syncMore();
     renderFest();
@@ -1279,6 +1279,58 @@
     csvSet('sd-table', ['지역', `${uh} ${y0}년 말`, `${uh} ${y1}년 말`, `${unitName} 증가율(%)`, `${kindName} ${y0}`, `${kindName} ${y1}`, '방문 증가율(%)', '차이(%p)'],
       rows.map(p => [regLabel(p), Math.round(p.st[2]), Math.round(p.st[3]), p.gs == null ? '' : +(p.gs * 100).toFixed(2), p.d ? p.d[0] : '', p.d ? p.d[1] : '', p.gd == null ? '' : +(p.gd * 100).toFixed(2), p.gap == null ? '' : +(p.gap * 100).toFixed(2)]));
   }
+  /* ---------- 호텔 운영 지표: 한국호텔업협회 호텔업 운영현황(site/hotel_ops.csv, 연도 × 시도 × 시군구 × 등급) ---------- */
+  let hoRows = null, hoMet = 'occ';
+  const HO_SIDO = { 서울특별시: ['서울'], 부산광역시: ['부산'], 대구광역시: ['대구'], 인천광역시: ['인천'], 대전광역시: ['대전'], 울산광역시: ['울산'], 세종특별자치시: ['세종'], 경기도: ['경기'],
+    강원특별자치도: ['강원'], 충청북도: ['충북'], 충청남도: ['충남'], 전북특별자치도: ['전북'], 경상북도: ['경북'], 경상남도: ['경남'], 제주특별자치도: ['제주'], 전남광주통합특별시: ['광주', '전남'] };
+  const HO_ORDER = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주'];
+  const HO_GRADES = ['5성', '4성', '3성', '2성', '1성', '미등급', '호스텔'], HO_MIN = 3;  // 응답 호텔이 HO_MIN곳 미만이면 개별 업체 값
+  fetch(V ? `hotel_ops.csv?v=${V}` : 'hotel_ops.csv').then(r => r.ok ? r.text() : '').then(t => {
+    const [head, ...ls] = t.trim().split('\n').map(l => l.split(','));
+    if (!ls.length) return;
+    hoRows = ls.map(l => Object.fromEntries(head.map((h, i) => [h, i < 4 ? l[i] : l[i] === '' || l[i] == null ? null : +l[i]])));
+    renderHotel();
+  }).catch(() => {});
+  function renderHotel() {
+    $('ho-sec').hidden = !hoRows; if (!hoRows) return;
+    const years = [...new Set(hoRows.map(r => r.year))].sort(), yN = years.at(-1), ix = new Map(hoRows.map(r => [`${r.year}|${r.sido}|${r.sgg}|${r.grade}`, r]));
+    const get = (y, sido, sgg, g) => ix.get(`${y}|${sido}|${sgg}|${g}`);
+    const cur = U ? null : curReg(), sidos = cur && cur.si >= 0 ? HO_SIDO[S[cur.si].name] || [] : null;
+    const selSgg = cur && cur.si >= 0 && cur.gi >= 0 ? S[cur.si].sgg[cur.gi] : null;
+    const M = { occ: ['객실 이용률', '%', v => v.toFixed(1)], adr: ['평균 요금', '원', v => fmt(Math.round(v))], revpar: ['객실당 수입', '원', v => fmt(Math.round(v))], fr: ['외국인 숙박객 비율', '%', v => v.toFixed(1)] };
+    const [mName, mUnit, mFmt] = M[hoMet];
+    const cell = r => { if (!r || r[hoMet] == null) return '<td>·</td>'; const few = r.n < HO_MIN, hot = hoMet === 'occ' && !few && r.occ >= 75;
+      return `<td style="${few ? 'color:var(--muted)' : hot ? 'color:var(--closed);font-weight:700' : ''}">${mFmt(r[hoMet])}${few ? '*' : ''}</td>`; };
+    const diff = (a, b) => { if (!a || !b || a[hoMet] == null || b[hoMet] == null || a.n < HO_MIN || b.n < HO_MIN) return ['·', '']; const d = b[hoMet] - a[hoMet];
+      return mUnit === '%' ? [`${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(1)}%p`, +d.toFixed(2)] : a[hoMet] ? [pct1(d / a[hoMet]), +(d / a[hoMet] * 100).toFixed(2)] : ['·', '']; };
+    // 지역 표: 전국이면 전국 + 시도, 시도를 고르면 그 시도 합계 + 시군구(전남광주는 원자료의 광주·전남 둘 다)
+    const regs = sidos ? sidos.flatMap(sd => [[sd, ''], ...[...new Set(hoRows.filter(r => r.sido === sd && r.sgg && r.grade === '전체').map(r => r.sgg))].sort().map(g => [sd, g])])
+      : [['전국', ''], ...HO_ORDER.map(sd => [sd, ''])];
+    const label = ([sd, g]) => g ? (sidos.length > 1 ? `${sd} ${g}` : g) : sd === '전국' ? '전국' : `${sd}${sidos ? ' 전체' : ''}`;
+    const cov = ([sd, g]) => { const a = get(yN, sd, g, '전체'), reg = g ? null : get(yN, sd, '', '등록'); return a && reg && reg.rooms ? Math.round(a.rooms / reg.rooms * 100) : null; };
+    $('ho-sub').textContent = `한국호텔업협회 호텔업 운영현황 ${years[0]}~${yN}년 · ${regionName()} · 붉은 굵은 숫자는 이용률 75% 이상, *는 응답 호텔 ${HO_MIN}곳 미만`;
+    $('ho-title').textContent = `${sidos ? sidos.join('·') + ' 시군구' : '시도'}별 ${mName}(${mUnit})`;
+    $('ho-table').innerHTML = `<thead><tr><th>지역</th>${years.map(y => `<th>${y}</th>`).join('')}<th>${years[0]}→${yN}</th><th>응답 호텔 ${yN}</th><th>응답 객실</th><th>응답률</th></tr></thead><tbody>`
+      + regs.map(rg => { const a = get(yN, rg[0], rg[1], '전체'), c = cov(rg);
+        return `<tr${!rg[1] || rg[1] === selSgg ? ' class="sum"' : ''}><td>${esc(label(rg))}</td>${years.map(y => cell(get(y, rg[0], rg[1], '전체'))).join('')}<td>${diff(get(years[0], rg[0], rg[1], '전체'), a)[0]}</td>`
+          + `<td>${a ? fmt(a.n) : '·'}</td><td>${a ? fmt(a.rooms) : '·'}</td><td>${c == null ? '·' : c + '%'}</td></tr>`; }).join('') + '</tbody>';
+    csvSet('ho-table', ['지역', ...years.map(y => `${mName} ${y}(${mUnit})`), `${years[0]}→${yN} 변화`, `응답 호텔 ${yN}`, `응답 객실 ${yN}`, '응답률(%)'],
+      regs.map(rg => { const a = get(yN, rg[0], rg[1], '전체'); return [label(rg), ...years.map(y => get(y, rg[0], rg[1], '전체')?.[hoMet] ?? ''), diff(get(years[0], rg[0], rg[1], '전체'), a)[1], a ? a.n : '', a ? a.rooms : '', cov(rg) ?? '']; }));
+    // 지표 카드와 등급 표의 대상: 고른 시군구가 원자료에 있으면 그 시군구, 없으면 시도(전남광주는 전남), 전국
+    const focus = !sidos || !sidos.length ? ['전국', ''] : (selSgg && sidos.map(sd => [sd, selSgg]).find(k => get(yN, k[0], k[1], '전체'))) || [sidos.at(-1), ''];
+    const fName = focus[1] ? `${focus[0]} ${focus[1]}` : focus[0], f0 = get(years[0], ...focus, '전체'), fN = get(yN, ...focus, '전체');
+    $('ho-kpis').innerHTML = Object.entries(M).map(([k, [nm, un, f]]) => [fN && fN[k] != null ? f(fN[k]) + (un === '%' ? '%' : '원') + (fN.n < HO_MIN ? '*' : '') : '-',
+      `${nm} ${yN} (${fName})${f0 && f0[k] != null ? ` · ${years[0]}년 ${f(f0[k])}${un === '%' ? '%' : '원'}` : ''}`]).map(k => `<div class="kpi"><b>${k[0]}</b><span>${esc(k[1])}</span></div>`).join('');
+    $('ho-gtitle').textContent = `${fName} 등급별 ${mName}(${mUnit})`;
+    $('ho-grade').innerHTML = `<thead><tr><th>등급</th>${years.map(y => `<th>${y}</th>`).join('')}<th>${years[0]}→${yN}</th><th>응답 호텔 ${yN}</th><th>응답 객실</th></tr></thead><tbody>`
+      + ['전체', ...HO_GRADES].map(g => { const a = get(yN, ...focus, g);
+        return `<tr${g === '전체' ? ' class="sum"' : ''}><td>${g}</td>${years.map(y => cell(get(y, ...focus, g))).join('')}<td>${diff(get(years[0], ...focus, g), a)[0]}</td><td>${a ? fmt(a.n) : '·'}</td><td>${a ? fmt(a.rooms) : '·'}</td></tr>`; }).join('') + '</tbody>';
+    csvSet('ho-grade', ['등급', ...years.map(y => `${mName} ${y}(${mUnit})`), `${years[0]}→${yN} 변화`, `응답 호텔 ${yN}`, `응답 객실 ${yN}`],
+      ['전체', ...HO_GRADES].map(g => { const a = get(yN, ...focus, g); return [g, ...years.map(y => get(y, ...focus, g)?.[hoMet] ?? ''), diff(get(years[0], ...focus, g), a)[1], a ? a.n : '', a ? a.rooms : '']; }));
+  }
+  $('ho-met').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; hoMet = b.dataset.v;
+    document.querySelectorAll('#ho-met button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); renderHotel(); });
+
   /* ---------- 관광 소비 수요 vs 숙소 노후 매트릭스: 시군구별 방문량 대비 소비액 지수(데이터랩 2203, 최근 12개월 평균)와
      인허가 20년 이상 숙소의 객실 비중(meta.sido[].rage). 기준선은 전국 시군구 중위값 ---------- */
   const MX_MIN = 100;  // 객실(추정 포함)이 이보다 적은 시군구는 비중이 불안정해 뺌
