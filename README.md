@@ -37,6 +37,7 @@
 - `site/indicators.json` — 종합 지표의 정의(영역·신뢰 수준 A/B/C·산식·근거·쉬운 설명). 종합 탭과 `codebook.html`이 같은 파일을 읽으니 지표를 바꿀 때는 이 파일과 `app.js`의 `ovStats`(계산)를 함께 고칩니다.
 - `site/data/download/panel_sgg.csv` — 시군구 × 연도 패널(2010년~지난해). 종합 탭의 '전체 시군구 CSV'는 현재 지표를 시군구별로 내려받습니다.
 - 데이터·방법 탭의 공식 통계 대조는 문화체육관광부 「전국 관광숙박시설 현황」(공공데이터포털 3075666)을 씁니다. 공공데이터포털에서 이 데이터의 **활용신청**을 해야 `DATA_GO_KR_KEY`로 받아집니다(신청 전에는 건너뜀).
+- `site/hotel_ops.csv` — 「호텔업 운영현황」 2021~2024년(연도 × 시도 × 시군구 × 등급: 객실 이용률·평균 요금·객실당 수입·외국인 숙박객 비율, `등록` 행은 그해 말 등록 호텔업 업체·객실 수). 수급 균형 탭의 '호텔 객실은 얼마나 찼나'가 읽습니다. API가 없어 해마다 원자료 엑셀을 받아 손으로 갱신합니다.
 - `CITATION.cff` — GitHub의 'Cite this repository'. 월별 스냅샷에 DOI를 붙이려면(선택) zenodo.org 개인 토큰(deposit:write, deposit:actions)을 secret `ZENODO_TOKEN`으로 넣습니다. 첫 달에 새 레코드가 만들어지고 로그에 나온 레코드 번호를 variable `ZENODO_DEPOSITION`에 넣으면 다음 달부터 같은 DOI의 새 버전이 됩니다. 라이선스는 variable `ZENODO_LICENSE`(예: `cc-by-4.0`), 저자명은 `ZENODO_CREATOR`. `ZENODO_API=https://sandbox.zenodo.org/api`로 먼저 시험할 수 있습니다(`scripts/zenodo.py`).
 
 ## 앱(PWA) '숙박관광 대시보드'

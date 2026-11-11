@@ -199,6 +199,17 @@
       <p class="note">공급 과잉을 단정하는 지표가 아니라 신호입니다. 숙소는 그해 12월 31일에 영업·휴업 중인 시설 수 또는 그 객실 수 합계(인허가 기록의 한실·양실·객실 수, 빈 칸은 업종 중앙값)로, 지금 인허가 기록의 인허가일·폐업일로 거꾸로 계산해 폐업일이 빠진 오래된 기록은 들어가지 않습니다. 방문자는 한국관광데이터랩의 이동통신 기반 방문자 연인원(날마다 센 방문자의 연간 합계, 같은 사람이 사흘 머물면 3명)입니다. 차이가 +10%p 넘으면 붉게, −10%p 아래면 초록으로 표시합니다. 2026년에 새로 생긴 인천 구(제물포·영종·서해·검단)는 방문자 자료가 옛 구 기준이라 구별로는 비우고, 네 구를 합친 '옛 중구·동구·서구' 묶음을 점 하나로 보여 줍니다.</p></div>
   </section>
 
+  <section data-tab="balance" id="ho-sec" hidden>
+    <div class="sechead"><h2>호텔 객실은 얼마나 찼나</h2><p class="sub" id="ho-sub"></p>
+      <div class="seg" id="ho-met" role="group" aria-label="지표" style="margin-top:8px"><button data-v="occ" aria-pressed="true">객실 이용률</button><button data-v="adr" aria-pressed="false">평균 요금</button><button data-v="revpar" aria-pressed="false">객실당 수입</button><button data-v="fr" aria-pressed="false">외국인 비율</button></div></div>
+    <div class="kpis" id="ho-kpis"></div>
+    <div class="card"><button class="btn csv" data-csv="ho-table" data-name="호텔_운영현황_지역별">CSV</button><h3 style="margin-bottom:10px" id="ho-title"></h3>
+      <div class="tablewrap" style="max-height:520px;overflow:auto"><table id="ho-table"></table></div></div>
+    <div class="card"><button class="btn csv" data-csv="ho-grade" data-name="호텔_운영현황_등급별">CSV</button><h3 style="margin-bottom:10px" id="ho-gtitle"></h3>
+      <div class="tablewrap"><table id="ho-grade"></table></div>
+      <p class="note">객실이 모자란지는 숙소 수가 아니라 객실 이용률과 요금에서 드러납니다. 이용률이 높고 요금이 함께 오르면 공급이 수요를 못 따라간다는 신호이고, 이용률이 낮으면 방문자가 많아도 객실은 남는 곳입니다. 자료는 한국호텔업협회 「호텔업 운영현황」(2021~2024년)으로, 조사에 응답한 호텔업(관광호텔·호스텔·가족호텔 등)만 들어 있고 모텔·여관(일반숙박업), 생활숙박시설, 민박, 펜션은 없습니다. 연간 값이라 성수기 매진은 보이지 않습니다. 객실 이용률 = 판매 객실 ÷ 판매 가능 객실, 평균 요금 = 객실 매출 ÷ 판매 객실, 객실당 수입 = 객실 매출 ÷ 판매 가능 객실. 응답 호텔이 3곳 미만인 칸은 지역 통계가 아니라 개별 업체 값이어서 흐리게 * 표시했습니다. 응답률은 그해 12월 31일 등록 호텔업 객실 대비 응답 객실입니다. 해마다 응답 호텔이 달라 연도 간 차이에는 표본 변화가 섞여 있습니다. 2023년 서울 전체의 요금·객실당 수입은 원자료가 0이어서 객실 매출로 다시 계산했습니다. 시군구 이름은 원자료 표기 그대로입니다. <a href="hotel_ops.csv">전체 자료(CSV)</a></p></div>
+  </section>
+
   <section data-tab="trend" id="recent-sec">
     <div class="sechead"><h2>최근 인허가·폐업</h2><p class="sub" id="recent-sub"></p></div>
     <div class="card"><button class="btn csv" data-csv="recent-table" data-name="최근_인허가_폐업">CSV</button>
