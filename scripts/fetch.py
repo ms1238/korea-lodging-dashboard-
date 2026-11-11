@@ -307,7 +307,11 @@ def main():
     only_missing = "--only-missing" in sys.argv
     failed, fetched = [], []
     T0 = time.time()
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "festival_intro", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
+    # Order matters on slow days (the permit APIs alone can take ~60 minutes): after FETCH_MINUTES only sources
+    # without a copy are fetched, so the ones that change month to month or fill over several runs (관광수요지수
+    # backfill, kto_res first as it lags furthest; festivals) come right after the permits and DataLab, and the
+    # near-static map layers come last.
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "kto_res", "kto_index", "kto_exp", "festivals", "festival_intro", "pop_month", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep not in ("food_coords", "festival_intro"):  # these fill over several runs, so they also run on pushes
