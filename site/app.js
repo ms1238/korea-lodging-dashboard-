@@ -17,6 +17,8 @@
   const pct = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '-';
   const esc = s => String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m]));
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  // 팝업에 붙이는 구글맵 링크. q는 '위도,경도' 또는 주소(좌표가 동 단위 근사일 때)
+  const gmap = q => `<br><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}" target="_blank" rel="noopener">구글맵에서 보기</a>`;
   // 배포마다 바뀌는 버전(app.js?v=…)을 데이터 요청에도 붙여 브라우저가 지난 데이터를 쓰지 않게 함
   const V = document.currentScript?.src.match(/[?&]v=([^&]+)/)?.[1];
   // 자료 파일을 못 받으면(네트워크·서버 오류, 깨진 파일) 상단에 알림. 404는 '아직 만들어지지 않은 자료'라 알리지 않음
@@ -416,7 +418,7 @@
       setTrrMap();
       map.on('click', 'fest', e => { if (radiusOn) return;
         const i = e.features[0].properties.i, f = FEST.f[i];
-        pop(e.lngLat, `${f[7] ? `<img src="${esc(f[7])}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(f[2])}</b><br>${edSpan(f[5].at(-1))} · ${FST[festState(f)]}<br>${esc(f[6])}<br>영업 숙소 반경 1km ${fmt(festCount(f, 1))}곳 · 3km ${fmt(festCount(f, 2))}곳<br><small>출처: 한국관광공사 TourAPI</small>`);
+        pop(e.lngLat, `${f[7] ? `<img src="${esc(f[7])}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(f[2])}</b><br>${edSpan(f[5].at(-1))} · ${FST[festState(f)]}<br>${esc(f[6])}<br>영업 숙소 반경 1km ${fmt(festCount(f, 1))}곳 · 3km ${fmt(festCount(f, 2))}곳${gmap(f[0] + ',' + f[1])}<br><small>출처: 한국관광공사 TourAPI</small>`);
         fSel = i; $('fest-sel').value = String(i); renderFestOne();
       });
       // 맛집: 백년가게(자주색) 전국 보기부터, 모범음식점(노랑)은 많아서 12레벨부터 (build.py → food.json, 일반음식점 인허가 좌표)
@@ -467,12 +469,12 @@
       map.on('click', 'pts', e => { if (radiusOn) return;
         const p = e.features[0].properties;
         new maplibregl.Popup({ maxWidth: '280px' }).setLngLat(e.lngLat).setHTML(
-          `<b>${esc(p.name)}</b><br>${esc(T[p.t].name)} · ${ST[p.s]}<br>${esc(p.addr)}<br><small>인허가 ${esc(p.date)}${p.age >= 0 ? ` (${p.age}년)` : ''}${p.closed ? ' · 폐업 ' + esc(p.closed) : ''}${p.ap ? ' · 위치는 동 단위 근사' : ''}</small>`).addTo(map);
+          `<b>${esc(p.name)}</b><br>${esc(T[p.t].name)} · ${ST[p.s]}<br>${esc(p.addr)}<br><small>인허가 ${esc(p.date)}${p.age >= 0 ? ` (${p.age}년)` : ''}${p.closed ? ' · 폐업 ' + esc(p.closed) : ''}${p.ap ? ' · 위치는 동 단위 근사' : ''}</small>${gmap(p.ap ? p.addr : e.features[0].geometry.coordinates.slice().reverse().map(v => v.toFixed(6)).join(','))}`).addTo(map);
       });
       map.on('click', 'tour', e => { if (radiusOn) return;
         const p = e.features[0].properties;
         new maplibregl.Popup({ maxWidth: '260px' }).setLngLat(e.lngLat).setHTML(
-          `${p.img ? `<img src="${esc(p.img)}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(p.name)}</b><br>${esc(TOUR.types[p.t])}<br>${esc(p.addr)}<br>${p.n3 != null ? `영업 숙소 반경 1km ${fmt(p.n1)}곳 · 3km ${fmt(p.n3)}곳<br>` : ''}<small>출처: 한국관광공사 TourAPI</small>`).addTo(map);
+          `${p.img ? `<img src="${esc(p.img)}" alt="" style="width:100%;border-radius:4px;margin-bottom:6px">` : ''}<b>${esc(p.name)}</b><br>${esc(TOUR.types[p.t])}<br>${esc(p.addr)}<br>${p.n3 != null ? `영업 숙소 반경 1km ${fmt(p.n1)}곳 · 3km ${fmt(p.n3)}곳<br>` : ''}<small>출처: 한국관광공사 TourAPI</small>${gmap(e.features[0].geometry.coordinates.slice().reverse().map(v => v.toFixed(6)).join(','))}`).addTo(map);
       });
       // 전국 보기의 시군구 원: 그 지역으로 가거나 비교 목록에 담기
       map.on('click', 'areas', e => { if (radiusOn) return;
@@ -1447,7 +1449,7 @@
       const r = ev[+tr.dataset.k][2]; if (r[0] == null) return;
       document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
       map.flyTo({ center: [r[1], r[0]], zoom: 16, duration: 900 });
-      new maplibregl.Popup({ maxWidth: '260px' }).setLngLat([r[1], r[0]]).setHTML(`<b>${esc(r[9])}</b><br>${esc(T[r[2]].name)} · ${ST[r[6]]}<br>${esc(r[10])}<br><small>인허가 ${esc(r[11])}${r[12] ? ' · 폐업 ' + esc(r[12]) : ''}${r[13] ? ' · 위치는 동 단위 근사' : ''}</small>`).addTo(map);
+      new maplibregl.Popup({ maxWidth: '260px' }).setLngLat([r[1], r[0]]).setHTML(`<b>${esc(r[9])}</b><br>${esc(T[r[2]].name)} · ${ST[r[6]]}<br>${esc(r[10])}<br><small>인허가 ${esc(r[11])}${r[12] ? ' · 폐업 ' + esc(r[12]) : ''}${r[13] ? ' · 위치는 동 단위 근사' : ''}</small>${gmap(r[13] ? r[10] : r[0] + ',' + r[1])}`).addTo(map);
     };
     csvSet('recent-table', ['날짜', '구분', '업소명', '업종', '지역', '주소', '지금 상태', '인허가일', '폐업일'], ev.map(([k, d, r]) => [d, k, r[9], T[r[2]].name, place(r), r[10], ST[r[6]], r[11], r[12]]));
   }
@@ -2813,7 +2815,7 @@
     const b = e.target.closest('button[data-ti]'); if (!b || !mapReady) return;
     const r = supRows[+b.dataset.ti];
     map.flyTo({ center: [r[1], r[0]], zoom: 14 });
-    new maplibregl.Popup({ maxWidth: '260px' }).setLngLat([r[1], r[0]]).setHTML(`<b>${esc(r[4])}</b><br>${esc(TOUR.types[r[2]])}<br>영업 숙소 반경 1km ${fmt(r[8])}곳 · 3km ${fmt(r[9])}곳`).addTo(map);
+    new maplibregl.Popup({ maxWidth: '260px' }).setLngLat([r[1], r[0]]).setHTML(`<b>${esc(r[4])}</b><br>${esc(TOUR.types[r[2]])}<br>영업 숙소 반경 1km ${fmt(r[8])}곳 · 3km ${fmt(r[9])}곳${gmap(r[0] + ',' + r[1])}`).addTo(map);
     $('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
   $('sup-gap').addEventListener('click', flyTo);
