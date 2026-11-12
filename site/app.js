@@ -1316,11 +1316,13 @@
           + `<td>${a ? fmt(a.n) : '·'}</td><td>${a ? fmt(a.rooms) : '·'}</td><td>${c == null ? '·' : c + '%'}</td></tr>`; }).join('') + '</tbody>';
     csvSet('ho-table', ['지역', ...years.map(y => `${mName} ${y}(${mUnit})`), `${years[0]}→${yN} 변화`, `응답 호텔 ${yN}`, `응답 객실 ${yN}`, '응답률(%)'],
       regs.map(rg => { const a = get(yN, rg[0], rg[1], '전체'); return [label(rg), ...years.map(y => get(y, rg[0], rg[1], '전체')?.[hoMet] ?? ''), diff(get(years[0], rg[0], rg[1], '전체'), a)[1], a ? a.n : '', a ? a.rooms : '', cov(rg) ?? '']; }));
-    // 지표 카드와 등급 표의 대상: 고른 시군구가 원자료에 있으면 그 시군구, 없으면 시도(전남광주는 전남), 전국
-    const focus = !sidos || !sidos.length ? ['전국', ''] : (selSgg && sidos.map(sd => [sd, selSgg]).find(k => get(yN, k[0], k[1], '전체'))) || [sidos.at(-1), ''];
+    // 지표 카드와 등급 표의 대상: 고른 시군구가 원자료에 있으면 그 시군구, 없으면 시도(전남광주는 옛 광주 구·광주시 묶음이면 광주, 그 밖은 전남), 전국
+    const gwj = sidos && sidos.length > 1 ? (S[cur.si].groups || []).find(g => g.name === '광주시') : null;
+    const inGwj = !!gwj && (cur.grp != null ? S[cur.si].groups[cur.grp] === gwj : gwj.gis.includes(cur.gi));
+    const focus = !sidos || !sidos.length ? ['전국', ''] : (selSgg && sidos.map(sd => [sd, selSgg]).find(k => get(yN, k[0], k[1], '전체'))) || [inGwj ? '광주' : sidos.at(-1), ''];
     const fName = focus[1] ? `${focus[0]} ${focus[1]}` : focus[0], f0 = get(years[0], ...focus, '전체'), fN = get(yN, ...focus, '전체');
     $('ho-kpis').innerHTML = Object.entries(M).map(([k, [nm, un, f]]) => [fN && fN[k] != null ? f(fN[k]) + (un === '%' ? '%' : '원') + (fN.n < HO_MIN ? '*' : '') : '-',
-      `${nm} ${yN} (${fName})${f0 && f0[k] != null ? ` · ${years[0]}년 ${f(f0[k])}${un === '%' ? '%' : '원'}` : ''}`]).map(k => `<div class="kpi"><b>${k[0]}</b><span>${esc(k[1])}</span></div>`).join('');
+      `${nm} ${yN} (${fName})${f0 && f0[k] != null ? ` · ${years[0]}년 ${f(f0[k])}${un === '%' ? '%' : '원'}${f0.n < HO_MIN ? '*' : ''}` : ''}`]).map(k => `<div class="kpi"><b>${k[0]}</b><span>${esc(k[1])}</span></div>`).join('');
     $('ho-gtitle').textContent = `${fName} 등급별 ${mName}(${mUnit})`;
     $('ho-grade').innerHTML = `<thead><tr><th>등급</th>${years.map(y => `<th>${y}</th>`).join('')}<th>${years[0]}→${yN}</th><th>응답 호텔 ${yN}</th><th>응답 객실</th></tr></thead><tbody>`
       + ['전체', ...HO_GRADES].map(g => { const a = get(yN, ...focus, g);
