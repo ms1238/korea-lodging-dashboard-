@@ -869,24 +869,33 @@ def fetch_metro_std(_key):
 def fetch_kto_index(key, spec=KTO_INDEX, name="kto_index"):
     """관광 수요 강도 / 관광 다양성 (or, with KTO_RES, 관광 자원 수요) indicators per 시도 (with its 시군구) and month, latest KTO_MONTHS months, newest first.
     One request per (month, indicator, 시도). Months already fetched are reused except the latest REFRESH_MONTHS;
-    an empty answer is remembered too, so it is not asked again until it falls in the refresh window."""
+    an empty answer is remembered too, so it is not asked again until it falls in the refresh window. A refresh-window
+    month that had no values at the last run (not published yet) gets one probe request per service instead of a full
+    set, so the budget goes to the older months still missing."""
     today = date.today()
     # KTO_MONTHS back from this month: the latest published month is usually last month; two years so that a yearly
     # event can be compared over two editions (the extra months fill over a few days within the daily request budget)
     months = ["%d%02d" % (today.year + (today.month - k - 1) // 12, (today.month - k - 1) % 12 + 1) for k in range(KTO_MONTHS)]
     path, cut = os.path.join(RAW_DIR, f"{name}.jsonl"), months[REFRESH_MONTHS - 1]
     kept = [json.loads(l) for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
+    # (month, indicator) pairs of the refresh window that had values last run; a refresh month with none was not
+    # published yet then, and is only probed (below) so that it does not use up the budget the older months need
+    published = {(r["ym"], r["ix"]) for r in kept if r["ym"] >= cut and not r.get("empty")}
     kept = [r for r in kept if months[-1] <= r["ym"] < cut]
     have = {(r["ym"], r["ix"], r["area"]) for r in kept}
-    todo, used = [], defaultdict(int)
+    todo, used, probe = [], defaultdict(int), []
     for ym in months:
         for op, param, codes in spec:
             svc = op.split("/")[0]
-            for ix in codes:
-                for area in KTO_INDEX_AREAS:
-                    if (ym, ix, area) not in have and used[svc] < KTO_INDEX_BUDGET:
-                        used[svc] += 1
-                        todo.append((ym, op, param, ix, area))
+            keys = [(ix, area) for ix in codes for area in KTO_INDEX_AREAS if (ym, ix, area) not in have]
+            if ym >= cut and keys and not any((ym, ix) in published for ix in codes):
+                used[svc] += 1  # the probe's request, reserved before the older months take the budget
+                probe.append((ym, op, param, keys))
+                continue
+            for ix, area in keys:
+                if used[svc] < KTO_INDEX_BUDGET:
+                    used[svc] += 1
+                    todo.append((ym, op, param, ix, area))
     fields = ("tarSjrnDsIx", "tarExpDsIx", "touDivIx", "expDivIx", "intlDivIx", "tarSvcDemIx", "culResDemIx")
     spent = set()  # services that answered "daily request limit exceeded": the rest of their requests wait for tomorrow
 
@@ -916,11 +925,22 @@ def fetch_kto_index(key, spec=KTO_INDEX, name="kto_index"):
         print(f"  {name} {ym} {ix} {area}: {last}", flush=True)
         return None
     # one request first: a code the service does not know would otherwise retry every request and use up the run
-    got = [one(todo[0])] if todo else []
-    if todo and got[0] is None:
-        raise RuntimeError(f"first request failed: {todo[0]}")
+    first = todo.pop(0) if todo else None
+    got = [one(first)] if first else []
+    if first and got[0] is None:
+        raise RuntimeError(f"first request failed: {first}")
+    # months not published at the last run: one request each; when it has values, the rest of the month follows as far
+    # as the budget allows (and from the next run on it is an ordinary month of the refresh window)
+    for ym, op, param, keys in probe:
+        svc = op.split("/")[0]
+        g = one((ym, op, param, *keys[0]))
+        got.append(g)
+        if g and not g[0].get("empty"):
+            rest = [(ym, op, param, ix, area) for ix, area in keys[1:]][:max(0, KTO_INDEX_BUDGET - used[svc])]
+            used[svc] += len(rest)
+            todo += rest
     with ThreadPoolExecutor(4) as pool:
-        got += list(pool.map(one, todo[1:]))
+        got += list(pool.map(one, todo))
     failed = sum(g is None for g in got)
     rows = kept + [r for g in got if g for r in g]
     total = len(months) * sum(len(c) for _, _, c in spec) * len(KTO_INDEX_AREAS)
