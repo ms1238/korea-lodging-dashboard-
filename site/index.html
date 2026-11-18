@@ -199,6 +199,14 @@
       <p class="note">공급 과잉을 단정하는 지표가 아니라 신호입니다. 숙소는 그해 12월 31일에 영업·휴업 중인 시설 수 또는 그 객실 수 합계(인허가 기록의 한실·양실·객실 수, 빈 칸은 업종 중앙값)로, 지금 인허가 기록의 인허가일·폐업일로 거꾸로 계산해 폐업일이 빠진 오래된 기록은 들어가지 않습니다. 방문자는 한국관광데이터랩의 이동통신 기반 방문자 연인원(날마다 센 방문자의 연간 합계, 같은 사람이 사흘 머물면 3명)입니다. 차이가 +10%p 넘으면 붉게, −10%p 아래면 초록으로 표시합니다. 2026년에 새로 생긴 인천 구(제물포·영종·서해·검단)는 방문자 자료가 옛 구 기준이라 구별로는 비우고, 네 구를 합친 '옛 중구·동구·서구' 묶음을 점 하나로 보여 줍니다.</p></div>
   </section>
 
+  <section data-tab="balance" id="ty-sec" hidden>
+    <div class="sechead"><h2>어디가, 왜 모자라나: 시도 유형</h2><p class="sub" id="ty-sub"></p></div>
+    <div class="kpis" id="ty-kpis"></div>
+    <div class="card"><button class="btn csv" data-csv="ty-table" data-name="시도_숙박수급_유형">CSV</button><h3 style="margin-bottom:10px">시도별 유형과 판별 신호</h3>
+      <div class="tablewrap" style="max-height:560px;overflow:auto"><table id="ty-table"></table></div>
+      <p class="note" id="ty-note"></p></div>
+  </section>
+
   <section data-tab="balance" id="ho-sec" hidden>
     <div class="sechead"><h2>호텔 객실은 얼마나 찼나</h2><p class="sub" id="ho-sub"></p>
       <div class="seg" id="ho-met" role="group" aria-label="지표" style="margin-top:8px"><button data-v="occ" aria-pressed="true">객실 이용률</button><button data-v="adr" aria-pressed="false">평균 요금</button><button data-v="revpar" aria-pressed="false">객실당 수입</button><button data-v="fr" aria-pressed="false">외국인 비율</button></div></div>

@@ -27,6 +27,7 @@
 
 - `scripts/fetch.py` — 8개 API 전체를 `raw/*.jsonl`로 받습니다. 키는 환경변수 `DATA_GO_KR_KEY`에서만 읽습니다.
 - `scripts/build.py` — 열 이름 통일, 좌표 변환(EPSG:5174 → WGS84), 시도·시군구 추출, 숙박업↔관광숙박업 중복 제거, 좌표 없는 야영장 제외 후 `site/data/`를 만듭니다.
+- `scripts/validate.py` — 배포 전 점검. 지금 배포된 사이트와 비교해 숙소 수(전국 5%, 시도 15%)나 완결된 해의 방문자 수가 크게 줄었거나 `hotel_ops.csv` 합계가 안 맞으면 배포를 멈춥니다(지난 사이트가 그대로 유지됨). 일부러 큰 변화를 내보낼 때는 이 기준을 고칩니다.
 - `site/` — 정적 웹페이지(MapLibre 지도, 광역·기초·읍면동·리·영업상태 드롭다운, 업종 소분류 필터, 비중·연도별 추이·지역 순위, 휴업·폐업 현황).
 - `.github/workflows/update.yml` — 매일 03:17(KST) 수집 → 빌드 → GitHub Pages 배포.
 

@@ -61,6 +61,9 @@ jobs:
           key: raw-${{ github.run_id }}
       - name: Build dashboard data
         run: python scripts/build.py
+      # Compares the build with the deployed site; a big drop stops here, so the last good site stays up
+      - name: Check the built data before deploying
+        run: python scripts/validate.py
       # The permit APIs only give the current state, so keep the first scheduled/manual build of each month.
       - name: Monthly snapshot (GitHub Release)
         if: github.event_name != 'push' && !inputs.only_missing
