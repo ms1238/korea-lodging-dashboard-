@@ -775,7 +775,7 @@
     renderRegAge();
     renderMinbak(names);
     renderStations(); renderTerminals(); renderTrr();
-    renderRecent(); renderYTD(); renderChange(); renderSD(); renderHotel(); renderMatrix(); if ($('choro-mode').value === 'net') renderChoro();
+    renderRecent(); renderYTD(); renderChange(); renderSD(); renderHotel(); renderType(); renderMatrix(); if ($('choro-mode').value === 'net') renderChoro();
     renderSurv();
     syncMore();
     renderFest();
@@ -1289,7 +1289,7 @@
     const [head, ...ls] = t.trim().split('\n').map(l => l.split(','));
     if (!ls.length) return;
     hoRows = ls.map(l => Object.fromEntries(head.map((h, i) => [h, i < 4 ? l[i] : l[i] === '' || l[i] == null ? null : +l[i]])));
-    renderHotel();
+    renderHotel(); renderType();
   }).catch(() => {});
   function renderHotel() {
     $('ho-sec').hidden = !hoRows; if (!hoRows) return;
@@ -1329,6 +1329,73 @@
         return `<tr${g === '전체' ? ' class="sum"' : ''}><td>${g}</td>${years.map(y => cell(get(y, ...focus, g))).join('')}<td>${diff(get(years[0], ...focus, g), a)[0]}</td><td>${a ? fmt(a.n) : '·'}</td><td>${a ? fmt(a.rooms) : '·'}</td></tr>`; }).join('') + '</tbody>';
     csvSet('ho-grade', ['등급', ...years.map(y => `${mName} ${y}(${mUnit})`), `${years[0]}→${yN} 변화`, `응답 호텔 ${yN}`, `응답 객실 ${yN}`],
       ['전체', ...HO_GRADES].map(g => { const a = get(yN, ...focus, g); return [g, ...years.map(y => get(y, ...focus, g)?.[hoMet] ?? ''), diff(get(years[0], ...focus, g), a)[1], a ? a.n : '', a ? a.rooms : '']; }));
+  }
+  /* ---------- 시도 수급 유형: 호텔 이용률·요금(hotel_ops.csv) × 방문자 연인원(visits.json) × 숙박 비중 지수(kto_index.json) × 객실 재고(meta.stk) ---------- */
+  // 규칙은 위에서부터 처음 맞는 하나(주 유형). 기준값은 TY에 모아 두고 화면 설명도 여기서 만듦
+  const TY = { y0: '2022', y1: '2024', hot: 75, low: 55, mid: 65, spread: 25, top: 65 };
+  const TY_TYPES = {
+    b: ['병목형', 'var(--closed)', `객실 이용률 ${TY.hot}% 이상이고 평균 요금이 전국보다 빨리 올랐다`, '수요가 공급을 앞지름. 용도변경·유휴 건물 전환, 중저가 객실 공급, 도시민박 등 대체 숙박 활용'],
+    m: ['미스매치형', '#b7791f', `전체 이용률 ${TY.low}~${TY.hot}%, 등급 간 이용률 차이 ${TY.spread}%p 이상이고 가장 잘 차는 등급이 ${TY.top}% 이상`, '양보다 구성 문제. 빈 등급의 리모델링·업종 전환, 찬 등급 위주 공급'],
+    o: ['유출형', '#2b6cb0', `방문자 증가율이 시도 중앙값 이상인데 숙박 비중 지수가 중앙값 미만이고 이용률이 ${TY.mid}% 미만`, '찾아오지만 묵지 않음. 야간·체류 콘텐츠, 인접 숙박 거점과 교통 연계'],
+    d: ['수요부족형', 'var(--muted)', `객실 이용률 ${TY.low}% 미만`, '지어도 안 참. 신규 공급 지원보다 수요 창출, 기존 시설 전환·정리'],
+    s: ['여유형', 'var(--ok)', '위 어디에도 해당하지 않음', '뚜렷한 부족·과잉 신호 없음. 추이 관찰'] };
+  const TY_GJ = new Set(['광산구', '남구', '동구', '북구', '서구']);  // 전남광주통합특별시 안의 옛 광주광역시 구
+  function tyRegion(old) {  // 호텔 자료의 옛 시도 이름 → [{si, gis|null}]
+    const si = S.findIndex(x => (HO_SIDO[x.name] || []).includes(old)); if (si < 0) return null;
+    if (HO_SIDO[S[si].name].length === 1) return { si, gis: null };
+    return { si, gis: S[si].sgg.map((g, gi) => (TY_GJ.has(g) === (old === '광주')) ? gi : -1).filter(gi => gi >= 0) };
+  }
+  function renderType() {
+    const ok = hoRows && visits && meta.stock_years; $('ty-sec').hidden = !ok; if (!ok) return;
+    const get = (y, sd, g = '전체') => hoRows.find(r => r.year === y && r.sido === sd && r.sgg === '' && r.grade === g);
+    const qi = y => visits.q.map((k, i) => k.startsWith(y) ? i : -1).filter(i => i >= 0);
+    const visSum = (rg, y) => { const arrs = rg.gis ? rg.gis.map(gi => visits.sgg[rg.si][gi]).filter(Boolean) : [visits.sido[rg.si]];
+      let t = 0; for (const a of arrs) for (const i of qi(y)) { if (a[0][i] == null || a[1][i] == null) return null; t += a[0][i] + a[1][i]; } return t; };
+    let K = null; try { K = kix; } catch (e) { /* kto_index 블록이 아직 실행 전 */ }
+    const kj = K ? K.ix.findIndex(x => x[0] === '2102') : -1;
+    const stay = rg => { if (kj < 0) return null; const keys = rg.gis ? rg.gis.map(gi => `${rg.si}:${gi}`) : [String(rg.si)];
+      const xs = keys.map(k => K.v[k] && K.v[k][kj].slice(-12).filter(x => x != null)).filter(a => a && a.length).map(a => a.reduce((p, c) => p + c, 0) / a.length);
+      return xs.length ? xs.reduce((p, c) => p + c, 0) / xs.length : null; };
+    const SY = meta.stock_years, rIx = y => 1 + SY.length + SY.indexOf(+y);
+    const rooms = (rg, y) => { if (!SY.includes(+y)) return null; let t = 0;
+      (rg.gis || S[rg.si].stk.map((_, gi) => gi)).forEach(gi => (S[rg.si].stk[gi] || []).forEach(r => { t += r[rIx(y)]; })); return t; };
+    const nat0 = get(TY.y0, '전국'), nat1 = get(TY.y1, '전국'), natAdr = nat1.adr / nat0.adr - 1;
+    const pts = HO_ORDER.map(sd => { const rg = tyRegion(sd), a = get(TY.y0, sd), b = get(TY.y1, sd); if (!rg || !a || !b || b.n < HO_MIN) return null;
+      const gs = HO_GRADES.map(g => get(TY.y1, sd, g)).filter(r => r && r.n >= HO_MIN && r.occ != null).sort((p, q) => q.occ - p.occ);
+      const v0 = visSum(rg, TY.y0), v1 = visSum(rg, TY.y1), r0 = rooms(rg, TY.y0), r1 = rooms(rg, TY.y1);
+      return { sd, rg, occ: b.occ, dOcc: b.occ - a.occ, dAdr: b.adr / a.adr - 1, top: gs[0], bot: gs.at(-1), spread: gs.length > 1 ? gs[0].occ - gs.at(-1).occ : null,
+        dVis: v0 && v1 ? v1 / v0 - 1 : null, stay: stay(rg), dRoom: r0 && r1 ? r1 / r0 - 1 : null, cov: get(TY.y1, sd, '등록') ? b.rooms / get(TY.y1, sd, '등록').rooms : null }; }).filter(Boolean);
+    const med = xs => { const v = xs.filter(x => x != null).sort((a, b) => a - b); return v.length ? (v[(v.length - 1) >> 1] + v[v.length >> 1]) / 2 : null; };
+    const mVis = med(pts.map(p => p.dVis)), mStay = med(pts.map(p => p.stay));
+    for (const p of pts) {
+      const hit = { b: p.occ >= TY.hot && p.dAdr >= natAdr,
+        m: p.occ >= TY.low && p.occ < TY.hot && p.spread != null && p.spread >= TY.spread && p.top.occ >= TY.top,
+        o: p.dVis != null && p.stay != null && p.dVis >= mVis && p.stay < mStay && p.occ < TY.mid,
+        d: p.occ < TY.low };
+      p.ty = ['b', 'm', 'o', 'd'].find(k => hit[k]) || 's';
+      p.also = ['m', 'o'].filter(k => k !== p.ty && hit[k]).concat(p.ty !== 'm' && p.spread != null && p.spread >= TY.spread && p.top.occ >= TY.top && !hit.m ? ['g'] : []);
+    }
+    const cur = U ? null : curReg(), sel = cur && cur.si >= 0 ? HO_SIDO[S[cur.si].name] || [] : [];
+    const pp = v => v == null ? '·' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%p`, pc = v => v == null ? '·' : pct1(v);
+    const alsoTxt = p => p.also.map(k => k === 'g' ? `등급 양극화(${p.top.grade} ${p.top.occ.toFixed(0)}% / ${p.bot.grade} ${p.bot.occ.toFixed(0)}%)` : TY_TYPES[k][0] + ' 신호').join(', ');
+    $('ty-sub').textContent = `${TY.y1}년 호텔 객실 이용률·${TY.y0}→${TY.y1}년 요금·방문자 변화와 최근 12개월 숙박 비중 지수로 시도를 다섯 유형으로 나눔 · 전국 평균 요금 ${pc(natAdr)}`;
+    $('ty-kpis').innerHTML = Object.entries(TY_TYPES).map(([k, t]) => { const xs = pts.filter(p => p.ty === k);
+      return `<div class="kpi"><b style="color:${t[1]}">${t[0]} ${xs.length}</b><span>${xs.length ? esc(xs.map(p => p.sd).join('·')) : '해당 없음'}</span></div>`; }).join('');
+    const head = ['시도', '유형', `이용률 ${TY.y1}`, `이용률 변화`, '평균 요금 변화', '등급 차(최고/최저)', `방문자 변화`, '숙박 비중 지수', `객실 재고 변화`, '응답률', '보조 신호'];
+    $('ty-table').innerHTML = `<thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>` + pts.map(p => { const t = TY_TYPES[p.ty];
+      return `<tr${sel.includes(p.sd) ? ' class="sum"' : ''}><td>${p.sd}</td><td style="color:${t[1]};font-weight:700">${t[0]}</td><td>${p.occ.toFixed(1)}%</td><td>${pp(p.dOcc)}</td>`
+        + `<td>${pc(p.dAdr)}</td><td>${p.spread == null ? '·' : `${p.spread.toFixed(0)}%p (${p.top.grade}/${p.bot.grade})`}</td><td>${pc(p.dVis)}</td><td>${p.stay == null ? '·' : p.stay.toFixed(1)}</td>`
+        + `<td>${pc(p.dRoom)}</td><td>${p.cov == null ? '·' : Math.round(p.cov * 100) + '%'}</td><td>${esc(alsoTxt(p)) || '·'}</td></tr>`; }).join('') + '</tbody>';
+    csvSet('ty-table', ['시도', '유형', `이용률 ${TY.y1}(%)`, '이용률 변화(%p)', '평균 요금 변화(%)', '등급 차(%p)', '최고 등급', '최저 등급', '방문자 변화(%)', '숙박 비중 지수', '객실 재고 변화(%)', '응답률(%)', '보조 신호', '정책 방향'],
+      pts.map(p => [p.sd, TY_TYPES[p.ty][0], p.occ, +p.dOcc.toFixed(2), +(p.dAdr * 100).toFixed(2), p.spread == null ? '' : +p.spread.toFixed(2), p.top ? p.top.grade : '', p.bot ? p.bot.grade : '',
+        p.dVis == null ? '' : +(p.dVis * 100).toFixed(2), p.stay == null ? '' : +p.stay.toFixed(2), p.dRoom == null ? '' : +(p.dRoom * 100).toFixed(2), p.cov == null ? '' : Math.round(p.cov * 100), alsoTxt(p), TY_TYPES[p.ty][3]]));
+    $('ty-note').innerHTML = '유형은 위에서부터 처음 맞는 하나입니다. '
+      + Object.values(TY_TYPES).map(t => `<b>${t[0]}</b>: ${t[2]} → ${t[3]}`).join(' · ')
+      + `. 지금 중앙값은 방문자 증가율 ${pc(mVis)}, 숙박 비중 지수 ${mStay == null ? '·' : mStay.toFixed(1)}입니다. `
+      + '호텔 이용률·요금은 「호텔업 운영현황」 응답 호텔업만(모텔·민박·생활숙박시설 제외) 반영하고, 등급 차는 응답 호텔 3곳 이상인 등급끼리 비교합니다. '
+      + '방문자는 한국관광데이터랩 외지인+외국인 방문자 연인원, 숙박 비중 지수는 관광수요지수 세부 지표의 최근 12개월 평균(기간이 호텔 자료와 다름), 객실 재고는 인허가 기록의 연말 영업 객실 합(모든 업종)입니다. '
+      + '수도권은 당일 방문이 많아 숙박 비중 지수가 낮게 나오는 구조라 유출형 판정을 그대로 믿기보다 이용률과 함께 보세요. 광주·전남은 통합 전 자료라 옛 광주 구와 나머지로 나눠 계산했고, 지수는 시군구 값의 단순 평균입니다. '
+      + '세종은 응답 호텔이 3곳 미만이라 뺐습니다. 기준값은 연구용 가정이며 정책 판단의 근거로 쓰기 전에 다른 자료와 대조하세요.';
   }
   $('ho-met').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; hoMet = b.dataset.v;
     document.querySelectorAll('#ho-met button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); renderHotel(); });
@@ -2604,7 +2671,7 @@
     const xs = v && j >= 0 ? v[j].slice(-12).filter(x => x != null) : [];
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   }
-  getJSON('data/kto_index.json', null).then(d => { kix = d; renderMatrix(); renderKix(); renderLodem(); renderFoodDem(); renderFood(); renderCompare(); renderOverview(); });
+  getJSON('data/kto_index.json', null).then(d => { kix = d; renderType(); renderMatrix(); renderKix(); renderLodem(); renderFoodDem(); renderFood(); renderCompare(); renderOverview(); });
 
   /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
   let icn = null, icnPer = 'm';
