@@ -60,6 +60,8 @@ Steps
 36. meta.json "typology" / sido[]["typ"] / ["typz"]: 시군구 유형 (k-means on structural indicators, add_typology).
 37. meta.json sido[]["rage"] / ["rage_sido"]: 객실 and those in facilities licensed 20+ / 30+ years ago (add_room_age).
 38. pts/<sido>.json rows [17] / [18] and meta.json "vzones": VWorld 용도지역 (index) and 개별공시지가 of open 여관·여인숙.
+39. ivs.json: 외래관광객조사 (KOSIS) whole-sample values — 방문 지역(17개 시도, 건%), 시도별 숙박 기간(박), 주요 이용
+    숙박시설(전국, 건%) and 이용 숙박시설 per 시도 (%), by year (write_ivs).
 """
 import calendar
 import csv
@@ -1359,6 +1361,28 @@ def write_icn():
                   f, ensure_ascii=False, separators=(",", ":"))
 
 
+def write_ivs():
+    """raw/kosis_ivs.json → ivs.json {"tables", "visit": {year: {시도: %}}, "nights": {year: {시도: 박}},
+    "lodge": {year: {시설: %}}, "lodge_sido": {시도: {year: {시설: %}}}}. 시설 names lose spaces, "/" and "·", because the
+    per-시도 tables write "친척 또는 친구 집" / "콘도미니엄/리조트" where the national one has "친척 또는 친구집" / "콘도미니엄 리조트"."""
+    path = os.path.join(RAW, "kosis_ivs.json")
+    if not os.path.exists(path):
+        return
+    raw = json.load(open(path, encoding="utf-8"))
+    out = {"tables": raw["tables"], "visit": {}, "nights": {}, "lodge": {}, "lodge_sido": {}}
+    for name, year, item, v in raw["rows"]:
+        if item == "사례수":
+            continue
+        if name.startswith("lodge"):
+            item = re.sub(r"[\s/·]", "", item)
+        if name.startswith("lodge_"):
+            out["lodge_sido"].setdefault(name[6:], {}).setdefault(year, {})[item] = v
+        else:
+            out[name].setdefault(year, {})[item] = v
+    with open(os.path.join(OUT, "ivs.json"), "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+
+
 def write_arrivals():
     path = os.path.join(RAW, "arrivals.jsonl")
     if not os.path.exists(path):
@@ -2192,6 +2216,7 @@ def main():
     write_panel(rows, sidos, sido_meta, tidx, visits)
     valid = add_validation(rows, sidos, merged)
     write_arrivals()
+    write_ivs()
     write_icn()
     write_kto_index(sidos, sgg_of)
     write_kac()
