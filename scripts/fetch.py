@@ -3,7 +3,8 @@ plus tourist attractions from the Korea Tourism Organization TourAPI (KorService
 plus visitor counts from the KTO DataLabService (daily since 2018, summed per month) into raw/datalab_sido.jsonl / datalab_sgg.jsonl,
 plus monthly foreign arrivals by nationality (한국문화관광연구원 출입국관광통계, since 2018) into raw/arrivals.jsonl,
 plus subway / light-rail routes with their line colours from OpenStreetMap (Overpass API, no key) into raw/subway.json,
-plus national-park boundaries from OpenStreetMap into raw/parks_osm.json.
+plus national-park boundaries from OpenStreetMap into raw/parks_osm.json,
+plus 외래관광객조사 tables (방문 지역·시도별 숙박 기간·이용 숙박시설) from KOSIS into raw/kosis_ivs.json (key in KOSIS_KEY).
 
 `--only-missing` fetches only sources that have no file in raw/ yet (used on code pushes, which reuse cached data).
 
@@ -57,6 +58,20 @@ LAND_PRICE_TABLE = "A_2024_00902"  # (연) 지역별 지가변동률, 시도 > �
 TRRSRT_API = "https://api.data.go.kr/openapi/tn_pubr_public_trrsrt_api"  # 전국관광지정보표준데이터 (관광진흥법 관광지·관광단지)
 MCST_LODGING_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=3075666/v1"  # 문화체육관광부 전국 관광숙박시설 현황 (odcloud, 시도별 업체·객실, one table per publication)
 BUS_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15066765/v1"  # 한국교통안전공단 전국 버스터미널 현황 (odcloud, counts per 시도, one table per year)
+KOSIS = "https://kosis.kr/openapi/Param/statisticsParameterData.do"  # 통계청 KOSIS 공유서비스; key in KOSIS_KEY
+# 한국문화관광연구원 외래관광객조사 (orgId 113): name -> (table id, item-id prefix, item count)
+KOSIS_IVS = {
+    "visit": ("DT_113_STBL_1027417", "13103121870", 20),   # 한국 여행 중 방문 지역(17개 시도), 건%
+    "nights": ("DT_113_STBL_1031446", "13103135839", 18),  # 시도별 숙박 기간(60박 이상 제외), 박
+    "lodge": ("DT_113_STBL_1031448", "13103135832", 20),   # 주요 이용 숙박시설(전국), 건%
+    **{f"lodge_{s}": (f"DT_113_STBL_{t}", p, 8) for s, t, p in (  # 시도별 이용 숙박시설, %
+        ("서울", 1031886, "13103136723"), ("경기", 1031887, "13103136759"), ("인천", 1031888, "13103136638"),
+        ("강원", 1031890, "13103136639"), ("대전", 1031896, "13103136781"), ("충북", 1031899, "13103136782"),
+        ("충남", 1031900, "13103136700"), ("세종", 1031902, "13103136660"), ("경북", 1031903, "13103136760"),
+        ("경남", 1031904, "13103136761"), ("대구", 1031905, "13103136701"), ("울산", 1031906, "13103136674"),
+        ("부산", 1031907, "13103136702"), ("광주", 1031908, "13103136724"), ("전북", 1031909, "13103136640"),
+        ("전남", 1031910, "13103136783"), ("제주", 1031912, "13103136675"))},
+}
 KAC_SPEC = "https://infuser.odcloud.kr/oas/docs?namespace=15002610/v1"  # 한국공항공사 공항별 여객실적 (odcloud)
 # 관광수요지수 구성 지표 (한국관광데이터랩): (operation, indicator parameter, indicator codes). Values are indices, not counts.
 KTO_INDEX = [
@@ -121,8 +136,8 @@ RAIL_STATIONS_QUERY = """[out:json][timeout:180];
 nwr["railway"~"^(station|halt)$"](33.0,124.5,38.7,131.0);
 out center tags;"""
 TRANSIT = "https://ms1238.github.io/korea-transit-gap/data/"  # the sister transit-gap dashboard (bus stops with route counts)
-OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "festival_intro", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "mcst_lodging"}  # the page works without these, so a failed first fetch does not stop the deploy
-JSON_FILES = {"festival_intro", "mcst_lodging", "transit_stops", "trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
+OPTIONAL = {"transit_stops", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "kto_index", "kto_res", "kto_exp", "pop_month", "festivals", "festival_intro", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "mcst_lodging", "kosis_ivs"}  # the page works without these, so a failed first fetch does not stop the deploy
+JSON_FILES = {"kosis_ivs", "festival_intro", "mcst_lodging", "transit_stops", "trrsrt", "land_price", "bus_stations", "bus_official", "park_visitors", "rail_routes", "dong_pop", "admin_dong", "food_coords", "century_shops", "subway", "parks_osm", "stations", "rail_stations", "korail_wide", "metro_std", "kac_years", "pop_month"}  # raw/<name>.json; the others are .jsonl
 DATALAB = {"datalab_sido": ("metcoRegnVisitrDDList", "areaCode", "areaNm"),
            "datalab_sgg": ("locgoRegnVisitrDDList", "signguCode", "signguNm")}
 PAGE_SIZE = 100  # the API caps numOfRows at 100 regardless of what is requested
@@ -311,7 +326,7 @@ def main():
     # without a copy are fetched, so the ones that change month to month or fill over several runs (관광수요지수
     # backfill, kto_res first as it lags furthest; festivals) come right after the permits and DataLab, and the
     # near-static map layers come last.
-    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "kto_res", "kto_index", "kto_exp", "festivals", "festival_intro", "pop_month", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging"]:
+    for ep in args or ENDPOINTS + [f"tour_{c}" for c in TOUR_TYPES] + ["datalab", "arrivals", "kto_res", "kto_index", "kto_exp", "festivals", "festival_intro", "pop_month", "subway", "rail_routes", "parks_osm", "stations", "rail_stations", "icn", "korail_wide", "korail_main", "metro_std", "kac_years", "excellent_restaurant_info", "century_shops", "food_coords", "admin_dong", "dong_pop", "park_visitors", "bus_stations", "bus_official", "land_price", "trrsrt", "transit_stops", "mcst_lodging", "kosis_ivs"]:
         files = [f"{f}.jsonl" for f in DATALAB] if ep == "datalab" else [f"{ep}.json"] if ep in JSON_FILES else [f"{ep}.jsonl"]
         have = all(os.path.exists(os.path.join(RAW_DIR, f)) for f in files)
         if only_missing and have and ep not in ("food_coords", "festival_intro"):  # these fill over several runs, so they also run on pushes
@@ -325,7 +340,7 @@ def main():
              "rail_routes": lambda k: fetch_subway(k, RAIL_ROUTES_QUERY, "rail_routes"),
              "parks_osm": fetch_parks_osm, "stations": fetch_stations,
              "rail_stations": lambda k: fetch_stations(k, RAIL_STATIONS_QUERY, "rail_stations"), "icn": fetch_icn, "korail_wide": fetch_korail_wide, "korail_main": fetch_korail_main, "metro_std": fetch_metro_std, "kto_index": fetch_kto_index, "kto_res": lambda k: fetch_kto_index(k, KTO_RES, "kto_res"), "kto_exp": lambda k: fetch_kto_index(k, KTO_EXP, "kto_exp"), "pop_month": fetch_population,
-             "kac_years": fetch_kac, "festivals": fetch_festivals, "festival_intro": fetch_festival_intro, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong, "transit_stops": fetch_transit_stops, "mcst_lodging": fetch_mcst_lodging}.get(ep, lambda k: fetch_permits(k, ep))(key)
+             "kac_years": fetch_kac, "festivals": fetch_festivals, "festival_intro": fetch_festival_intro, "century_shops": fetch_century, "food_coords": fetch_food_coords, "dong_pop": fetch_dong_pop, "park_visitors": fetch_park_visitors, "bus_stations": lambda k: fetch_stations(k, BUS_QUERY, "bus_stations"), "bus_official": fetch_bus_official, "land_price": fetch_land_price, "trrsrt": fetch_trrsrt, "admin_dong": fetch_admin_dong, "transit_stops": fetch_transit_stops, "mcst_lodging": fetch_mcst_lodging, "kosis_ivs": fetch_kosis_ivs}.get(ep, lambda k: fetch_permits(k, ep))(key)
             fetched.append(ep)
         except Exception as e:  # noqa: BLE001
             if have or ep in OPTIONAL:
@@ -556,6 +571,35 @@ def fetch_mcst_lodging(key):
     for row in d["data"][:30]:
         print("  ", json.dumps(row, ensure_ascii=False), flush=True)
     save_json("mcst_lodging.json", {"table": title, "rows": d["data"]})
+
+
+def fetch_kosis_ivs(_key):
+    """외래관광객조사 tables in KOSIS_IVS, whole-sample rows only (통계분류 '전체'), every year KOSIS has:
+    {"tables": {name: {"tbl", "name", "unit"}}, "rows": [[name, year, item name, value], …]}. Uses KOSIS_KEY."""
+    key = os.environ.get("KOSIS_KEY")
+    if not key:
+        raise RuntimeError("KOSIS_KEY is not set")
+    tables, rows = {}, []
+    for name, (tbl, prefix, n) in KOSIS_IVS.items():
+        params = {"method": "getList", "apiKey": key, "orgId": "113", "tblId": tbl, "objL1": "ALL", "format": "json", "jsonVD": "Y",
+                  "prdSe": "Y", "newEstPrdCnt": "10", "itmId": " ".join(f"{prefix}T{i}" for i in range(1, n + 1)) + " "}
+        last = None
+        for attempt in range(5):
+            try:
+                d = requests.get(KOSIS, params=params, timeout=90).json()
+                if isinstance(d, dict):  # {"err": "...", "errMsg": "..."}
+                    raise RuntimeError(f"{tbl}: {json.dumps(d, ensure_ascii=False)[:200]}")
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+                time.sleep(3 + attempt * 3)
+        else:
+            raise RuntimeError(f"kosis {name} failed: {last}")
+        tables[name] = {"tbl": tbl, "name": d[0]["TBL_NM"], "unit": d[0].get("UNIT_NM", "")}
+        kept = [[name, r["PRD_DE"], r["ITM_NM"], float(r["DT"])] for r in d if r.get("C1_NM") == "전체" and not r.get("C2") and re.fullmatch(r"-?[\d.]+", str(r.get("DT", "")))]  # "-" = 표본 없음
+        rows += kept
+        print(f"kosis_ivs {name}: {tables[name]['name']} · {len(kept)} rows · years {sorted({r[1] for r in kept})}", flush=True)
+    save_json("kosis_ivs.json", {"tables": tables, "rows": rows})
 
 
 def fetch_land_price(_key):
