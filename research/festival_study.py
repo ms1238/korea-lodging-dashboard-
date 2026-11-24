@@ -46,6 +46,8 @@ PRE_Q = 12                      # 사건 전 12분기
 LAST_Q = "2026Q3"               # 마지막 완결 분기
 STAY = [("2102", "숙박 비중"), ("2103", "1박 방문자"), ("2104", "2박 방문자")]
 RAIL = "간선열차 정차역"
+HUB_KM = 60          # 인근 대도시 반경: 숙소 분포 중심 간 직선거리(대략 1시간 이동권; 50km면 김천-대구 52km가 빠짐)
+HUB_POP = 500_000    # 광역시가 아닌 시는 인구 50만 이상만 대도시로 봄
 
 
 def load(name):
@@ -88,7 +90,9 @@ treated_keys = {t["k"] for t in TREATED}
 
 
 def controls(k):
-    """같은 종류·같은 간선철도 접근성의 시군구 중 인구(로그)가 가장 가까운 N곳."""
+    """같은 종류·같은 간선철도 접근성의 시군구 중 인구(로그)가 가장 가까운 N곳. 광역시 단위 대도시는 다른 광역시들."""
+    if k[0] == "hub":
+        return [("hub", n) for n in HUBS if n != k[1]]
     pool = [c for c in pop if c not in treated_keys and c != k and kind(c) == kind(k) and (c in rail) == (k in rail)]
     return sorted(pool, key=lambda c: abs(math.log(pop[c]) - math.log(pop[k])))[:N_CONTROLS]
 
@@ -125,7 +129,7 @@ KIX = [i[0] for i in kto["ix"]]
 
 def stay_dev(k, ym, code):
     """축제 달 값 - 같은 시군구 다른 달 중앙값 (지수 포인트)."""
-    rows = kto["v"].get(f"{k[0]}:{k[1]}")
+    rows = kto_rows(k)
     if not rows or ym not in KM:
         return None
     x = rows[KIX.index(code)]
@@ -176,7 +180,7 @@ def ds(d):
 
 
 def dshare(k, d):
-    n, t = daily[k].get(ds(d)), daily_nat.get(ds(d))
+    n, t = daily_of(k).get(ds(d)), daily_nat.get(ds(d))
     return n / t if n and t else None
 
 
@@ -189,7 +193,7 @@ def dexp(k, d):
 def dabn(k, d0, d1):
     """d0~d1 기간의 (실제/기대 - 1, 실제 - 기대)."""
     days = [d0 + timedelta(i) for i in range((d1 - d0).days + 1)]
-    act = [daily[k].get(ds(d)) for d in days]
+    act = [daily_of(k).get(ds(d)) for d in days]
     exp = [dexp(k, d) for d in days]
     if not all(act) or not all(exp):
         return None, None
@@ -217,9 +221,73 @@ def edition_days(e):
     return date.fromisoformat(e[0]), date.fromisoformat(e[1])
 
 
-# ---------- ②′ 인근 유출: 축제 달 인접 시군구의 숙박 지표가 올랐나 ----------
+# ---------- ②′ 인근 유출: 축제 달 인접 시군구·반경 안 대도시의 숙박 지표가 올랐나 ----------
 def neighbours(k):
     return [tuple(x) for x in sidos[k[0]]["adj"][k[1]] if tuple(x) in pop]
+
+
+def km(a, b):
+    la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return 12742 * math.asin(math.sqrt(h))
+
+
+def mean_rows(keys):
+    """여러 구의 지수를 단순 평균(지수라 가중치가 없음; build.py가 일반구를 묶는 방식과 같음)."""
+    rs = [kto["v"][x] for x in keys if x in kto["v"]]
+    if not rs:
+        return None
+    return [[(st.mean(v) if (v := [r[j][i] for r in rs if r[j][i] is not None]) else None) for i in range(len(kto["months"]))]
+            for j in range(len(KIX))]
+
+
+# 광역시 단위 대도시: 광역시·서울은 시 전체, 통합특별시 안의 옛 광주는 구 묶음. 키 ("hub", 이름).
+HUBS = {}
+for si, sm in enumerate(sidos):
+    if sm["name"].endswith("광역시") or sm["name"] == "서울특별시":
+        gis = list(range(len(sm["sgg"])))
+        HUBS[sm["name"]] = {"si": si, "gis": gis, "c": sm["c"], "rows": kto["v"].get(str(si))}
+    for g in sm.get("groups", []):
+        if g["name"] == "광주시":
+            cs_ = [sm["sggc"][i] for i in g["gis"] if sm["sggc"][i]]
+            HUBS["광주광역시(옛)"] = {"si": si, "gis": g["gis"], "c": [st.median(x[0] for x in cs_), st.median(x[1] for x in cs_)],
+                                  "rows": mean_rows([f"{si}:{i}" for i in g["gis"]])}
+for h in HUBS.values():
+    h["pop"] = sum(pop.get((h["si"], i), 0) for i in h["gis"])
+_hub_daily = {}
+
+
+def kto_rows(k):
+    return HUBS[k[1]]["rows"] if k[0] == "hub" else kto["v"].get(f"{k[0]}:{k[1]}")
+
+
+def daily_of(k):
+    if k[0] != "hub":
+        return daily[k]
+    if k[1] not in _hub_daily:
+        acc = defaultdict(int)
+        for i in HUBS[k[1]]["gis"]:
+            for d, n in daily[(HUBS[k[1]]["si"], i)].items():
+                acc[d] += n
+        _hub_daily[k[1]] = acc
+    return _hub_daily[k[1]]
+
+
+def unit_name(u):
+    return u[1] if u[0] == "hub" else sidos[u[0]]["sgg"][u[1]]
+
+
+def unit_pop(u):
+    return HUBS[u[1]]["pop"] if u[0] == "hub" else pop[u]
+
+
+def hubs_near(k):
+    """반경 HUB_KM 안의 대도시(광역시 단위, 또는 인구 HUB_POP 이상 시) 중 인접 시군구와 개최지 자신이 속한 광역시를 뺀 곳, 가까운 순."""
+    c, adj = sidos[k[0]]["sggc"][k[1]], set(neighbours(k))
+    out = [(km(c, h["c"]), ("hub", n)) for n, h in HUBS.items() if not (h["si"] == k[0] and k[1] in h["gis"])]
+    out += [(km(c, sidos[u[0]]["sggc"][u[1]]), u) for u in pop
+            if kind(u) == "시" and pop[u] >= HUB_POP and sidos[u[0]]["sggc"][u[1]] and u != k and u not in adj]
+    return [(d, u) for d, u in sorted(out) if d <= HUB_KM]
 
 
 def nb_signal(nb, ym):
@@ -353,39 +421,42 @@ for t in TREATED:
         types.setdefault(t["name"], []).append(verdict if verdict != "–" else "판정 불가")
         w(f"| {t['name']} | {ym} | " + " | ".join(f"{f(v)} ({f(z)})" for v, z in zip(vals, zs)) + f" | {verdict} |")
 
-w("\n## ②′ 인근 유출 — 축제 달 인접 시군구의 숙박 지표\n")
-w("인접 시군구마다 그 시군구 자신의 비교군(같은 방식)을 빼고, 다른 달 흔들림 대비 z를 냅니다. "
+w("\n## ②′ 인근 유출 — 축제 달 인접 시군구와 반경 안 대도시의 숙박 지표\n")
+w(f"대상: 경계를 맞댄 시군구 + 반경 {HUB_KM}km 안 대도시(광역시는 시 전체, 옛 광주는 구 묶음, 그 밖은 인구 {HUB_POP // 10000}만 이상 시; "
+  "거리는 숙소 분포 중심 간 직선거리). "
+  "각 지역마다 그 지역 자신의 비교군(시군구는 같은 방식, 광역시 단위는 다른 광역시들)을 빼고, 다른 달 흔들림 대비 z를 냅니다. "
   "**신호(●)** = 그 달 숙박 비중이나 1박 방문자가 z≥2 **이고** 축제 기간 외지인이 앞뒤 주보다 5% 이상 많음(일별 자료가 있을 때). "
   "월 지표만으로는 단풍철 같은 같은 달의 다른 수요와 구분이 안 되므로 일별 조건을 함께 둡니다(○ = 월 지표만 해당). "
   "인접 시군구가 여럿이라 우연한 신호도 잦아, 같은 인접 시군구들이 **축제가 없는 달**에 월 지표 신호를 낸 비율(평시 오경보율, "
   "일별 조건이 빠져 있어 실제 오경보율보다 높게 잡힌 값)과 함께 봅니다.\n")
-w("| 축제 | 회차 | 인접 시군구 (인구) | 축제 기간 외지인 (평소 대비) | 같은 (주변 주 대비) | 숙박 비중 z | 1박 방문자 z | 신호 |\n"
-  "|---|---|---|---|---|---|---|---|")
+w("| 축제 | 회차 | 지역 (인구) | 구분 | 축제 기간 외지인 (평소 대비) | 같은 (주변 주 대비) | 숙박 비중 z | 1박 방문자 z | 신호 |\n"
+  "|---|---|---|---|---|---|---|---|---|")
 spill = {}
 for t in TREATED:
-    nbs = neighbours(t["k"])
+    nbs = [(nb, "인접") for nb in neighbours(t["k"])] + [(u, f"대도시 {d:.0f}km") for d, u in hubs_near(t["k"])]
+    t["nunits"] = len(nbs)
     fest_m = {e[5:] for e in t["editions"]}
-    base = [any(nb_flag(nb_signal(nb, m)) for nb in nbs) for m in KM if m[4:] not in fest_m]
+    base = [any(nb_flag(nb_signal(nb, m)) for nb, _ in nbs) for m in KM if m[4:] not in fest_m]
     t["base"], t["nbase"] = (sum(base) / len(base) if base else None), len(base)
     for e, ym in zip(t["days"], t["editions"]):
         d0, d1 = edition_days(e)
         hits = []
-        for nb in nbs:
+        for nb, role in nbs:
             zs = nb_signal(nb, ym.replace("-", ""))
             a = dabn(nb, d0, d1)[0] if daily_nat else None
             loc = dlocal(nb, d0, d1) if daily_nat else None
             month_flag = nb_flag(zs)
             flag = month_flag and (not daily_nat or (loc is not None and loc >= 0.05))
             if flag:
-                hits.append(sidos[nb[0]]["sgg"][nb[1]])
-            w(f"| {t['name']} | {ym} | {sidos[nb[0]]['sgg'][nb[1]]} ({pop[nb] // 1000}천) | {f(a, pct=True)} | {f(loc, pct=True)} | "
+                hits.append(unit_name(nb))
+            w(f"| {t['name']} | {ym} | {unit_name(nb)} ({unit_pop(nb) // 1000:,}천) | {role} | {f(a, pct=True)} | {f(loc, pct=True)} | "
               f"{f(zs[0])} | {f(zs[1])} | {'●' if flag else '○' if month_flag else ''} |")
         spill[(t["name"], ym)] = hits
-w("\n| 축제 | 인접 시군구 수 | 신호(●) 낸 곳 | 평시 오경보율 (월 지표만, 축제 없는 달에 하나라도) |\n|---|---|---|---|")
+w("\n| 축제 | 살핀 지역 (인접 + 대도시) | 신호(●) 낸 곳 | 평시 오경보율 (월 지표만, 축제 없는 달에 하나라도) |\n|---|---|---|---|")
 for t in TREATED:
     got = "; ".join(f"{ym}: {', '.join(spill[(t['name'], ym)]) or '없음'}" for ym in t["editions"])
     base = f"{t['base'] * 100:.0f}% ({round(t['base'] * t['nbase'])}/{t['nbase']}달)" if t["base"] is not None else "–"
-    w(f"| {t['name']} | {len(neighbours(t['k']))} | {got} | {base} |")
+    w(f"| {t['name']} | {len(neighbours(t['k']))} + {t['nunits'] - len(neighbours(t['k']))} | {got} | {base} |")
 
 w("\n## ③ 공급 — 흥행 전 12분기 대비 흥행 후 분기당 변화 (주민 10만 명당)\n")
 w(f"사건 후는 흥행 시작 분기부터 {LAST_Q}까지. 이중차분 = (처리 후−전) − (비교군 중앙값 후−전). "
@@ -408,9 +479,9 @@ w("| **중앙값** | | " + " | ".join(f" | {f(st.median(x for x, _ in agg[n]), 2
                                        for n, _ in names) + " |")
 
 w("\n## 유형 요약\n")
-w("숙박 행방: 개최지에 숙박 신호가 있으면 '개최지 체류', 없고 인접 시군구에 신호가 있으면 '인근 유출 의심'"
+w("숙박 행방: 개최지에 숙박 신호가 있으면 '개최지 체류', 없고 인접 시군구나 반경 안 대도시에 신호가 있으면 '인근 유출 의심'"
   "(평시 오경보율이 높으면 약한 근거), 둘 다 없으면 '당일 귀가'.\n")
-w("| 축제 | 회차 | ①′ 축제 고유 방문 증가 (주변 주 대비) | ② 개최지 판정 | ②′ 인접 신호 | 숙박 행방 | ③ 신규 인허가 백분위 | ③ 객실 백분위 |\n"
+w("| 축제 | 회차 | ①′ 축제 고유 방문 증가 (주변 주 대비) | ② 개최지 판정 | ②′ 인접·대도시 신호 | 숙박 행방 | ③ 신규 인허가 백분위 | ③ 객실 백분위 |\n"
   "|---|---|---|---|---|---|---|---|")
 for t, (_, p0), (_, p1) in zip(TREATED, agg["신규 인허가"], agg["인허가 객실"]):
     for i, ym in enumerate(t["editions"]):
