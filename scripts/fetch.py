@@ -91,7 +91,7 @@ KTO_RES = [
     ("AreaTarResDemService/areaCulResDemList", "culResDemIxCd", ("12",)),
 ]
 KTO_INDEX_AREAS = ("11", "26", "27", "28", "29", "30", "31", "36", "41", "43", "44", "46", "47", "48", "50", "51", "52", "12")  # DataLab 시도 codes
-KTO_MONTHS = 26  # 관광수요지수 months kept (two years and the latest two)
+KTO_FROM = "202001"  # 관광수요지수 months kept: from the first month the service has (2018~2019 come back empty) to the latest
 KTO_INDEX_BUDGET = 400  # requests per service and run; the rest waits for the next run (800 made the daily run too long)
 FETCH_MINUTES = 65  # after this, sources that already have a copy from an earlier run are not fetched again, so the run ends within the workflow time limit
 POPULATION = "https://apis.data.go.kr/1741000/admmPpltnHhStus/selectAdmmPpltnHhStus"  # 행정동별 주민등록 인구 및 세대현황 (monthly)
@@ -911,15 +911,18 @@ def fetch_metro_std(_key):
 
 
 def fetch_kto_index(key, spec=KTO_INDEX, name="kto_index"):
-    """관광 수요 강도 / 관광 다양성 (or, with KTO_RES, 관광 자원 수요) indicators per 시도 (with its 시군구) and month, latest KTO_MONTHS months, newest first.
+    """관광 수요 강도 / 관광 다양성 (or, with KTO_RES, 관광 자원 수요) indicators per 시도 (with its 시군구) and month, KTO_FROM to last month, newest first.
     One request per (month, indicator, 시도). Months already fetched are reused except the latest REFRESH_MONTHS;
     an empty answer is remembered too, so it is not asked again until it falls in the refresh window. A refresh-window
     month that had no values at the last run (not published yet) gets one probe request per service instead of a full
     set, so the budget goes to the older months still missing."""
     today = date.today()
-    # KTO_MONTHS back from this month: the latest published month is usually last month; two years so that a yearly
-    # event can be compared over two editions (the extra months fill over a few days within the daily request budget)
-    months = ["%d%02d" % (today.year + (today.month - k - 1) // 12, (today.month - k - 1) % 12 + 1) for k in range(KTO_MONTHS)]
+    # last month back to KTO_FROM: the latest published month is usually last month. Newest first, so the daily request
+    # budget fills the recent months before the older ones (the 2020~ backfill takes a few weeks of daily runs)
+    months = []
+    while not months or months[-1] > KTO_FROM:
+        k = len(months)
+        months.append("%d%02d" % (today.year + (today.month - k - 1) // 12, (today.month - k - 1) % 12 + 1))
     path, cut = os.path.join(RAW_DIR, f"{name}.jsonl"), months[REFRESH_MONTHS - 1]
     kept = [json.loads(l) for l in open(path, encoding="utf-8")] if os.path.exists(path) else []
     # (month, indicator) pairs of the refresh window that had values last run; a refresh month with none was not

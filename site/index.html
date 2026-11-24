@@ -208,11 +208,15 @@
   </section>
 
   <section data-tab="balance" id="sc-sec" hidden>
-    <div class="sechead"><h2>외래관광객 3천만 명이 오면: 시도별 호텔 객실 과부족</h2><p class="sub" id="sc-sub"></p></div>
+    <div class="sechead"><h2>외래관광객 3천만 명이 오면: 시도별 호텔 객실 과부족</h2><p class="sub" id="sc-sub"></p>
+      <div class="seg" id="sc-seoul" role="group" aria-label="서울 외국인 방문율" style="margin-top:8px"><button data-v="" aria-pressed="true">서울 방문율 그대로</button><button data-v="70" aria-pressed="false">서울 70%로 분산</button><button data-v="60" aria-pressed="false">서울 60%로 분산</button></div></div>
     <div class="kpis" id="sc-kpis"></div>
     <div class="card"><button class="btn csv" data-csv="sc-table" data-name="3천만_시도별_호텔객실_과부족">CSV</button><h3 style="margin-bottom:10px" id="sc-title"></h3>
       <div class="tablewrap" style="max-height:560px;overflow:auto"><table id="sc-table"></table></div>
       <p class="note" id="sc-note"></p></div>
+    <div class="card" id="sc-abs-card"><button class="btn csv" data-csv="sc-abs" data-name="3천만_부족분_흡수경로">CSV</button><h3 style="margin-bottom:10px">부족분은 어디서 메울 수 있나: 부족한 시도의 기존 숙박 재고</h3>
+      <div class="tablewrap"><table id="sc-abs"></table></div>
+      <p class="note" id="sc-abs-note"></p></div>
   </section>
 
   <section data-tab="balance" id="ho-sec" hidden>
