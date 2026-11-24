@@ -9,6 +9,7 @@ research/festival_study_results.md, research/festival_study_panel.csv 를 씁니
 설계와 해석은 research/festival_study.md.
 """
 import csv
+import gzip
 import json
 import math
 import os
@@ -16,27 +17,30 @@ import statistics as st
 import sys
 import urllib.request
 from collections import defaultdict
+from datetime import date, timedelta
 
 SITE = os.environ.get("PAGES_URL", "https://ms1238.github.io/korea-lodging-dashboard-/").rstrip("/") + "/data/"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, ".cache")
 
 # 처리군: 언론이 '예상을 넘은 인파'로 보도한 신생·급성장 먹거리 축제. onset = 처음 흥행한 회차의 분기,
-# editions = 개최 시군구와 날짜가 기사로 확인된 회차(방문·체류 층은 이 회차의 달만 봄). 출처는 festival_study.md.
+# days = 개최 시군구와 날짜가 기사로 확인된 회차(첫날, 끝날), said = 주최 측 발표 방문객(만 명). 출처는 festival_study.md.
 TREATED = [
     {"name": "김천 김밥축제", "sido": "경상북도", "sgg": "김천시", "onset": "2024Q4",
-     "editions": ["2024-10", "2025-10"]},
+     "days": [("2024-10-26", "2024-10-27"), ("2025-10-25", "2025-10-26")], "said": [10, 15]},
     {"name": "구미 라면축제", "sido": "경상북도", "sgg": "구미시", "onset": "2024Q4",
-     "editions": ["2024-11", "2025-11"]},
+     "days": [("2024-11-01", "2024-11-03"), ("2025-11-07", "2025-11-09")], "said": [17, 35]},
     {"name": "원주 만두축제", "sido": "강원특별자치도", "sgg": "원주시", "onset": "2023Q4",
-     "editions": ["2024-10", "2025-10"]},
+     "days": [("2024-10-25", "2024-10-27"), ("2025-10-24", "2025-10-26")], "said": [50, 41]},
     {"name": "순창 떡볶이 페스타", "sido": "전북특별자치도", "sgg": "순창군", "onset": "2024Q4",
-     "editions": ["2024-11", "2025-11"]},
+     "days": [("2024-11-16", "2024-11-17"), ("2025-11-15", "2025-11-16")], "said": [None, None]},
     {"name": "대전 빵축제", "sido": "대전광역시", "sgg": "동구", "onset": "2024Q3",
-     "editions": []},  # 2024.9 동구 소제동. 2025년 회차는 날짜·장소 미확인, 2026년은 유성구로 옮김
+     "days": [("2024-09-28", "2024-09-29")], "said": [14]},  # 2025년 회차는 날짜·장소 미확인, 2026년은 유성구로 옮김
     {"name": "천안 빵빵데이", "sido": "충청남도", "sgg": "천안시", "onset": "2024Q4",
-     "editions": ["2024-10", "2025-10"]},
+     "days": [("2024-10-12", "2024-10-13"), ("2025-10-18", "2025-10-19")], "said": [23, None]},
 ]
+for t in TREATED:
+    t["editions"] = [a[:7] for a, _ in t["days"]]
 N_CONTROLS = 5
 PRE_Q = 12                      # 사건 전 12분기
 LAST_Q = "2026Q3"               # 마지막 완결 분기
@@ -85,7 +89,7 @@ treated_keys = {t["k"] for t in TREATED}
 
 def controls(k):
     """같은 종류·같은 간선철도 접근성의 시군구 중 인구(로그)가 가장 가까운 N곳."""
-    pool = [c for c in pop if c not in treated_keys and kind(c) == kind(k) and (c in rail) == (k in rail)]
+    pool = [c for c in pop if c not in treated_keys and c != k and kind(c) == kind(k) and (c in rail) == (k in rail)]
     return sorted(pool, key=lambda c: abs(math.log(pop[c]) - math.log(pop[k])))[:N_CONTROLS]
 
 
@@ -141,6 +145,95 @@ def stay_sd(k, cs, code):
     """다른 달들의 (처리-비교) 값의 표준편차: 축제 효과가 '보통 흔들림'보다 큰지 보는 잣대."""
     xs = [x for x in (stay_net(k, cs, m, code) for m in KM) if x is not None]
     return st.pstdev(xs) if len(xs) > 3 else None
+
+
+# ---------- ①′ 방문(일별): 축제 기간 외지인이 같은 요일 평소보다 얼마나 많았나 ----------
+# research/daily_visitors.csv.gz (research/fetch_daily.py). 기대값 = 앞뒤 2~4주 같은 요일의 전국 대비 비중 평균 × 그날 전국 외지인.
+DAILY = os.path.join(HERE, "daily_visitors.csv.gz")
+MERGED = "전남광주통합특별시"
+SIDO_ALIAS = {"강원도": "강원특별자치도", "전라북도": "전북특별자치도", "광주광역시": MERGED, "전라남도": MERGED}
+daily_nat, daily = defaultdict(int), defaultdict(lambda: defaultdict(int))
+if os.path.exists(DAILY):
+    with gzip.open(DAILY, "rt", encoding="utf-8") as fi:
+        drows = list(csv.DictReader(fi))
+    sido_code = {r["code"]: SIDO_ALIAS.get(r["name"], r["name"]) for r in drows if r["level"] == "sido"}
+    uniq = defaultdict(list)
+    for k0 in key_of.values():
+        uniq[sidos[k0[0]]["sgg"][k0[1]]].append(k0)
+    for r in drows:
+        if r["level"] == "sido":
+            daily_nat[r["date"]] += int(r["n"])
+        elif " " not in r["name"]:  # "수원시 장안구" 같은 일반구는 시 단위 행과 겹침
+            sd = sido_code.get(r["code"][:2])
+            sd = sd if sd in {x["name"] for x in sidos} else None
+            k0 = key_of.get((sd, r["name"])) or (uniq[r["name"]][0] if len(uniq[r["name"]]) == 1 else None)
+            if k0:
+                daily[k0][r["date"]] += int(r["n"])
+
+
+def ds(d):
+    return d.strftime("%Y%m%d")
+
+
+def dshare(k, d):
+    n, t = daily[k].get(ds(d)), daily_nat.get(ds(d))
+    return n / t if n and t else None
+
+
+def dexp(k, d):
+    """그날의 기대 외지인 수: 앞뒤 2~4주 같은 요일 비중 평균 × 그날 전국 외지인."""
+    xs = [x for x in (dshare(k, d + timedelta(7 * wk)) for wk in (-4, -3, -2, 2, 3, 4)) if x]
+    return st.mean(xs) * daily_nat[ds(d)] if len(xs) >= 3 and daily_nat.get(ds(d)) else None
+
+
+def dabn(k, d0, d1):
+    """d0~d1 기간의 (실제/기대 - 1, 실제 - 기대)."""
+    days = [d0 + timedelta(i) for i in range((d1 - d0).days + 1)]
+    act = [daily[k].get(ds(d)) for d in days]
+    exp = [dexp(k, d) for d in days]
+    if not all(act) or not all(exp):
+        return None, None
+    return sum(act) / sum(exp) - 1, sum(act) - sum(exp)
+
+
+def dz(k, d0, d1):
+    """축제 기간 하루 평균 이상 증가율 / 앞뒤 28일(축제 기간 제외) 하루 이상 증가율의 표준편차."""
+    a, _ = dabn(k, d0, d1)
+    other = [dabn(k, d, d)[0] for d in (d0 + timedelta(i) for i in range(-28, (d1 - d0).days + 29)) if d < d0 or d > d1]
+    other = [x for x in other if x is not None]
+    return a / st.pstdev(other) if a is not None and len(other) > 10 and st.pstdev(other) else None
+
+
+def dlocal(k, d0, d1):
+    """축제 기간이 바로 앞뒤 7일보다 얼마나 더 높았나: 단풍철처럼 그 무렵 전체가 붐비는 효과를 뺀 축제 고유 효과."""
+    a = dabn(k, d0, d1)[0]
+    near = [dabn(k, d0 - timedelta(7), d0 - timedelta(1))[0], dabn(k, d1 + timedelta(1), d1 + timedelta(7))[0]]
+    if a is None or None in near:
+        return None
+    return (1 + a) / (1 + st.mean(near)) - 1
+
+
+def edition_days(e):
+    return date.fromisoformat(e[0]), date.fromisoformat(e[1])
+
+
+# ---------- ②′ 인근 유출: 축제 달 인접 시군구의 숙박 지표가 올랐나 ----------
+def neighbours(k):
+    return [tuple(x) for x in sidos[k[0]]["adj"][k[1]] if tuple(x) in pop]
+
+
+def nb_signal(nb, ym):
+    """인접 시군구의 (숙박 비중 z, 1박 방문자 z), 그 시군구 자신의 비교군 차감."""
+    cs = controls(nb)
+    out = []
+    for code in ("2102", "2103"):
+        v, sd = stay_net(nb, cs, ym, code), stay_sd(nb, cs, code)
+        out.append(v / sd if v is not None and sd else None)
+    return out
+
+
+def nb_flag(zs):
+    return any(z is not None and z >= 2 for z in zs)
 
 
 # ---------- ③ 공급: 분기별 신규 인허가·인허가 객실·폐업 (주민 10만 명당) ----------
@@ -221,6 +314,30 @@ for t in TREATED:
     if not t["editions"]:
         w(f"| {t['name']} | – | 개최지·날짜가 확인된 회차가 자료 기간에 없음 | | | |")
 
+w("\n## ①′ 방문(일별) — 축제 기간 외지인, 같은 요일 평소 대비\n")
+if not daily_nat:
+    w("`research/daily_visitors.csv.gz`가 없어 건너뜀 (`research/fetch_daily.py`로 받음).\n")
+else:
+    w("기대값은 앞뒤 2~4주 같은 요일의 전국 대비 비중으로 계산(전국 공통 변동 제거). 초과 외지인 = 실제 − 기대(연인원, 하루 단위로 셈). "
+      "z는 앞뒤 28일 하루 변동 대비 배수. 앞·뒤 7일은 축제 직전·직후 주의 같은 계산(0 근처면 축제 효과가 축제 기간에만 있음). "
+      "**주변 주 대비**는 축제 기간이 앞뒤 7일 평균보다 더 높은 정도로, 단풍철처럼 그 무렵 전체가 붐비는 효과를 뺀 축제 고유 효과(핵심 지표). "
+      "발표 방문객은 주최 측 집계(주민 포함, 기준 제각각)라 직접 비교하지 말고 규모만 참고.\n")
+    w("| 축제 | 기간 | 처리군 | 초과 외지인 | z | 앞 7일 | 뒤 7일 | **주변 주 대비** | 비교군 중앙값 | 발표 방문객 |\n"
+      "|---|---|---|---|---|---|---|---|---|---|")
+    for t in TREATED:
+        t["dz"], t["dl"] = [], []
+        for e, said in zip(t["days"], t["said"]):
+            d0, d1 = edition_days(e)
+            a, x = dabn(t["k"], d0, d1)
+            z = dz(t["k"], d0, d1)
+            t["dz"].append(z)
+            t["dl"].append(dlocal(t["k"], d0, d1))
+            pre, post = dabn(t["k"], d0 - timedelta(7), d0 - timedelta(1))[0], dabn(t["k"], d1 + timedelta(1), d1 + timedelta(7))[0]
+            cs = [y for y in (dabn(c, d0, d1)[0] for c in t["c"]) if y is not None]
+            w(f"| {t['name']} | {e[0]}~{e[1][5:]} | {f(a, pct=True)} | {f'{x:+,.0f}명' if x is not None else '–'} | {f(z)} | "
+              f"{f(pre, pct=True)} | {f(post, pct=True)} | **{f(t['dl'][-1], pct=True)}** | {f(st.median(cs) if cs else None, pct=True)} | "
+              f"{f'{said}만 명' if said else '–'} |")
+
 w("\n## ② 체류 — 축제 달 숙박 지표(관광수요지수)의 평소 대비 변화, 비교군 변화 차감\n")
 w("단위는 지수 포인트(처리군 변화 − 비교군 변화 중앙값), 괄호는 z(다른 달들의 같은 값 흔들림 대비 배수). "
   "판정: 숙박 비중 z≥2면 **체류형**, 숙박 비중은 그대로인데 1박·2박 방문자 중 하나가 z≥2면 **부분 체류**, 아니면 **당일형**.\n")
@@ -233,9 +350,42 @@ for t in TREATED:
         zs = [v / s if v is not None and s else None for v, s in zip(vals, sds)]
         verdict = ("–" if zs[0] is None else "체류형" if zs[0] >= 2
                    else "부분 체류" if any(z is not None and z >= 2 for z in zs[1:]) else "당일형")
-        if verdict != "–":
-            types.setdefault(t["name"], []).append(verdict)
+        types.setdefault(t["name"], []).append(verdict if verdict != "–" else "판정 불가")
         w(f"| {t['name']} | {ym} | " + " | ".join(f"{f(v)} ({f(z)})" for v, z in zip(vals, zs)) + f" | {verdict} |")
+
+w("\n## ②′ 인근 유출 — 축제 달 인접 시군구의 숙박 지표\n")
+w("인접 시군구마다 그 시군구 자신의 비교군(같은 방식)을 빼고, 다른 달 흔들림 대비 z를 냅니다. "
+  "**신호(●)** = 그 달 숙박 비중이나 1박 방문자가 z≥2 **이고** 축제 기간 외지인이 앞뒤 주보다 5% 이상 많음(일별 자료가 있을 때). "
+  "월 지표만으로는 단풍철 같은 같은 달의 다른 수요와 구분이 안 되므로 일별 조건을 함께 둡니다(○ = 월 지표만 해당). "
+  "인접 시군구가 여럿이라 우연한 신호도 잦아, 같은 인접 시군구들이 **축제가 없는 달**에 월 지표 신호를 낸 비율(평시 오경보율, "
+  "일별 조건이 빠져 있어 실제 오경보율보다 높게 잡힌 값)과 함께 봅니다.\n")
+w("| 축제 | 회차 | 인접 시군구 (인구) | 축제 기간 외지인 (평소 대비) | 같은 (주변 주 대비) | 숙박 비중 z | 1박 방문자 z | 신호 |\n"
+  "|---|---|---|---|---|---|---|---|")
+spill = {}
+for t in TREATED:
+    nbs = neighbours(t["k"])
+    fest_m = {e[5:] for e in t["editions"]}
+    base = [any(nb_flag(nb_signal(nb, m)) for nb in nbs) for m in KM if m[4:] not in fest_m]
+    t["base"], t["nbase"] = (sum(base) / len(base) if base else None), len(base)
+    for e, ym in zip(t["days"], t["editions"]):
+        d0, d1 = edition_days(e)
+        hits = []
+        for nb in nbs:
+            zs = nb_signal(nb, ym.replace("-", ""))
+            a = dabn(nb, d0, d1)[0] if daily_nat else None
+            loc = dlocal(nb, d0, d1) if daily_nat else None
+            month_flag = nb_flag(zs)
+            flag = month_flag and (not daily_nat or (loc is not None and loc >= 0.05))
+            if flag:
+                hits.append(sidos[nb[0]]["sgg"][nb[1]])
+            w(f"| {t['name']} | {ym} | {sidos[nb[0]]['sgg'][nb[1]]} ({pop[nb] // 1000}천) | {f(a, pct=True)} | {f(loc, pct=True)} | "
+              f"{f(zs[0])} | {f(zs[1])} | {'●' if flag else '○' if month_flag else ''} |")
+        spill[(t["name"], ym)] = hits
+w("\n| 축제 | 인접 시군구 수 | 신호(●) 낸 곳 | 평시 오경보율 (월 지표만, 축제 없는 달에 하나라도) |\n|---|---|---|---|")
+for t in TREATED:
+    got = "; ".join(f"{ym}: {', '.join(spill[(t['name'], ym)]) or '없음'}" for ym in t["editions"])
+    base = f"{t['base'] * 100:.0f}% ({round(t['base'] * t['nbase'])}/{t['nbase']}달)" if t["base"] is not None else "–"
+    w(f"| {t['name']} | {len(neighbours(t['k']))} | {got} | {base} |")
 
 w("\n## ③ 공급 — 흥행 전 12분기 대비 흥행 후 분기당 변화 (주민 10만 명당)\n")
 w(f"사건 후는 흥행 시작 분기부터 {LAST_Q}까지. 이중차분 = (처리 후−전) − (비교군 중앙값 후−전). "
@@ -258,9 +408,19 @@ w("| **중앙값** | | " + " | ".join(f" | {f(st.median(x for x, _ in agg[n]), 2
                                        for n, _ in names) + " |")
 
 w("\n## 유형 요약\n")
-w("| 축제 | ② 판정 | ③ 신규 인허가 백분위 | ③ 객실 백분위 |\n|---|---|---|---|")
+w("숙박 행방: 개최지에 숙박 신호가 있으면 '개최지 체류', 없고 인접 시군구에 신호가 있으면 '인근 유출 의심'"
+  "(평시 오경보율이 높으면 약한 근거), 둘 다 없으면 '당일 귀가'.\n")
+w("| 축제 | 회차 | ①′ 축제 고유 방문 증가 (주변 주 대비) | ② 개최지 판정 | ②′ 인접 신호 | 숙박 행방 | ③ 신규 인허가 백분위 | ③ 객실 백분위 |\n"
+  "|---|---|---|---|---|---|---|---|")
 for t, (_, p0), (_, p1) in zip(TREATED, agg["신규 인허가"], agg["인허가 객실"]):
-    w(f"| {t['name']} | {', '.join(types.get(t['name'], ['판정 불가']))} | {p0:.0f} | {p1:.0f} |")
+    for i, ym in enumerate(t["editions"]):
+        host = types.get(t["name"], [])
+        host = host[i] if i < len(host) else "판정 불가"
+        hits = spill.get((t["name"], ym), [])
+        where = ("개최지 체류" if host in ("체류형", "부분 체류") else "인근 유출 의심" if hits
+                 else "당일 귀가" if host == "당일형" else "판정 불가")
+        dl = t["dl"][i] if t.get("dl") else None
+        w(f"| {t['name']} | {ym} | {f(dl, pct=True)} | {host} | {', '.join(hits) or '없음'} | {where} | {p0:.0f} | {p1:.0f} |")
 
 with open(os.path.join(HERE, "festival_study_results.md"), "w", encoding="utf-8") as fo:
     fo.write("\n".join(out) + "\n")
