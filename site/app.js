@@ -1400,7 +1400,7 @@
   /* ---------- 3천만 명 시나리오: 호텔 운영(hotel_ops.csv) × 방한 외래관광객(arrivals.json) × 외래관광객조사(ivs.json, KOSIS) ---------- */
   // 외국인 숙박 수요만 3천만 명 비율로 늘고 내국인 수요·시도 분포는 그대로라는 가정. 수준은 호텔 운영 실적에서, 구성은 조사에서 씀
   const SC = { target: 3e7, cap: 80 };
-  let ivs = null;
+  let ivs = null, scSeoul = null;  // scSeoul: 분산 시나리오의 서울 외국인 방문율(%), null이면 조사 값 그대로
   getJSON('data/ivs.json', null).then(d => { ivs = d; renderScen(); });
   // 호텔 외 영업 숙박시설만(친척·친구 집, 기숙사·연수원, 기타는 숙박업 공급과 무관해 뺌)
   const SC_TYPES = { 게스트하우스호스텔: '게스트하우스·호스텔', 민박펜션: '민박·펜션', 모텔여관: '모텔·여관', 콘도미니엄리조트: '콘도·리조트' };
@@ -1411,18 +1411,25 @@
     if (mi.length < 12) { $('sc-sec').hidden = true; return; }
     const A = mi.reduce((p, i) => p + arrivals.total[i], 0), k = SC.target / A;
     const get = (sd, g) => hoRows.find(r => r.year === yH && r.sido === sd && r.sgg === '' && r.grade === g);
-    const yI = ivs ? Object.keys(ivs.visit).sort().at(-1) : null;
+    const yI = ivs ? Object.keys(ivs.visit).sort().at(-1) : null, V = yI ? ivs.visit[yI] : null;
+    // 분산: 서울 방문율을 scSeoul로 낮추고 빠진 몫을 다른 시도에 지금 방문율 비례로 나눔 → 시도별 외국인 증가 배율
+    const vS = V && V['서울'], vO = V ? Object.entries(V).filter(([sd]) => sd !== '서울').reduce((p, q) => p + q[1], 0) : 0;
+    if (!vS) scSeoul = null;
+    $('sc-seoul').querySelectorAll('button').forEach(b => { b.disabled = !vS && !!b.dataset.v; b.setAttribute('aria-pressed', String((b.dataset.v || null) == (scSeoul == null ? null : String(scSeoul)))); });
+    const kOf = sd => scSeoul == null ? k : sd === '서울' ? k * scSeoul / vS : k * (1 + (vS - scSeoul) / vO);
     const pts = HO_ORDER.map(sd => { const a = get(sd, '전체'), reg = get(sd, '등록');
       if (!a || !reg || a.n < HO_MIN || a.occ == null || a.fr == null) return null;
-      const sold = reg.rooms * 365 * a.occ / 100, extra = sold * a.fr / 100 * (k - 1), need = (sold + extra) / (365 * SC.cap / 100);
+      const kk = kOf(sd), sold = reg.rooms * 365 * a.occ / 100, extra = sold * a.fr / 100 * (kk - 1), need = (sold + extra) / (365 * SC.cap / 100);
       const lo = ivs && ivs.lodge_sido[sd] && ivs.lodge_sido[sd][yI], h = lo && lo['호텔'];
       const other = lo ? Object.entries(lo).filter(([t]) => SC_TYPES[t]).sort((p, q) => q[1] - p[1]) : [], oSum = other.reduce((p, q) => p + q[1], 0);
-      return { sd, reg: reg.rooms, occ: a.occ, fr: a.fr, occ2: a.occ * (1 + a.fr / 100 * (k - 1)), extra, need, gap: need - reg.rooms,
+      return { sd, kk, reg: reg.rooms, occ: a.occ, fr: a.fr, occ2: a.occ * (1 + a.fr / 100 * (kk - 1)), extra, need, gap: need - reg.rooms,
         visit: yI ? ivs.visit[yI][sd] : null, nights: yI && ivs.nights[yI] ? ivs.nights[yI][sd] : null, h, other,
         extraOther: h ? extra * oSum / h : null }; }).filter(Boolean).sort((p, q) => q.gap - p.gap);
     const cur = U ? null : curReg(), sel = cur && cur.si >= 0 ? HO_SIDO[S[cur.si].name] || [] : [];
     const short = pts.filter(p => p.gap > 0), man = v => fmt(Math.round(v / 1e4));
-    $('sc-sub').textContent = `${yH}년 방한 외래관광객 ${man(A)}만 명 → 3천만 명(×${k.toFixed(2)}) · 외국인 숙박만 늘고 내국인은 그대로 · 이용률 ${SC.cap}%를 넘지 않으려면 · 조사 구성비 ${yI || '없음'}년`;
+    $('sc-sub').textContent = `${yH}년 방한 외래관광객 ${man(A)}만 명 → 3천만 명(×${k.toFixed(2)}) · 외국인 숙박만 늘고 내국인은 그대로 · 이용률 ${SC.cap}%를 넘지 않으려면 · 조사 구성비 ${yI || '없음'}년`
+      + (scSeoul == null ? '' : ` · 분산: 서울 방문율 ${vS}% → ${scSeoul}%, 다른 시도 외국인 ×${(1 + (vS - scSeoul) / vO).toFixed(2)} 추가`);
+    renderScenAbs(pts.filter(p => p.gap > 0), yH, sel);
     $('sc-kpis').innerHTML = [
       [`${fmt(Math.round(short.reduce((p, q) => p + q.gap, 0)))}실`, `호텔 객실이 모자라는 시도 ${short.length}곳의 부족분 합계`],
       [short.length ? esc(short.slice(0, 3).map(p => p.sd).join('·')) : '없음', '부족이 큰 순'],
@@ -1449,6 +1456,31 @@
       + `외국인 방문율·시도 내 숙박 기간·숙박시설 구성은 외래관광객조사(한국문화관광연구원, KOSIS)의 ${yI || ''}년 전체 응답 값입니다. 방문율은 복수응답, 숙박 기간은 60박 이상 제외입니다. `
       + '조사 값을 그대로 곱해 만든 외국인 호텔 숙박량은 호텔 실적보다 훨씬 커서, 조사는 수준이 아니라 구성비로만 씁니다. 호텔 외 추가 수요 = 늘어나는 외국인 호텔 객실-박 × (게스트하우스·호스텔, 민박·펜션, 모텔·여관, 콘도·리조트 비중 합 ÷ 호텔 비중)으로, 객실당 인원이 호텔과 같다고 가정한 대략값입니다. 친척·친구 집, 기숙사·연수원, 기타는 숙박업 공급과 무관해 뺐습니다.';
   }
+  // 부족분 흡수 경로: 부족한 시도의 인허가 객실 재고(meta.stk, 호텔 자료와 같은 연말)를 부족분 옆에 놓음
+  const SC_STOCK = { hotelish: ['일반호텔', '숙박업(생활)'], minbak: ['외국인관광 도시민박업'], motel: ['여관업', '여인숙업'] };
+  function renderScenAbs(short, yH, sel) {
+    const SY = meta.stock_years || [], yi = SY.indexOf(+yH);
+    $('sc-abs-card').hidden = !short.length || yi < 0; if (!short.length || yi < 0) return;
+    const tix = names => T.map((t, i) => names.includes(t.name) ? i : -1).filter(i => i >= 0), col = 1 + SY.length + yi;
+    const rooms = (rg, names) => { const ix = new Set(tix(names)); let t = 0;
+      (rg.gis || S[rg.si].stk.map((_, gi) => gi)).forEach(gi => (S[rg.si].stk[gi] || []).forEach(r => { if (ix.has(r[0])) t += r[col]; })); return Math.round(t); };
+    const get = (sd, g) => hoRows.find(r => r.year === yH && r.sido === sd && r.sgg === '' && r.grade === g);
+    const rows = short.map(p => { const rg = tyRegion(p.sd); if (!rg) return null;
+      // 일반호텔·생활숙박은 같은 시도 미등급 호텔(없으면 시도 전체)과 같은 이용률·외국인 비중이라고 보고, 3천만 때도 80% 밑이면 그 여유만큼 흡수
+      const pr = (g => g && g.n >= HO_MIN && g.occ != null && g.fr != null ? g : get(p.sd, '전체'))(get(p.sd, '미등급'));
+      const occ2 = pr.occ * (1 + pr.fr / 100 * (p.kk - 1)), hot = rooms(rg, SC_STOCK.hotelish);
+      const absorb = Math.min(p.gap, hot * Math.max(0, SC.cap - occ2) / SC.cap), left = p.gap - absorb, mo = rooms(rg, SC_STOCK.motel);
+      return { ...p, hot, occ2p: occ2, prName: pr.grade === '미등급' ? '미등급 호텔' : '시도 호텔 전체', absorb, left, minbak: rooms(rg, SC_STOCK.minbak), mo }; }).filter(Boolean);
+    const f = v => fmt(Math.round(v));
+    const head = ['시도', '호텔 객실 부족', `일반호텔·생활숙박 객실 ${yH}`, '그 객실의 3천만 때 이용률(추정)', '그중 받아 줄 수 있는 몫', '남는 부족', '외국인관광 도시민박 객실', '여관·여인숙 객실', '남는 부족 ÷ 여관·여인숙'];
+    $('sc-abs').innerHTML = `<thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>` + rows.map(r =>
+      `<tr${sel.includes(r.sd) ? ' class="sum"' : ''}><td>${r.sd}</td><td>${f(r.gap)}</td><td>${f(r.hot)}</td><td>${r.occ2p.toFixed(1)}% (${r.prName} 기준)</td><td>${f(r.absorb)}</td>`
+      + `<td style="font-weight:700;color:${r.left > 0 ? 'var(--closed)' : 'var(--ok)'}">${f(r.left)}</td><td>${f(r.minbak)}</td><td>${f(r.mo)}</td><td>${r.mo ? Math.round(r.left / r.mo * 100) + '%' : '·'}</td></tr>`).join('') + '</tbody>';
+    csvSet('sc-abs', head, rows.map(r => [r.sd, Math.round(r.gap), r.hot, +r.occ2p.toFixed(2), Math.round(r.absorb), Math.round(r.left), r.minbak, r.mo, r.mo ? +(r.left / r.mo * 100).toFixed(1) : '']));
+    $('sc-abs-note').textContent = `객실은 인허가 기록의 ${yH}년 말 영업 객실(빈 칸은 업종 중앙값)입니다. 일반호텔·생활숙박시설은 호텔업 운영현황에 없는 호텔형 객실이라, 같은 시도 미등급 호텔(응답 3곳 미만이면 시도 호텔 전체)과 이용률·외국인 비중이 같다고 보고 3천만 때도 이용률 ${SC.cap}% 밑으로 남는 여유만큼 부족분을 받아 준다고 계산했습니다(실제 이용률 자료가 없어 추정). `
+      + '외국인관광 도시민박은 객실 규모만 보여 줍니다(이용률 자료 없음). 여관·여인숙은 외국인이 잘 쓰지 않는 유형(외래관광객조사 모텔·여관 이용 2~3%)이라, 남는 부족을 리모델링·업종 전환으로 메운다면 이 재고의 몇 %가 필요한지를 규모 비교로만 보여 줍니다. 신축, 오피스 등 비숙박 건물의 용도 전환은 이 표에 없습니다.';
+  }
+  $('sc-seoul').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; scSeoul = b.dataset.v ? +b.dataset.v : null; renderScen(); });
   $('ho-met').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; hoMet = b.dataset.v;
     document.querySelectorAll('#ho-met button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); renderHotel(); });
 
