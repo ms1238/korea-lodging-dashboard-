@@ -1412,6 +1412,7 @@
     const A = mi.reduce((p, i) => p + arrivals.total[i], 0), k = SC.target / A;
     const get = (sd, g) => hoRows.find(r => r.year === yH && r.sido === sd && r.sgg === '' && r.grade === g);
     const yI = ivs ? Object.keys(ivs.visit).sort().at(-1) : null, V = yI ? ivs.visit[yI] : null;
+    const yLN = ivs && ivs.lodge_nights ? Object.keys(ivs.lodge_nights).sort().at(-1) : null;
     // 분산: 서울 방문율을 scSeoul로 낮추고 빠진 몫을 다른 시도에 지금 방문율 비례로 나눔 → 시도별 외국인 증가 배율
     const vS = V && V['서울'], vO = V ? Object.entries(V).filter(([sd]) => sd !== '서울').reduce((p, q) => p + q[1], 0) : 0;
     if (!vS) scSeoul = null;
@@ -1421,7 +1422,10 @@
       if (!a || !reg || a.n < HO_MIN || a.occ == null || a.fr == null) return null;
       const kk = kOf(sd), sold = reg.rooms * 365 * a.occ / 100, extra = sold * a.fr / 100 * (kk - 1), need = (sold + extra) / (365 * SC.cap / 100);
       const lo = ivs && ivs.lodge_sido[sd] && ivs.lodge_sido[sd][yI], h = lo && lo['호텔'];
-      const other = lo ? Object.entries(lo).filter(([t]) => SC_TYPES[t]).sort((p, q) => q[1] - p[1]) : [], oSum = other.reduce((p, q) => p + q[1], 0);
+      const other = lo ? Object.entries(lo).filter(([t]) => SC_TYPES[t]).sort((p, q) => q[1] - p[1]) : [];
+      // 유형별 객실-박 ∝ 이용 비중 × 그 유형의 숙박 기간(전국 값, 없으면 호텔과 같다고 봄)
+      const ln = ivs && ivs.lodge_nights && ivs.lodge_nights[yLN], nr = t => ln && ln[t] && ln['호텔'] ? ln[t] / ln['호텔'] : 1;
+      const oSum = other.reduce((p, [t, v]) => p + v * nr(t), 0);
       return { sd, kk, reg: reg.rooms, occ: a.occ, fr: a.fr, occ2: a.occ * (1 + a.fr / 100 * (kk - 1)), extra, need, gap: need - reg.rooms,
         visit: yI ? ivs.visit[yI][sd] : null, nights: yI && ivs.nights[yI] ? ivs.nights[yI][sd] : null, h, other,
         extraOther: h ? extra * oSum / h : null }; }).filter(Boolean).sort((p, q) => q.gap - p.gap);
@@ -1454,7 +1458,9 @@
       + `'3천만 때 이용률'은 객실을 하나도 늘리지 않을 때의 값이고 100%를 넘으면 물리적으로 받을 수 없다는 뜻입니다. 필요한 객실은 이용률 ${SC.cap}%(성수기 여유를 남기는 연구용 가정)를 넘지 않는 객실 수입니다. `
       + '호텔 실적은 「호텔업 운영현황」(관광호텔·가족호텔·호스텔 등 호텔업)이라 일반호텔·생활숙박시설 객실은 빠져 있습니다. 그래서 부족분은 실제보다 크게 나올 수 있고, 일반호텔 등이 그만큼을 받아 줄 여지가 있다는 뜻으로 읽어야 합니다. 외국인 비중은 호텔이 응답한 외국인 숙박객 비율입니다. '
       + `외국인 방문율·시도 내 숙박 기간·숙박시설 구성은 외래관광객조사(한국문화관광연구원, KOSIS)의 ${yI || ''}년 전체 응답 값입니다. 방문율은 복수응답, 숙박 기간은 60박 이상 제외입니다. `
-      + '조사 값을 그대로 곱해 만든 외국인 호텔 숙박량은 호텔 실적보다 훨씬 커서, 조사는 수준이 아니라 구성비로만 씁니다. 호텔 외 추가 수요 = 늘어나는 외국인 호텔 객실-박 × (게스트하우스·호스텔, 민박·펜션, 모텔·여관, 콘도·리조트 비중 합 ÷ 호텔 비중)으로, 객실당 인원이 호텔과 같다고 가정한 대략값입니다. 친척·친구 집, 기숙사·연수원, 기타는 숙박업 공급과 무관해 뺐습니다.';
+      + '조사 값을 그대로 곱해 만든 외국인 호텔 숙박량은 호텔 실적보다 훨씬 커서, 조사는 수준이 아니라 구성비로만 씁니다. 호텔 외 추가 수요 = 늘어나는 외국인 호텔 객실-박 × Σ(유형 이용 비중 × 유형 숙박 기간) ÷ (호텔 이용 비중 × 호텔 숙박 기간)이고, 유형은 게스트하우스·호스텔, 민박·펜션, 모텔·여관, 콘도·리조트입니다. '
+      + (yLN ? `숙박 기간은 외래관광객조사 숙박시설별 숙박 기간(60박 이상 제외, 전국, ${yLN}년: 호텔 ${ivs.lodge_nights[yLN]['호텔']}박${Object.keys(SC_TYPES).filter(t => ivs.lodge_nights[yLN][t] != null).map(t => `, ${SC_TYPES[t]} ${ivs.lodge_nights[yLN][t]}박`).join('')})이고, 객실당 인원은 호텔과 같다고 가정한 대략값입니다. ` : '숙박 기간·객실당 인원이 호텔과 같다고 가정한 대략값입니다. ')
+      + '친척·친구 집, 기숙사·연수원, 기타는 숙박업 공급과 무관해 뺐습니다.';
   }
   // 부족분 흡수 경로: 부족한 시도의 인허가 객실 재고(meta.stk, 호텔 자료와 같은 연말)를 부족분 옆에 놓음
   const SC_STOCK = { hotelish: ['일반호텔', '숙박업(생활)'], minbak: ['외국인관광 도시민박업'], motel: ['여관업', '여인숙업'] };

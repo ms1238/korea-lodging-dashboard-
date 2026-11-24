@@ -23,7 +23,7 @@
 
 방한 외래관광객은 한국문화관광연구원 출입국관광통계(`https://apis.data.go.kr/B551940/EdrcntTourismStatsService`)에서 2018년부터 국적별 월별 입국자 수를 받습니다(전국 단위). 같은 키를 씁니다.
 
-외래관광객조사(한국문화관광연구원)는 통계청 KOSIS 공유서비스(`https://kosis.kr/openapi/Param/statisticsParameterData.do`)에서 방문 지역(17개 시도), 시도별 숙박 기간, 주요 이용 숙박시설, 시도별 이용 숙박시설 표를 받습니다. KOSIS 인증키는 별도라 secret `KOSIS_KEY`로 넣습니다(없으면 이 자료만 건너뜀). 수급 균형 탭의 '외래관광객 3천만 명이 오면'이 이 구성비와 호텔업 운영현황·방한 외래관광객 수를 함께 씁니다.
+외래관광객조사(한국문화관광연구원)는 통계청 KOSIS 공유서비스(`https://kosis.kr/openapi/Param/statisticsParameterData.do`)에서 방문 지역(17개 시도), 시도별 숙박 기간, 주요 이용 숙박시설, 숙박시설별 숙박 기간, 시도별 이용 숙박시설 표를 받습니다. KOSIS 인증키는 별도라 secret `KOSIS_KEY`로 넣습니다(없으면 이 자료만 건너뜀). 수급 균형 탭의 '외래관광객 3천만 명이 오면'이 이 구성비와 호텔업 운영현황·방한 외래관광객 수를 함께 씁니다.
 
 지도 지형(산 음영, 3D)은 AWS Terrain Tiles(Terrarium)를 씁니다.
 

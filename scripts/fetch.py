@@ -4,7 +4,7 @@ plus visitor counts from the KTO DataLabService (daily since 2018, summed per mo
 plus monthly foreign arrivals by nationality (한국문화관광연구원 출입국관광통계, since 2018) into raw/arrivals.jsonl,
 plus subway / light-rail routes with their line colours from OpenStreetMap (Overpass API, no key) into raw/subway.json,
 plus national-park boundaries from OpenStreetMap into raw/parks_osm.json,
-plus 외래관광객조사 tables (방문 지역·시도별 숙박 기간·이용 숙박시설) from KOSIS into raw/kosis_ivs.json (key in KOSIS_KEY).
+plus 외래관광객조사 tables (방문 지역·시도별 숙박 기간·이용 숙박시설·숙박시설별 숙박 기간) from KOSIS into raw/kosis_ivs.json (key in KOSIS_KEY).
 
 `--only-missing` fetches only sources that have no file in raw/ yet (used on code pushes, which reuse cached data).
 
@@ -64,6 +64,7 @@ KOSIS_IVS = {
     "visit": ("DT_113_STBL_1027417", "13103121870", 20),   # 한국 여행 중 방문 지역(17개 시도), 건%
     "nights": ("DT_113_STBL_1031446", "13103135839", 18),  # 시도별 숙박 기간(60박 이상 제외), 박
     "lodge": ("DT_113_STBL_1031448", "13103135832", 20),   # 주요 이용 숙박시설(전국), 건%
+    "lodge_nights": ("DT_113_STBL_1031450", "13103135833", 17),  # 숙박시설별 숙박 기간(60박 이상 제외, 전국), 박
     **{f"lodge_{s}": (f"DT_113_STBL_{t}", p, 8) for s, t, p in (  # 시도별 이용 숙박시설, %
         ("서울", 1031886, "13103136723"), ("경기", 1031887, "13103136759"), ("인천", 1031888, "13103136638"),
         ("강원", 1031890, "13103136639"), ("대전", 1031896, "13103136781"), ("충북", 1031899, "13103136782"),
