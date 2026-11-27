@@ -68,8 +68,10 @@ def check_meta():
     print(f"meta: {kept:,} lodgings in {len(m['sido'])} 시도")
 
 
-def year_totals(v):
-    """{(시도 index or "all", year): 외지인+외국인 total} for years with all four quarters (qdays ≥ 89)."""
+def year_totals(v, names):
+    """{(시도 name or "all", year): 외지인+외국인 total} for years with all four quarters (qdays ≥ 89).
+    visits.json lists 시도 in meta.json's order, which follows lodging counts and can change from one build to the
+    next (two 시도 with the same count swap), so the 시도 are keyed by the name at the same position in meta.json."""
     out = defaultdict(float)
     full = defaultdict(int)
     for i, q in enumerate(v["q"]):
@@ -79,7 +81,7 @@ def year_totals(v):
             if s:
                 t = sum(s[j][i] or 0 for j in (0, 1))
                 out[("all", q[:4])] += t
-                out[(si, q[:4])] += t
+                out[(names[si] if si < len(names) else f"#{si}", q[:4])] += t
     return {k: t for k, t in out.items() if full[k[1]] == 4}
 
 
@@ -89,11 +91,11 @@ def check_visits():
         warnings.append("visits.json missing (DataLab not fetched); 방문자 sections will be hidden")
         return
     v = load("data/visits.json")
-    new = year_totals(v)
-    old = deployed("data/visits.json")
-    if old:
-        for (si, y), t in year_totals(old).items():
-            lim, who = (MAX_DROP, "전국") if si == "all" else (MAX_DROP_SIDO, f"시도 #{si}")
+    new = year_totals(v, [s["name"] for s in load("data/meta.json")["sido"]])
+    old, old_meta = deployed("data/visits.json"), deployed("data/meta.json")
+    if old and old_meta:
+        for (si, y), t in year_totals(old, [s["name"] for s in old_meta["sido"]]).items():
+            lim, who = (MAX_DROP, "전국") if si == "all" else (MAX_DROP_SIDO, si)
             if (si, y) not in new:
                 if si == "all":
                     errors.append(f"방문자 year {y} was complete on the deployed site and is not now")
