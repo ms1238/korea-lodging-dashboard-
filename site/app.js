@@ -2585,6 +2585,18 @@
 
   /* ---------- 관광수요지수 세부 지표 (한국관광데이터랩, build.py → kto_index.json) ---------- */
   let kix = null;
+  // 데이터랩 지수가 이 달부터 지역 간 차이를 잃은 지표(2026.03: 시군구 표준편차 숙박업 소비액 14.8→1.9, 식음료 소비액 15.0→0.2,
+  // 둘을 포함하는 관광서비스 수요 10.7→6.8). 원자료는 그대로 두고 화면에서는 그 달부터 비워 평균·전년 비교에서 뺌
+  const KIX_BREAK = { '1107': '202603', '1106': '202603', '11': '202603' };
+  const kixBreakNote = () => ` 숙박업 소비액·식음료 소비액·관광서비스 수요는 ${Object.values(KIX_BREAK)[0].slice(0, 4)}.${Object.values(KIX_BREAK)[0].slice(4)}부터 데이터랩 지수의 지역 간 차이가 사라져(산식 변경이나 원자료 오류로 보임) 그 전 달까지만 씁니다.`;
+  function kixApplyBreak(d) {
+    for (const [c, m] of Object.entries(KIX_BREAK)) {
+      const j = d.ix.findIndex(x => x[0] === c), i0 = d.months.findIndex(x => x >= m);
+      if (j < 0 || i0 < 0) continue;
+      for (const v of Object.values(d.v)) for (let i = i0; i < d.months.length; i++) v[j][i] = null;
+    }
+    return d;
+  }
   // 카드·표에 보이는 지표 (나머지는 CSV). 관광 소비 강도 세부 지표(22xx)는 자료가 들어온 뒤에만 보임
   const KIX_BASE = ['21', '2102', '2103', '2104', '2105', '22', '2201', '2202', '2203', '31', '33'];
   let KIX_SHOW = KIX_BASE;
@@ -2640,7 +2652,7 @@
     $('lodem-kpis').hidden = !vr;
     $('lodem-kpis').innerHTML = vr ? J.map(j => { const v = vr[j], d = yoy(v, li);
       return `<div class="kpi"><b>${v[li] == null ? '-' : v[li].toFixed(1)}</b><span>${esc(kix.ix[j][1])}${d == null ? '' : ` (전년 동월 ${pc(d)})`}</span></div>`; }).join('') : '';
-    $('lodem-sub').textContent = vr ? `${regionName()} · ${ym(M[li])} 기준. 숙소 수(공급)와 함께 보면 수요에 비해 숙소가 많은지 적은지 가늠할 수 있습니다.`
+    $('lodem-sub').textContent = vr ? `${regionName()} · ${ym(M[li])} 기준.${li < n - 1 ? (M[li + 1] >= KIX_BREAK['1107'] ? kixBreakNote() : ` 이 지역 값은 ${ym(M[li])}까지만 있습니다(데이터랩이 2026년 6월부터 광역 숙박업 소비액·숙박 검색량을 내지 않음).`) : ''} 숙소 수(공급)와 함께 보면 수요에 비해 숙소가 많은지 적은지 가늠할 수 있습니다.`
       : vr0 ? `이 지역은 숙박업 소비액·숙박 검색량의 월별 값이 아직 없습니다${!U && cur && cur.gi < 0 && S[cur.si].name === '전남광주통합특별시' ? '(통합 전 달은 광주·전남이 따로 집계돼 광역 값으로 합칠 수 없음, 시군구를 고르면 나옵니다)' : ''}. 아래 표는 지역별 최근 달 값입니다.`
       : '광역이나 기초를 고르면 그 지역의 월별 추이가 나옵니다. 아래 표는 광역별 최근 달 값입니다.';
     // 월별 추이: 숙박업 소비액(파랑)·숙박 검색량(주황)
@@ -2691,7 +2703,7 @@
     const yo = M.indexOf(String(+M[li] - 100));
     const one = x => { const a = v[x][li], b = yo >= 0 ? v[x][yo] : null;
       return `${esc(kix.ix[x][1])} <b>${a == null ? '-' : a.toFixed(1)}</b>${a != null && b ? ` (전년 동월 ${a >= b ? '+' : '−'}${Math.abs((a / b - 1) * 100).toFixed(0)}%)` : ''}`; };
-    el.innerHTML = `${esc(regionName())} 미식 수요 · ${M[li].slice(0, 4)}.${M[li].slice(4)}: ${one(j[0])}, ${one(j[1])}. 한국관광공사 관광수요지수(상대 지수).`;
+    el.innerHTML = `${esc(regionName())} 미식 수요 · ${M[li].slice(0, 4)}.${M[li].slice(4)}: ${one(j[0])}, ${one(j[1])}. 한국관광공사 관광수요지수(상대 지수).${v[j[1]][li] == null && M[li] >= KIX_BREAK['1106'] ? esc(kixBreakNote()) : ''}`;
     el.hidden = false;
   }
   /* ---------- 미식: 식음료 소비 vs 숙박업 소비(관광 자원 수요, 시군구 백분위) ---------- */
@@ -2714,7 +2726,7 @@
     document.querySelectorAll('#fd-peer button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === fdPeer)));
     $('fd-peer').querySelector('[data-v="sido"]').disabled = !(cur && cur.si >= 0);
     const peerName = fdPeer === 'noseoul' ? '서울 제외 시군구' : fdPeer === 'sido' && cur && cur.si >= 0 ? S[cur.si].name + ' 시군구' : '전국 시군구';
-    $('fd-sub').textContent = `${peerName} ${pts.length}곳 · 관광수요지수 최근 12개월 평균 · ${regionName()}${cur && cur.si >= 0 ? ' 강조' : ''}`;
+    $('fd-sub').textContent = `${peerName} ${pts.length}곳 · 관광수요지수 값이 있는 마지막 12개월 평균 · ${regionName()}${cur && cur.si >= 0 ? ' 강조' : ''} ·${kixBreakNote()}`;
     // 지표 카드: 고른 지역(시군구면 비교 대상 안 백분위도)
     const me = cur && cur.si >= 0 && cur.grp == null ? (cur.gi >= 0 ? pts.find(p => p.si === cur.si && p.gi === cur.gi) : null) : null;
     const reg = cur && cur.si >= 0 && cur.grp == null ? { f: avg(cur.si, cur.gi, '1106'), l: avg(cur.si, cur.gi, '1107'), sns: avg(cur.si, cur.gi, '1103') } : null;
@@ -2754,14 +2766,15 @@
   $('fd-peer').addEventListener('click', e => { const b = e.target.closest('button'); if (b && !b.disabled) { fdPeer = b.dataset.v; renderFood(); } });
   // 일반구로만 제공되는 시(수원·고양 등)는 일반구 값의 단순 평균(build.py)
   const kixApprox = r => !!(kix && kix.approx && r && r.si >= 0 && r.gi >= 0 && kix.approx.includes(`${r.si}:${r.gi}`));
-  // 지역 하나(광역 또는 기초)의 최근 12개월 평균 지수
+  // 지역 하나(광역 또는 기초)의 최근 12개월 평균 지수. 최근 달이 비어 있으면(데이터랩이 2026.06부터 광역 숙박업 소비액·
+  // 숙박 검색량을 내지 않음) 값이 있는 마지막 12개월로 평균해, 몇 달만 남아 계절이 치우치지 않게 함
   function kixAvg(r, code) {
     if (!kix || r.si < 0 || r.grp != null) return null;
     const v = kix.v[r.gi >= 0 ? `${r.si}:${r.gi}` : String(r.si)], j = kix.ix.findIndex(x => x[0] === code);
-    const xs = v && j >= 0 ? v[j].slice(-12).filter(x => x != null) : [];
+    const xs = v && j >= 0 ? v[j].filter(x => x != null).slice(-12) : [];
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   }
-  getJSON('data/kto_index.json', null).then(d => { kix = d; renderType(); renderMatrix(); renderKix(); renderLodem(); renderFoodDem(); renderFood(); renderCompare(); renderOverview(); });
+  getJSON('data/kto_index.json', null).then(d => { kix = d && kixApplyBreak(d); renderType(); renderMatrix(); renderKix(); renderLodem(); renderFoodDem(); renderFood(); renderCompare(); renderOverview(); });
 
   /* ---------- 인천공항 국가별 여객 (노선 기준, build.py → icn.json) ---------- */
   let icn = null, icnPer = 'm';
