@@ -1,0 +1,36 @@
+# 임시: 숙박업 소비액·숙박 검색량의 광역(시도) 행이 2026년 6월부터 오는지 확인. 확인 후 삭제.
+name: KTO index probe
+on:
+  push:
+    branches: [claude/dreamy-bell-2hibbc]
+    paths: [".github/workflows/kto-probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Ask 시도 rows
+        env:
+          KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request, urllib.parse
+          key = os.environ["KEY"]
+          ops = [("AreaTarResDemService/areaTarSvcDemList", "tarSvcDemIxCd", "1107", "tarSvcDemIx"),
+                 ("AreaTarResDemService/areaTarSvcDemList", "tarSvcDemIxCd", "1110", "tarSvcDemIx"),
+                 ("AreaTarDemDsService/areaTarSjrnDsList", "tarSjrnDsIxCd", "2102", "tarSjrnDsIx")]
+          for op, p, ix, f in ops:
+              for area in ("11", "26", "51"):
+                  for ym in ("202605", "202606", "202610"):
+                      q = {"serviceKey": key, "pageNo": 1, "numOfRows": 100, "MobileOS": "ETC", "MobileApp": "korea-lodging-dashboard", "_type": "json", "baseYm": ym, "areaCd": area, p: ix}
+                      try:
+                          d = json.load(urllib.request.urlopen("https://apis.data.go.kr/B551011/" + op + "?" + urllib.parse.urlencode(q), timeout=60))
+                          b = d.get("response", {}).get("body", {}); it = (b.get("items") or {}).get("item") if isinstance(b.get("items"), dict) else []
+                          it = it if isinstance(it, list) else ([it] if it else [])
+                          top = [x for x in it if str(x.get("signguCd")) == "0"]
+                          print(ix, area, ym, "items", len(it), "totalCount", b.get("totalCount"), "| sido rows", [(x.get("areaNm"), x.get("signguCd"), x.get("signguNm"), x.get(f + "Val")) for x in top],
+                                "| first", [(x.get("areaNm"), x.get("signguCd"), x.get("signguNm")) for x in it[:2]])
+                      except Exception as e:
+                          print(ix, area, ym, "ERR", repr(e)[:150])
+                      time.sleep(0.3)
+          PY
